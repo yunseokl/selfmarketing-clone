@@ -1,0 +1,476 @@
+.overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    padding: 20px;
+}
+
+.modal {
+    background-color: var(--bg-white);
+    border-radius: var(--border-radius-lg);
+    width: 100%;
+    max-width: 560px;
+    max-height: 90vh;
+    overflow-y: auto;
+    box-shadow: var(--shadow-lg);
+}
+
+/* Header */
+.header {
+    position: relative;
+    padding: 24px 24px 20px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.header h2 {
+    font-size: 18px;
+    font-weight: 600;
+    margin-bottom: 4px;
+}
+
+.headerSub {
+    font-size: 13px;
+    color: var(--text-gray);
+}
+
+.closeBtn {
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-gray);
+    border-radius: 50%;
+    transition: all var(--transition-fast);
+}
+
+.closeBtn:hover {
+    background-color: var(--bg-light);
+    color: var(--text-dark);
+}
+
+/* Steps */
+.steps {
+    display: flex;
+    justify-content: center;
+    gap: 8px;
+    padding: 20px 24px;
+    background-color: var(--bg-light);
+}
+
+.step {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.stepNumber {
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    font-size: 12px;
+    font-weight: 500;
+    background-color: var(--bg-white);
+    color: var(--text-light);
+    border: 1px solid var(--border-color);
+}
+
+.step.active .stepNumber {
+    background-color: var(--primary-blue);
+    color: var(--text-white);
+    border-color: var(--primary-blue);
+}
+
+.step.completed .stepNumber {
+    background-color: var(--success-green);
+    color: var(--text-white);
+    border-color: var(--success-green);
+}
+
+.stepLabel {
+    font-size: 12px;
+    color: var(--text-light);
+}
+
+.step.active .stepLabel {
+    color: var(--primary-blue);
+    font-weight: 500;
+}
+
+/* Body */
+.body {
+    padding: 24px;
+}
+
+.stepContent {
+    min-height: 200px;
+}
+
+.label {
+    display: block;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text-dark);
+    margin-bottom: 8px;
+}
+
+.labelDesc {
+    font-size: 13px;
+    color: var(--text-gray);
+    margin-bottom: 12px;
+}
+
+/* URL Input */
+.urlInput {
+    display: flex;
+    gap: 8px;
+}
+
+.urlInput input {
+    flex: 1;
+    padding: 12px 14px;
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius-sm);
+    font-size: 14px;
+}
+
+.urlInput input:focus {
+    outline: none;
+    border-color: var(--primary-blue);
+}
+
+.checkBtn {
+    padding: 12px 20px;
+    background-color: var(--primary-blue);
+    color: var(--text-white);
+    font-size: 14px;
+    font-weight: 500;
+    border-radius: var(--border-radius-sm);
+    transition: all var(--transition-fast);
+}
+
+.checkBtn:hover:not(:disabled) {
+    background-color: var(--primary-blue-hover);
+}
+
+.checkBtn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* Service Options */
+.serviceOptions {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 20px;
+}
+
+.serviceOption {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 14px 16px;
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius-sm);
+    background-color: var(--bg-white);
+    transition: all var(--transition-fast);
+    text-align: left;
+}
+
+.serviceOption:hover {
+    border-color: var(--primary-blue);
+}
+
+.serviceOption.selected {
+    border-color: var(--primary-blue);
+    background-color: var(--primary-blue-light);
+}
+
+.serviceName {
+    font-size: 14px;
+    font-weight: 500;
+}
+
+.servicePrice {
+    font-size: 13px;
+    color: var(--primary-blue);
+    font-weight: 500;
+}
+
+/* Input */
+.input {
+    width: 100%;
+    padding: 12px 14px;
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius-sm);
+    font-size: 14px;
+    margin-bottom: 20px;
+}
+
+.input:focus {
+    outline: none;
+    border-color: var(--primary-blue);
+}
+
+/* Number Input */
+.numberInput {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    margin-bottom: 8px;
+}
+
+.numberInput button {
+    width: 44px;
+    height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--border-color);
+    background-color: var(--bg-light);
+    font-size: 18px;
+    color: var(--text-dark);
+    transition: all var(--transition-fast);
+}
+
+.numberInput button:first-child {
+    border-radius: var(--border-radius-sm) 0 0 var(--border-radius-sm);
+}
+
+.numberInput button:last-child {
+    border-radius: 0 var(--border-radius-sm) var(--border-radius-sm) 0;
+}
+
+.numberInput button:hover {
+    background-color: var(--border-color);
+}
+
+.numberInput input {
+    width: 120px;
+    height: 44px;
+    text-align: center;
+    border: 1px solid var(--border-color);
+    border-left: none;
+    border-right: none;
+    font-size: 16px;
+    font-weight: 500;
+}
+
+.numberInput input:focus {
+    outline: none;
+}
+
+.helperText {
+    font-size: 12px;
+    color: var(--text-gray);
+}
+
+/* Duration Options */
+.durationOptions {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 16px;
+}
+
+.durationOption {
+    flex: 1;
+    padding: 14px;
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius-sm);
+    font-size: 14px;
+    font-weight: 500;
+    background-color: var(--bg-white);
+    transition: all var(--transition-fast);
+}
+
+.durationOption:hover {
+    border-color: var(--primary-blue);
+}
+
+.durationOption.selected {
+    border-color: var(--primary-blue);
+    background-color: var(--primary-blue);
+    color: var(--text-white);
+}
+
+.dateInfo {
+    font-size: 13px;
+    color: var(--primary-blue);
+    margin-bottom: 8px;
+}
+
+/* Summary */
+.summary {
+    background-color: var(--bg-light);
+    border-radius: var(--border-radius);
+    padding: 20px;
+    margin-bottom: 20px;
+}
+
+.summaryRow {
+    display: flex;
+    justify-content: space-between;
+    padding: 10px 0;
+    font-size: 14px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.summaryRow:last-child {
+    border-bottom: none;
+}
+
+.summaryRow.total {
+    padding-top: 16px;
+    margin-top: 8px;
+    border-top: 2px solid var(--border-color);
+    font-weight: 600;
+}
+
+.totalAmount {
+    color: var(--primary-blue);
+    font-size: 18px;
+}
+
+/* Info Box */
+.infoBox {
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius);
+    padding: 16px;
+}
+
+.infoBox h4 {
+    font-size: 14px;
+    font-weight: 500;
+    margin-bottom: 12px;
+}
+
+.productPreview {
+    display: flex;
+    gap: 12px;
+}
+
+.productImage {
+    width: 60px;
+    height: 60px;
+    background-color: var(--bg-light);
+    border-radius: 8px;
+}
+
+.productInfo {
+    flex: 1;
+}
+
+.productName {
+    font-size: 14px;
+    font-weight: 500;
+    margin-bottom: 4px;
+}
+
+.productUrl {
+    font-size: 12px;
+    color: var(--text-gray);
+    word-break: break-all;
+}
+
+/* Footer */
+.footer {
+    display: flex;
+    gap: 12px;
+    justify-content: flex-end;
+    padding: 16px 24px;
+    border-top: 1px solid var(--border-color);
+}
+
+.prevBtn {
+    padding: 12px 24px;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text-gray);
+    background-color: var(--bg-light);
+    border-radius: var(--border-radius-sm);
+    transition: all var(--transition-fast);
+}
+
+.prevBtn:hover {
+    background-color: var(--border-color);
+}
+
+.nextBtn {
+    padding: 12px 24px;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text-white);
+    background-color: var(--primary-blue);
+    border-radius: var(--border-radius-sm);
+    transition: all var(--transition-fast);
+}
+
+.nextBtn:hover:not(:disabled) {
+    background-color: var(--primary-blue-hover);
+}
+
+.nextBtn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.submitBtn {
+    padding: 12px 24px;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text-white);
+    background: linear-gradient(135deg, var(--success-green) 0%, #059669 100%);
+    border-radius: var(--border-radius-sm);
+    transition: all var(--transition-fast);
+}
+
+.submitBtn:hover {
+    opacity: 0.9;
+}
+
+/* Responsive */
+@media (max-width: 480px) {
+    .modal {
+        max-width: 100%;
+        margin: 10px;
+        max-height: calc(100vh - 20px);
+    }
+
+    .steps {
+        padding: 16px;
+        gap: 4px;
+        overflow-x: auto;
+    }
+
+    .stepLabel {
+        display: none;
+    }
+
+    .durationOptions {
+        flex-direction: column;
+    }
+
+    .footer {
+        flex-direction: column-reverse;
+    }
+
+    .prevBtn,
+    .nextBtn,
+    .submitBtn {
+        width: 100%;
+    }
+}

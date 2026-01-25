@@ -1,0 +1,121 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String    @id @default(cuid())
+  email         String?   @unique
+  password      String?
+  name          String?
+  image         String?
+  phone         String?
+  kakaoId       String?   @unique
+  balance       Int       @default(0)
+  role          String    @default("member")
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  shoppingAds   ShoppingAd[]
+  placeAds      PlaceAd[]
+  rankTracking  RankTracking[]
+  accounts      Account[]
+  sessions      Session[]
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model ShoppingAd {
+  id            String    @id @default(cuid())
+  userId        String
+  productUrl    String
+  productName   String
+  productImage  String?
+  keyword       String
+  serviceType   String
+  pricePerClick Int
+  dailyGoal     Int
+  duration      Int
+  totalCost     Int
+  startDate     DateTime
+  endDate       DateTime
+  status        String    @default("active")
+  message       String?
+  currentRank   Int?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model PlaceAd {
+  id            String    @id @default(cuid())
+  userId        String
+  placeUrl      String
+  placeName     String
+  placeImage    String?
+  keyword       String
+  serviceType   String
+  pricePerClick Int
+  dailyGoal     Int
+  duration      Int
+  totalCost     Int
+  startDate     DateTime
+  endDate       DateTime
+  status        String    @default("active")
+  message       String?
+  currentRank   Int?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model RankTracking {
+  id            String    @id @default(cuid())
+  userId        String
+  type          String    // "shopping" or "place"
+  url           String
+  name          String
+  image         String?
+  keyword       String
+  currentRank   Int?
+  previousRank  Int?
+  rankHistory   String?   // JSON string of rank history
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+}

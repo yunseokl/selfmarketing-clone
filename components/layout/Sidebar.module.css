@@ -1,0 +1,273 @@
+.sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: var(--sidebar-width);
+    height: 100vh;
+    background-color: var(--bg-white);
+    border-right: 1px solid var(--border-color);
+    display: flex;
+    flex-direction: column;
+    z-index: 100;
+    overflow-y: auto;
+}
+
+/* Logo */
+.logo {
+    padding: 20px 24px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.logo a {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.logoIcon {
+    width: 32px;
+    height: 32px;
+}
+
+.logoText {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--text-dark);
+}
+
+/* Navigation */
+.nav {
+    flex: 1;
+    padding: 16px 0;
+    overflow-y: auto;
+}
+
+.section {
+    margin-bottom: 8px;
+}
+
+.sectionHeader {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 24px;
+}
+
+.sectionTitle {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-light);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.sectionBadge {
+    font-size: 10px;
+    font-weight: 500;
+    padding: 2px 6px;
+    border-radius: 4px;
+}
+
+.badgeGreen {
+    background-color: rgba(16, 185, 129, 0.1);
+    color: var(--success-green);
+}
+
+.badgeBlue {
+    background-color: var(--primary-blue-light);
+    color: var(--primary-blue);
+}
+
+.menuList {
+    margin: 0;
+}
+
+.menuItem {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 24px;
+    color: var(--text-gray);
+    transition: all var(--transition-fast);
+    font-size: 14px;
+}
+
+.menuItem:hover {
+    color: var(--text-dark);
+    background-color: var(--bg-light);
+}
+
+.menuItem.active {
+    color: var(--primary-blue);
+    background-color: var(--primary-blue-light);
+    font-weight: 500;
+}
+
+.itemBadge {
+    margin-left: auto;
+    font-size: 10px;
+    color: var(--text-light);
+    background-color: var(--bg-light);
+    padding: 2px 6px;
+    border-radius: 4px;
+}
+
+/* User Section */
+.userSection {
+    padding: 16px;
+    border-top: 1px solid var(--border-color);
+}
+
+.userCard {
+    background-color: var(--bg-light);
+    border-radius: var(--border-radius);
+    padding: 16px;
+    margin-bottom: 12px;
+}
+
+.userInfo {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.userLabel {
+    font-size: 12px;
+    color: var(--text-light);
+}
+
+.userName {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-dark);
+}
+
+.userBalance {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+
+.balanceLabel {
+    font-size: 12px;
+    color: var(--text-gray);
+}
+
+.balanceAmount {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--primary-blue);
+}
+
+.userActions {
+    display: flex;
+    gap: 8px;
+}
+
+.userBtn {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    padding: 8px 12px;
+    font-size: 12px;
+    color: var(--text-gray);
+    background-color: var(--bg-white);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius-sm);
+    transition: all var(--transition-fast);
+}
+
+.userBtn:hover {
+    background-color: var(--bg-light);
+    color: var(--text-dark);
+}
+
+.kakaoBtn {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 12px;
+    font-size: 14px;
+    font-weight: 600;
+    color: #3C1E1E;
+    background-color: var(--warning-yellow);
+    border-radius: var(--border-radius-sm);
+    transition: all var(--transition-fast);
+}
+
+.kakaoBtn:hover {
+    background-color: var(--warning-yellow-hover);
+}
+
+.loginBtn {
+    display: block;
+    width: 100%;
+    padding: 12px;
+    margin-bottom: 12px;
+    font-size: 14px;
+    font-weight: 500;
+    text-align: center;
+    color: var(--text-white);
+    background-color: var(--primary-blue);
+    border-radius: var(--border-radius-sm);
+    transition: all var(--transition-fast);
+}
+
+.loginBtn:hover {
+    background-color: var(--primary-blue-hover);
+}
+
+/* Mobile Toggle */
+.mobileToggle {
+    display: none;
+    position: fixed;
+    top: 16px;
+    left: 16px;
+    z-index: 200;
+    width: 44px;
+    height: 44px;
+    align-items: center;
+    justify-content: center;
+    background-color: var(--bg-white);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius-sm);
+    box-shadow: var(--shadow-md);
+    color: var(--text-dark);
+}
+
+.overlay {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(0, 0, 0, 0.5);
+    z-index: 99;
+}
+
+/* Responsive */
+@media (max-width: 1024px) {
+    .sidebar {
+        transform: translateX(-100%);
+        transition: transform var(--transition-normal);
+    }
+
+    .sidebar.open {
+        transform: translateX(0);
+    }
+
+    .mobileToggle {
+        display: flex;
+    }
+
+    .overlay {
+        display: block;
+    }
+}
