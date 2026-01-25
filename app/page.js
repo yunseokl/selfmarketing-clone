@@ -98,6 +98,44 @@ export default function DashboardHome() {
                     </div>
                 </motion.div>
 
+                {/* 1.5 Onboarding Guide (Span 2) */}
+                <motion.div className={styles.onboardingCard} variants={itemVariants} style={{ gridColumn: 'span 2', marginBottom: 24, padding: 24, background: 'rgba(37, 99, 235, 0.1)', borderRadius: 24, border: '1px solid rgba(37, 99, 235, 0.2)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                            <div style={{ width: 40, height: 40, borderRadius: '50%', background: '#3B82F6', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 'bold' }}>🚀</div>
+                            <div>
+                                <h3 style={{ fontSize: 18, fontWeight: 700, color: 'white', margin: 0 }}>마케팅 고수 되기 (1/3)</h3>
+                                <p style={{ fontSize: 13, color: '#93C5FD', margin: 0 }}>필수 설정을 완료하고 분석을 시작해보세요!</p>
+                            </div>
+                        </div>
+                        <span style={{ fontSize: 12, fontWeight: 600, color: '#60A5FA', background: 'rgba(37, 99, 235, 0.2)', padding: '4px 12px', borderRadius: 20 }}>진행중</span>
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+                        {/* Step 1: Active */}
+                        <div style={{ background: 'rgba(15, 23, 42, 0.6)', padding: 16, borderRadius: 16, border: '1px solid #3B82F6', position: 'relative' }}>
+                            <div style={{ position: 'absolute', top: -10, left: 16, background: '#3B82F6', fontSize: 10, fontWeight: 700, color: 'white', padding: '2px 8px', borderRadius: 10 }}>STEP 1</div>
+                            <h4 style={{ fontSize: 14, fontWeight: 700, color: 'white', marginTop: 8, marginBottom: 4 }}>내 스토어 등록</h4>
+                            <p style={{ fontSize: 12, color: '#94A3B8', marginBottom: 12 }}>URL만 입력하면 끝나요.</p>
+                            <Link href="/dashboard/shopping" style={{ display: 'block', textAlign: 'center', padding: '8px 0', background: '#2563EB', borderRadius: 8, fontSize: 12, fontWeight: 600, color: 'white' }}>등록하기</Link>
+                        </div>
+
+                        {/* Step 2: Inactive */}
+                        <div style={{ background: 'rgba(15, 23, 42, 0.4)', padding: 16, borderRadius: 16, border: '1px solid rgba(255,255,255,0.05)', opacity: 0.7 }}>
+                            <h4 style={{ fontSize: 14, fontWeight: 700, color: '#CBD5E1', marginTop: 8, marginBottom: 4 }}>첫 키워드 분석</h4>
+                            <p style={{ fontSize: 12, color: '#64748B', marginBottom: 12 }}>내 상품의 순위는?</p>
+                            <button disabled style={{ width: '100%', padding: '8px 0', background: 'rgba(255,255,255,0.05)', borderRadius: 8, fontSize: 12, fontWeight: 600, color: '#64748B', cursor: 'not-allowed' }}>대기중</button>
+                        </div>
+
+                        {/* Step 3: Inactive */}
+                        <div style={{ background: 'rgba(15, 23, 42, 0.4)', padding: 16, borderRadius: 16, border: '1px solid rgba(255,255,255,0.05)', opacity: 0.7 }}>
+                            <h4 style={{ fontSize: 14, fontWeight: 700, color: '#CBD5E1', marginTop: 8, marginBottom: 4 }}>알림 설정</h4>
+                            <p style={{ fontSize: 12, color: '#64748B', marginBottom: 12 }}>매일 아침 리포트 받기</p>
+                            <button disabled style={{ width: '100%', padding: '8px 0', background: 'rgba(255,255,255,0.05)', borderRadius: 8, fontSize: 12, fontWeight: 600, color: '#64748B', cursor: 'not-allowed' }}>대기중</button>
+                        </div>
+                    </div>
+                </motion.div>
+
                 {/* 2. Main Chart Widget (Span 2) */}
                 <motion.div className={`${styles.card} ${styles.chartCard}`} variants={itemVariants}>
                     <div className={styles.cardHeader}>

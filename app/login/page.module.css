@@ -1,119 +1,190 @@
-/* Glassmorphism Login Page */
+/* Glassmorphism Split Layout Login Page */
 .container {
     min-height: 100vh;
     display: flex;
-    align-items: center;
-    justify-content: center;
+    background: #0F172A;
+    /* Fallback */
     background: linear-gradient(135deg, #0F172A 0%, #1E1B4B 100%);
-    padding: 20px;
-    position: relative;
     overflow: hidden;
 }
 
-/* Background Gradients */
-.container::before {
-    content: '';
-    position: absolute;
-    top: -10%;
-    left: -10%;
-    width: 50%;
-    height: 50%;
-    background: radial-gradient(circle, rgba(124, 58, 237, 0.2) 0%, transparent 70%);
-    filter: blur(80px);
+/* Left Side: Branding & Value Prop */
+.brandingSection {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: 80px;
+    background: relative;
+    overflow: hidden;
+    position: relative;
+    display: none;
+    /* Mobile default */
 }
 
-.container::after {
+/* Background Effects for Left Side */
+.brandingSection::before {
     content: '';
     position: absolute;
-    bottom: -10%;
-    right: -10%;
-    width: 50%;
-    height: 50%;
-    background: radial-gradient(circle, rgba(37, 99, 235, 0.2) 0%, transparent 70%);
-    filter: blur(80px);
+    top: -20%;
+    left: -20%;
+    width: 80%;
+    height: 80%;
+    background: radial-gradient(circle, rgba(124, 58, 237, 0.3) 0%, transparent 70%);
+    filter: blur(100px);
+}
+
+.brandingSection::after {
+    content: '';
+    position: absolute;
+    bottom: -20%;
+    right: -20%;
+    width: 80%;
+    height: 80%;
+    background: radial-gradient(circle, rgba(37, 99, 235, 0.3) 0%, transparent 70%);
+    filter: blur(100px);
+}
+
+.brandingContent {
+    position: relative;
+    z-index: 10;
+    max-width: 500px;
+}
+
+.brandBadge {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 16px;
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 20px;
+    color: #A78BFA;
+    font-size: 14px;
+    font-weight: 600;
+    margin-bottom: 32px;
+    backdrop-filter: blur(10px);
+}
+
+.brandTitle {
+    font-size: 56px;
+    font-weight: 800;
+    color: white;
+    line-height: 1.1;
+    margin-bottom: 24px;
+    letter-spacing: -1px;
+}
+
+.brandTitle span {
+    background: linear-gradient(to right, #A78BFA, #3B82F6);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+.brandDesc {
+    font-size: 18px;
+    color: #94A3B8;
+    line-height: 1.6;
+    margin-bottom: 48px;
+}
+
+.testimonial {
+    background: rgba(30, 41, 59, 0.6);
+    backdrop-filter: blur(12px);
+    padding: 24px;
+    border-radius: 16px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.testimonialQuote {
+    font-size: 16px;
+    color: white;
+    font-style: italic;
+    margin-bottom: 16px;
+    line-height: 1.5;
+}
+
+.testimonialAuthor {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.authorAvatar {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #6366F1, #8B5CF6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    color: white;
+    font-size: 14px;
+}
+
+.authorInfo h4 {
+    font-size: 14px;
+    font-weight: 700;
+    color: white;
+    margin: 0;
+}
+
+.authorInfo p {
+    font-size: 12px;
+    color: #94A3B8;
+    margin: 0;
+}
+
+/* Right Side: Login Form */
+.formSection {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 40px;
+    background: rgba(15, 23, 42, 0.8);
+    backdrop-filter: blur(20px);
+    position: relative;
+    z-index: 20;
+    min-width: 480px;
+    border-left: 1px solid rgba(255, 255, 255, 0.05);
 }
 
 .card {
     width: 100%;
     max-width: 440px;
-    background: rgba(255, 255, 255, 0.03);
-    backdrop-filter: blur(20px);
-    -webkit-backdrop-filter: blur(20px);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 24px;
-    padding: 40px;
-    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
-    position: relative;
-    z-index: 1;
+    /* Card style maintained but no background needed as section handles it or minimal */
+    background: transparent;
+    border: none;
+    box-shadow: none;
+    padding: 0;
 }
 
-/* Logo */
-.logo {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
+/* Logo (Mobile & Form Header) */
+.mobileLogo {
+    display: none;
+    margin-bottom: 32px;
+    text-align: center;
+}
+
+.formHeader {
     margin-bottom: 32px;
 }
 
-.logoIcon {
-    width: 56px;
-    height: 56px;
-    margin-bottom: 16px;
-    filter: drop-shadow(0 0 10px rgba(124, 58, 237, 0.5));
-}
-
-.logoIcon svg rect {
-    fill: url(#gradient);
-    /* You might need to define SVG gradient in JS or use CSS if possible, simplifying here to just color or use hex fallback */
-    fill: #7C3AED;
-}
-
-.logoIcon svg path {
-    stroke: #fff;
-}
-
-.logoText {
-    font-size: 24px;
+.headerTitle {
+    font-size: 32px;
     font-weight: 800;
     color: white;
     margin-bottom: 8px;
-    background: linear-gradient(to right, #fff, #cbd5e1);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
 }
 
-.logoSubtext {
-    font-size: 14px;
-    color: rgba(255, 255, 255, 0.5);
+.headerDesc {
+    color: #94A3B8;
+    font-size: 16px;
 }
 
-/* Tabs */
-.tabs {
-    display: flex;
-    background: rgba(0, 0, 0, 0.2);
-    padding: 4px;
-    border-radius: 12px;
-    margin-bottom: 32px;
-}
-
-.tab {
-    flex: 1;
-    padding: 10px;
-    font-size: 14px;
-    font-weight: 600;
-    color: rgba(255, 255, 255, 0.5);
-    background: transparent;
-    border-radius: 8px;
-    transition: all 0.3s;
-}
-
-.tab.active {
-    color: white;
-    background: rgba(255, 255, 255, 0.1);
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
-}
-
-/* Form */
+/* Form Styles (Inherited & Adjusted) */
 .form {
     display: flex;
     flex-direction: column;
@@ -129,14 +200,14 @@
     left: 16px;
     top: 50%;
     transform: translateY(-50%);
-    color: rgba(255, 255, 255, 0.4);
+    color: #64748B;
     z-index: 1;
 }
 
 .inputGroup input {
     width: 100%;
-    padding: 14px 16px 14px 48px;
-    background: rgba(0, 0, 0, 0.2);
+    padding: 16px 16px 16px 48px;
+    background: rgba(30, 41, 59, 0.5);
     border: 1px solid rgba(255, 255, 255, 0.1);
     border-radius: 12px;
     font-size: 15px;
@@ -146,71 +217,35 @@
 }
 
 .inputGroup input:focus {
-    border-color: #7C3AED;
-    box-shadow: 0 0 0 2px rgba(124, 58, 237, 0.2);
-    background: rgba(0, 0, 0, 0.3);
-}
-
-.inputGroup input::placeholder {
-    color: rgba(255, 255, 255, 0.3);
-}
-
-.eyeBtn {
-    position: absolute;
-    right: 16px;
-    top: 50%;
-    transform: translateY(-50%);
-    color: rgba(255, 255, 255, 0.4);
-    background: transparent;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
-
-.eyeBtn:hover {
-    color: white;
-}
-
-.error {
-    font-size: 13px;
-    color: #EF4444;
-    text-align: center;
-    background: rgba(239, 68, 68, 0.1);
-    padding: 10px;
-    border-radius: 8px;
+    border-color: #8B5CF6;
+    background: rgba(30, 41, 59, 0.8);
+    box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.2);
 }
 
 .submitBtn {
     width: 100%;
     padding: 16px;
-    background: linear-gradient(135deg, #6D28D9 0%, #7C3AED 100%);
+    background: linear-gradient(135deg, #7C3AED 0%, #6D28D9 100%);
     color: white;
     font-size: 16px;
     font-weight: 700;
     border-radius: 12px;
     transition: all 0.2s;
-    box-shadow: 0 4px 12px rgba(109, 40, 217, 0.3);
+    box-shadow: 0 4px 12px rgba(124, 58, 237, 0.3);
     margin-top: 8px;
 }
 
 .submitBtn:hover {
     transform: translateY(-2px);
-    box-shadow: 0 8px 20px rgba(109, 40, 217, 0.4);
+    box-shadow: 0 8px 20px rgba(124, 58, 237, 0.4);
 }
 
-.submitBtn:disabled {
-    opacity: 0.7;
-    cursor: not-allowed;
-    transform: none;
-}
-
-/* Divider */
 .divider {
     display: flex;
     align-items: center;
     margin: 24px 0;
-    color: rgba(255, 255, 255, 0.3);
-    font-size: 12px;
+    color: #64748B;
+    font-size: 14px;
 }
 
 .divider::before,
@@ -222,25 +257,22 @@
 }
 
 .divider span {
-    padding: 0 12px;
+    padding: 0 16px;
 }
 
-/* Social Login */
-/* Social Login */
 .socialButtons {
     display: flex;
     flex-direction: column;
     gap: 12px;
 }
 
-.kakaoBtn {
+.kakaoBtn,
+.naverBtn {
+    /* ... Keep previous styles but ensure width is 100% */
     width: 100%;
     padding: 16px;
-    background: #FEE500;
-    color: #1A1A1A;
-    font-size: 15px;
-    font-weight: 700;
     border-radius: 12px;
+    font-weight: 700;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -248,72 +280,50 @@
     transition: all 0.2s;
 }
 
-.kakaoBtn:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(254, 229, 0, 0.3);
-}
-
-.kakaoBtn:active {
-    transform: scale(0.98);
+.kakaoBtn {
+    background: #FEE500;
+    color: #1A1A1A;
 }
 
 .naverBtn {
-    width: 100%;
-    padding: 16px;
     background: #03C75A;
     color: white;
-    font-size: 15px;
-    font-weight: 700;
-    border-radius: 12px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 10px;
-    transition: all 0.2s;
-}
-
-.naverBtn:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(3, 199, 90, 0.3);
-}
-
-.naverBtn:active {
-    transform: scale(0.98);
-}
-
-.naverIcon {
-    font-weight: 900;
-    font-family: sans-serif;
-    font-size: 18px;
-    margin-right: 2px;
-}
-
-/* Footer */
-.footer {
-    text-align: center;
-    font-size: 14px;
-    color: rgba(255, 255, 255, 0.5);
-    margin-top: 24px;
-}
-
-.footer button {
-    color: #A78BFA;
-    font-weight: 600;
-    margin-left: 4px;
-    background: transparent;
-}
-
-.footer button:hover {
-    text-decoration: underline;
 }
 
 /* Responsive */
-@media (max-width: 480px) {
+@media (min-width: 1024px) {
+    .brandingSection {
+        display: flex;
+    }
+}
+
+@media (max-width: 1023px) {
     .container {
-        padding: 16px;
+        flex-direction: column;
+        padding: 20px;
+    }
+
+    .formSection {
+        padding: 0;
+        min-width: unset;
+        width: 100%;
+        background: transparent;
+        border: none;
+    }
+
+    .mobileLogo {
+        display: block;
+    }
+
+    .formHeader {
+        text-align: center;
     }
 
     .card {
-        padding: 24px;
+        background: rgba(255, 255, 255, 0.03);
+        backdrop-filter: blur(20px);
+        padding: 32px;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 24px;
     }
 }
