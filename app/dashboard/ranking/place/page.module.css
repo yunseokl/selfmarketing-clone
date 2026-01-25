@@ -64,6 +64,10 @@
     box-shadow: 0 8px 16px rgba(109, 40, 217, 0.4);
 }
 
+.addBtn:active {
+    transform: scale(0.95);
+}
+
 .counter {
     font-size: 14px;
     color: var(--text-dim);

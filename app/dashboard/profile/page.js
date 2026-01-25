@@ -13,6 +13,8 @@ const tabs = [
     { id: 'business', label: '사업자 정보', icon: Building },
 ];
 
+import { Skeleton } from '@/components/ui/skeleton';
+
 export default function ProfilePage() {
     const { data: session } = useSession();
     const [activeTab, setActiveTab] = useState('profile');
@@ -20,7 +22,11 @@ export default function ProfilePage() {
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        fetchUserInfo();
+        // Minimum loading time for smooth transition
+        const timer = setTimeout(() => {
+            fetchUserInfo();
+        }, 800);
+        return () => clearTimeout(timer);
     }, []);
 
     const fetchUserInfo = async () => {
@@ -79,25 +85,27 @@ export default function ProfilePage() {
                                 <div className={styles.infoGrid}>
                                     <div className={styles.infoItem}>
                                         <label>이메일</label>
-                                        <span>{userInfo?.email || '-'}</span>
+                                        {loading ? <Skeleton className="h-6 w-48" /> : <span>{userInfo?.email || '-'}</span>}
                                     </div>
                                     <div className={styles.infoItem}>
                                         <label>이름</label>
-                                        <span>{userInfo?.name || '-'}</span>
+                                        {loading ? <Skeleton className="h-6 w-24" /> : <span>{userInfo?.name || '-'}</span>}
                                     </div>
                                     <div className={styles.infoItem}>
                                         <label>휴대폰 번호</label>
-                                        <span>{userInfo?.phone || '-'}</span>
+                                        {loading ? <Skeleton className="h-6 w-32" /> : <span>{userInfo?.phone || '-'}</span>}
                                     </div>
                                     <div className={styles.infoItem}>
                                         <label>잔액</label>
-                                        <span className={styles.balance}>{userInfo?.balance?.toLocaleString() || 0}원</span>
+                                        {loading ? <Skeleton className="h-8 w-24" /> : <span className={styles.balance}>{userInfo?.balance?.toLocaleString() || 0}원</span>}
                                     </div>
                                     <div className={styles.infoItem}>
                                         <label>회원 등급</label>
-                                        <span className={`${styles.badge} ${isAdmin ? styles.adminBadge : ''}`}>
-                                            {isAdmin ? '관리자' : '일반 회원'}
-                                        </span>
+                                        {loading ? <Skeleton className="h-6 w-20" /> : (
+                                            <span className={`${styles.badge} ${isAdmin ? styles.adminBadge : ''}`}>
+                                                {isAdmin ? '관리자' : '일반 회원'}
+                                            </span>
+                                        )}
                                     </div>
                                     <div className={styles.infoItem}>
                                         <label>가입일</label>

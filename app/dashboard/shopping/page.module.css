@@ -46,6 +46,10 @@
     box-shadow: 0 8px 20px rgba(109, 40, 217, 0.4);
 }
 
+.createBtn:active {
+    transform: scale(0.95);
+}
+
 /* Info Cards */
 .infoCards {
     display: grid;

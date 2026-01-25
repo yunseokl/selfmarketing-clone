@@ -226,6 +226,13 @@
 }
 
 /* Social Login */
+/* Social Login */
+.socialButtons {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
 .kakaoBtn {
     width: 100%;
     padding: 16px;
@@ -244,6 +251,41 @@
 .kakaoBtn:hover {
     transform: translateY(-2px);
     box-shadow: 0 4px 12px rgba(254, 229, 0, 0.3);
+}
+
+.kakaoBtn:active {
+    transform: scale(0.98);
+}
+
+.naverBtn {
+    width: 100%;
+    padding: 16px;
+    background: #03C75A;
+    color: white;
+    font-size: 15px;
+    font-weight: 700;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    transition: all 0.2s;
+}
+
+.naverBtn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(3, 199, 90, 0.3);
+}
+
+.naverBtn:active {
+    transform: scale(0.98);
+}
+
+.naverIcon {
+    font-weight: 900;
+    font-family: sans-serif;
+    font-size: 18px;
+    margin-right: 2px;
 }
 
 /* Footer */

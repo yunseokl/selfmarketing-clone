@@ -161,10 +161,16 @@ export default function LoginPage() {
                 </div>
 
                 {/* Social Login */}
-                <button className={styles.kakaoBtn}>
-                    <MessageCircle size={20} />
-                    카카오로 시작하기
-                </button>
+                <div className={styles.socialButtons}>
+                    <button className={styles.kakaoBtn}>
+                        <MessageCircle size={20} />
+                        카카오로 시작하기
+                    </button>
+                    <button className={styles.naverBtn}>
+                        <span className={styles.naverIcon}>N</span>
+                        네이버로 시작하기
+                    </button>
+                </div>
 
                 {/* Footer */}
                 <p className={styles.footer}>
