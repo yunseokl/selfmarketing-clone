@@ -2,8 +2,14 @@ import './globals.css';
 import AuthProvider from '@/components/providers/AuthProvider';
 
 export const metadata = {
-    title: '셀프마케팅 | 대행사 없이 누구나 쉽게 마케팅을 시작하세요',
-    description: '플레이스, 쇼핑, 블로그 마케팅을 직접 관리하고 순위를 추적하세요.',
+    title: {
+        template: '%s | 혼잘마',
+        default: '혼잘마 - 혼자서도 잘하는 마케팅',
+    },
+    description: '프리미엄 셀프 마케팅 플랫폼, 혼잘마. 쇼핑, 플레이스, SEO까지 한 번에 관리하세요.',
+    icons: {
+        icon: '/favicon.ico',
+    },
 };
 
 export default function RootLayout({ children }) {

@@ -1,6 +1,7 @@
 'use client';
 
 import Sidebar from './Sidebar';
+import MobileBottomBar from './MobileBottomBar';
 import styles from './DashboardLayout.module.css';
 
 export default function DashboardLayout({ children }) {
@@ -10,6 +11,7 @@ export default function DashboardLayout({ children }) {
             <main className={styles.main}>
                 {children}
             </main>
+            <MobileBottomBar />
         </div>
     );
 }

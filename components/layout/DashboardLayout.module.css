@@ -7,13 +7,17 @@
     flex: 1;
     margin-left: var(--sidebar-width);
     min-height: 100vh;
-    background-color: var(--bg-light);
+    background: transparent;
+    /* Changed from bg-light to transparent */
+    padding: 32px;
+    /* Increased padding */
 }
 
 /* Responsive */
 @media (max-width: 1024px) {
     .main {
         margin-left: 0;
-        padding-top: 70px;
+        padding: 80px 20px 20px;
+        /* Adjusted padding for mobile header */
     }
 }

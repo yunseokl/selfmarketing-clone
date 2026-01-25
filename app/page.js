@@ -1,144 +1,234 @@
+'use client';
+
+import { useState, useEffect } from 'react';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import styles from './page.module.css';
-import { MapPin, ShoppingCart, FileText, DollarSign } from 'lucide-react';
+import {
+    MapPin,
+    ShoppingCart,
+    FileText,
+    DollarSign,
+    ArrowRight,
+    TrendingUp,
+    MousePointer,
+    Users,
+    Sparkles
+} from 'lucide-react';
 import Link from 'next/link';
+import { useSession } from 'next-auth/react';
+import { motion } from 'framer-motion';
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
-const services = [
-    {
-        title: '플레이스',
-        subtitle: '광고',
-        description: '지역 검색 시 상위 노출을 원하시나요? 지역 타겟팅을 통해 주변 고객들에게 더 많이 노출되세요.',
-        icon: MapPin,
-        color: '#10B981',
-        href: '/dashboard/place',
-        btnText: '광고 시작하기'
-    },
-    {
-        title: '네이버 쇼핑',
-        subtitle: '광고',
-        description: '쇼핑 검색 결과 상위에 노출되세요. 실제 유저의 검색과 클릭으로 순위를 높여드립니다.',
-        icon: ShoppingCart,
-        color: '#2563EB',
-        href: '/dashboard/shopping',
-        btnText: '광고 시작하기'
-    },
-    {
-        title: '네이버 블로그',
-        subtitle: '광고',
-        description: '블로그 검색 결과 상위 노출을 위한 블로그 포스팅 및 최적화 서비스를 제공합니다.',
-        icon: FileText,
-        color: '#8B5CF6',
-        href: '/dashboard/blog',
-        btnText: '광고 시작하기'
-    },
-    {
-        title: '광고비',
-        subtitle: '환급',
-        description: '네이버/카카오 광고비를 절감하세요. 광고비 10% 환급 혜택을 누리세요.',
-        icon: DollarSign,
-        color: '#F59E0B',
-        href: '/dashboard/refund',
-        btnText: '환급 신청하기'
-    },
+// Mock Data for Charts
+const chartData = [
+    { name: '월', visits: 4000, clicks: 2400 },
+    { name: '화', visits: 3000, clicks: 1398 },
+    { name: '수', visits: 2000, clicks: 9800 },
+    { name: '목', visits: 2780, clicks: 3908 },
+    { name: '금', visits: 1890, clicks: 4800 },
+    { name: '토', visits: 2390, clicks: 3800 },
+    { name: '일', visits: 3490, clicks: 4300 },
 ];
 
-const successStories = [
-    {
-        image: '/api/placeholder/300/300',
-        name: '김OO 대표',
-        business: '카페 운영',
-        quote: '쇼핑 광고를 시작한 후 매출이 30% 증가했어요!'
-    },
-    {
-        image: '/api/placeholder/300/300',
-        name: '이OO 대표',
-        business: '의류 쇼핑몰',
-        quote: '플레이스 순위가 1페이지로 올라갔습니다.'
-    },
-    {
-        image: '/api/placeholder/300/300',
-        name: '박OO 대표',
-        business: '화장품 판매',
-        quote: '광고비 환급까지 받으니 일석이조네요!'
-    },
-];
+const containerVariants = {
+    hidden: { opacity: 0 },
+    visible: {
+        opacity: 1,
+        transition: {
+            staggerChildren: 0.1
+        }
+    }
+};
+
+const itemVariants = {
+    hidden: { y: 20, opacity: 0 },
+    visible: {
+        y: 0,
+        opacity: 1,
+        transition: { type: 'spring', stiffness: 100 }
+    }
+};
 
 export default function DashboardHome() {
+    const { data: session } = useSession();
+    const [greeting, setGreeting] = useState('');
+
+    useEffect(() => {
+        const hour = new Date().getHours();
+        if (hour < 12) setGreeting('좋은 아침입니다');
+        else if (hour < 18) setGreeting('즐거운 오후입니다');
+        else setGreeting('편안한 저녁되세요');
+    }, []);
+
     return (
         <DashboardLayout>
-            <div className={styles.container}>
-                {/* Hero Section */}
-                <section className={styles.hero}>
-                    <h1 className={styles.heroTitle}>
-                        대행사 없이도 <span className={styles.highlight}>쉽게</span> 마케팅을 시작하세요! 🚀
-                    </h1>
-                    <p className={styles.heroSubtitle}>
-                        마케팅 시작의 쉬움, 셀프마케팅
-                    </p>
-                </section>
-
-                {/* Services Grid */}
-                <section className={styles.services}>
-                    {services.map((service, idx) => {
-                        const Icon = service.icon;
-                        return (
-                            <div key={idx} className={styles.serviceCard}>
-                                <div
-                                    className={styles.serviceIcon}
-                                    style={{ backgroundColor: `${service.color}20`, color: service.color }}
-                                >
-                                    <Icon size={32} />
-                                </div>
-                                <div className={styles.serviceContent}>
-                                    <h3 className={styles.serviceTitle}>
-                                        {service.title} <span style={{ color: service.color }}>{service.subtitle}</span>
-                                    </h3>
-                                    <p className={styles.serviceDesc}>{service.description}</p>
-                                </div>
-                                <Link href={service.href} className={styles.serviceBtn} style={{ backgroundColor: service.color }}>
-                                    {service.btnText}
-                                </Link>
+            <motion.div
+                className={styles.dashboardGrid}
+                variants={containerVariants}
+                initial="hidden"
+                animate="visible"
+            >
+                {/* 1. Welcome Widget (Span 2) */}
+                <motion.div className={`${styles.card} ${styles.welcomeCard}`} variants={itemVariants}>
+                    <div className={styles.welcomeContent}>
+                        <div className={styles.welcomeBadge}>
+                            <Sparkles size={14} className={styles.sparkleIcon} />
+                            <span>Premium Self Marketing</span>
+                        </div>
+                        <h1 className={styles.welcomeTitle}>
+                            {greeting}, <br />
+                            <span className={styles.userName}>{session?.user?.name || '마케터'}님</span>
+                        </h1>
+                        <p className={styles.welcomeDesc}>오늘의 마케팅 성과를 확인하고 새로운 캠페인을 시작해보세요.</p>
+                        <div className={styles.statsRow}>
+                            <div className={styles.statItem}>
+                                <span className={styles.statLabel}>활성 광고</span>
+                                <span className={styles.statValue}>12<span className={styles.statUnit}>개</span></span>
                             </div>
-                        );
-                    })}
-                </section>
-
-                {/* Success Stories */}
-                <section className={styles.stories}>
-                    <div className={styles.storiesHeader}>
-                        <span className={styles.storiesLabel}>실제 성공 사례 📈</span>
-                        <h2 className={styles.storiesTitle}>
-                            셀프마케팅으로 성장한 고객들의 진짜 이야기
-                        </h2>
-                    </div>
-
-                    <div className={styles.storiesGrid}>
-                        {successStories.map((story, idx) => (
-                            <div key={idx} className={styles.storyCard}>
-                                <div className={styles.storyImage}>
-                                    <div className={styles.storyPlaceholder}>
-                                        <span>{story.name.charAt(0)}</span>
-                                    </div>
-                                </div>
-                                <div className={styles.storyContent}>
-                                    <h4 className={styles.storyName}>{story.name}</h4>
-                                    <p className={styles.storyBusiness}>{story.business}</p>
-                                    <p className={styles.storyQuote}>"{story.quote}"</p>
-                                </div>
+                            <div className={styles.statDivider} />
+                            <div className={styles.statItem}>
+                                <span className={styles.statLabel}>이번 달 효율</span>
+                                <span className={`${styles.statValue} ${styles.textSuccess}`}>+24%</span>
                             </div>
-                        ))}
+                        </div>
                     </div>
-                </section>
+                    <div className={styles.welcomeDecor}>
+                        <div className={styles.circle1} />
+                        <div className={styles.circle2} />
+                    </div>
+                </motion.div>
 
-                {/* Footer */}
-                <footer className={styles.footer}>
-                    <div className={styles.footerContent}>
-                        <p>셀프마케팅 | 사업자등록번호: 123-45-67890</p>
-                        <p>서울특별시 영등포구 여의대로 108</p>
-                        <p>통신판매업신고: 제2024-서울영등포-0000호</p>
+                {/* 2. Main Chart Widget (Span 2) */}
+                <motion.div className={`${styles.card} ${styles.chartCard}`} variants={itemVariants}>
+                    <div className={styles.cardHeader}>
+                        <h3 className={styles.cardTitle}>주간 퍼포먼스</h3>
+                        <div className={styles.cardAction}>
+                            <select className={styles.select}>
+                                <option>이번 주</option>
+                                <option>지난 주</option>
+                            </select>
+                        </div>
                     </div>
-                </footer>
-            </div>
+                    <div className={styles.chartContainer}>
+                        <ResponsiveContainer width="100%" height="100%">
+                            <AreaChart data={chartData}> // AreaChart 사용
+                                <defs>
+                                    <linearGradient id="colorVisits" x1="0" y1="0" x2="0" y2="1">
+                                        <stop offset="5%" stopColor="#8884d8" stopOpacity={0.8} />
+                                        <stop offset="95%" stopColor="#8884d8" stopOpacity={0} />
+                                    </linearGradient>
+                                    <linearGradient id="colorClicks" x1="0" y1="0" x2="0" y2="1">
+                                        <stop offset="5%" stopColor="#82ca9d" stopOpacity={0.8} />
+                                        <stop offset="95%" stopColor="#82ca9d" stopOpacity={0} />
+                                    </linearGradient>
+                                </defs>
+                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255,255,255,0.1)" />
+                                <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#94A3B8', fontSize: 12 }} />
+                                <Tooltip
+                                    contentStyle={{ backgroundColor: 'rgba(15, 23, 42, 0.9)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', color: '#fff' }}
+                                    itemStyle={{ color: '#fff' }}
+                                />
+                                <Area type="monotone" dataKey="visits" stroke="#8884d8" fillOpacity={1} fill="url(#colorVisits)" />
+                                <Area type="monotone" dataKey="clicks" stroke="#82ca9d" fillOpacity={1} fill="url(#colorClicks)" />
+                            </AreaChart>
+                        </ResponsiveContainer>
+                    </div>
+                </motion.div>
+
+                {/* 3. Service Cards (Grid) */}
+                <motion.div className={styles.serviceGrid} variants={itemVariants}>
+                    {/* Shopping */}
+                    <Link href="/dashboard/shopping" className={`${styles.miniCard} ${styles.cardShopping}`}>
+                        <div className={styles.miniIconBox} style={{ background: 'rgba(37, 99, 235, 0.2)', color: '#60A5FA' }}>
+                            <ShoppingCart size={20} />
+                        </div>
+                        <div className={styles.miniInfo}>
+                            <span className={styles.miniLabel}>네이버 쇼핑</span>
+                            <span className={styles.miniAction}>관리하기 <ArrowRight size={12} /></span>
+                        </div>
+                    </Link>
+
+                    {/* Place */}
+                    <Link href="/dashboard/place" className={`${styles.miniCard} ${styles.cardPlace}`}>
+                        <div className={styles.miniIconBox} style={{ background: 'rgba(16, 185, 129, 0.2)', color: '#34D399' }}>
+                            <MapPin size={20} />
+                        </div>
+                        <div className={styles.miniInfo}>
+                            <span className={styles.miniLabel}>플레이스</span>
+                            <span className={styles.miniAction}>관리하기 <ArrowRight size={12} /></span>
+                        </div>
+                    </Link>
+
+                    {/* Blog */}
+                    <Link href="/dashboard/blog" className={`${styles.miniCard} ${styles.cardBlog}`}>
+                        <div className={styles.miniIconBox} style={{ background: 'rgba(139, 92, 246, 0.2)', color: '#A78BFA' }}>
+                            <FileText size={20} />
+                        </div>
+                        <div className={styles.miniInfo}>
+                            <span className={styles.miniLabel}>블로그 배포</span>
+                            <span className={styles.miniAction}>관리하기 <ArrowRight size={12} /></span>
+                        </div>
+                    </Link>
+
+                    {/* Refund */}
+                    <Link href="/dashboard/refund" className={`${styles.miniCard} ${styles.cardRefund}`}>
+                        <div className={styles.miniIconBox} style={{ background: 'rgba(245, 158, 11, 0.2)', color: '#FBBF24' }}>
+                            <DollarSign size={20} />
+                        </div>
+                        <div className={styles.miniInfo}>
+                            <span className={styles.miniLabel}>광고비 환급</span>
+                            <span className={styles.miniAction}>신청하기 <ArrowRight size={12} /></span>
+                        </div>
+                    </Link>
+                </motion.div>
+
+                {/* 4. Stats Summary (Vertical) */}
+                <motion.div className={`${styles.card} ${styles.statsCard}`} variants={itemVariants}>
+                    <h3 className={styles.cardTitle}>실시간 인사이트</h3>
+                    <div className={styles.insightList}>
+                        <div className={styles.insightItem}>
+                            <div className={styles.insightIcon}><TrendingUp size={16} /></div>
+                            <div className={styles.insightContent}>
+                                <span className={styles.insightValue}>1,234</span>
+                                <span className={styles.insightLabel}>오늘의 유입</span>
+                            </div>
+                        </div>
+                        <div className={styles.insightItem}>
+                            <div className={styles.insightIcon}><MousePointer size={16} /></div>
+                            <div className={styles.insightContent}>
+                                <span className={styles.insightValue}>8.5%</span>
+                                <span className={styles.insightLabel}>평균 클릭률</span>
+                            </div>
+                        </div>
+                        <div className={styles.insightItem}>
+                            <div className={styles.insightIcon}><Users size={16} /></div>
+                            <div className={styles.insightContent}>
+                                <span className={styles.insightValue}>32</span>
+                                <span className={styles.insightLabel}>신규 구매</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div className={styles.tipBox}>
+                        <span className={styles.tipTitle}>💡 마케팅 팁</span>
+                        <p className={styles.tipText}>주말 오전 10시에 쇼핑 검색량이 가장 많습니다.</p>
+                    </div>
+                </motion.div>
+
+                {/* 5. Banner/Ad (Span 2) */}
+                <motion.div className={`${styles.card} ${styles.bannerCard}`} variants={itemVariants}>
+                    <div className={styles.bannerContent}>
+                        <h3>AI가 분석하는<br />우리 가게 SEO 점수는?</h3>
+                        <Link href="/dashboard/seo" className={styles.bannerBtn}>
+                            무료 분석하기
+                        </Link>
+                    </div>
+                    <div className={styles.bannerImage}>
+                        {/* Placeholder for 3D or Illustration */}
+                        <div className={styles.glowCircle} />
+                    </div>
+                </motion.div>
+
+            </motion.div>
         </DashboardLayout>
     );
 }

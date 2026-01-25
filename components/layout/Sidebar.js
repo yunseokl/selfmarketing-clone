@@ -119,7 +119,7 @@ export default function Sidebar() {
                                 <path d="M10 16L14 20L22 12" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
                             </svg>
                         </div>
-                        <span className={styles.logoText}>셀프마케팅</span>
+                        <span className={styles.logoText}>혼잘마</span>
                     </Link>
                 </div>
 
