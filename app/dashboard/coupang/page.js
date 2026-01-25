@@ -1,7 +1,7 @@
 'use client';
 
 import DashboardLayout from '@/components/layout/DashboardLayout';
-import styles from '../ranking/shopping/page.module.css';
+import styles from '@/styles/glass-feature.module.css';
 import { Package, ExternalLink } from 'lucide-react';
 
 export default function CoupangPage() {

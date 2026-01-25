@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import DashboardLayout from '@/components/layout/DashboardLayout';
-import styles from '../shopping/page.module.css';
+import styles from './page.module.css';
 import { Users, DollarSign, MapPin, Search, RefreshCw, Plus, Building2 } from 'lucide-react';
 
 const infoCards = [

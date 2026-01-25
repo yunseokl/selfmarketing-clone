@@ -3,7 +3,6 @@
 import { useState } from 'react';
 import { signIn } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
-import Link from 'next/link';
 import styles from './page.module.css';
 import { Mail, Lock, User, Eye, EyeOff, MessageCircle } from 'lucide-react';
 
@@ -75,13 +74,19 @@ export default function LoginPage() {
                 {/* Logo */}
                 <div className={styles.logo}>
                     <div className={styles.logoIcon}>
-                        <svg width="48" height="48" viewBox="0 0 32 32" fill="none">
-                            <rect width="32" height="32" rx="8" fill="#2563EB" />
+                        <svg width="56" height="56" viewBox="0 0 32 32" fill="none">
+                            <defs>
+                                <linearGradient id="gradient" x1="0" y1="0" x2="32" y2="32">
+                                    <stop offset="0%" stopColor="#6D28D9" />
+                                    <stop offset="100%" stopColor="#7C3AED" />
+                                </linearGradient>
+                            </defs>
+                            <rect width="32" height="32" rx="10" fill="url(#gradient)" />
                             <path d="M10 16L14 20L22 12" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
                         </svg>
                     </div>
-                    <h1 className={styles.logoText}>셀프마케팅</h1>
-                    <p className={styles.logoSubtext}>대행사 없이 누구나 쉽게 마케팅을</p>
+                    <h1 className={styles.logoText}>혼잘마</h1>
+                    <p className={styles.logoSubtext}>Premium Self Marketing Platform</p>
                 </div>
 
                 {/* Tabs */}

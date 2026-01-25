@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import DashboardLayout from '@/components/layout/DashboardLayout';
-import styles from '../shopping/page.module.css';
+import styles from './page.module.css';
 import { TrendingUp, Plus, MapPin } from 'lucide-react';
 
 export default function PlaceRankingPage() {

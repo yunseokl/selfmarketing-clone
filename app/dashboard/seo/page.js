@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import DashboardLayout from '@/components/layout/DashboardLayout';
-import styles from '../ranking/shopping/page.module.css';
+import styles from '@/styles/glass-feature.module.css';
 import { Search, Plus, BarChart2 } from 'lucide-react';
 
 export default function SeoPage() {
