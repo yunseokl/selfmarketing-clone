@@ -4,10 +4,10 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "dotenv -- prisma generate && next build",
+    "build": "prisma generate && prisma db push && next build",
     "start": "next start",
     "lint": "next lint",
-    "postinstall": "dotenv -- prisma generate",
+    "postinstall": "prisma generate",
     "db:push": "dotenv -- prisma db push",
     "db:generate": "dotenv -- prisma generate"
   },
