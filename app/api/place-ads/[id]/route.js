@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import prisma from '@/lib/prisma';
-import { updateShoppingAdSchema } from '@/lib/validations/shopping';
+import { updatePlaceAdSchema } from '@/lib/validations/place';
 
 // GET - 특정 광고 조회
 export async function GET(request, { params }) {
@@ -21,7 +21,7 @@ export async function GET(request, { params }) {
             return NextResponse.json({ error: '사용자를 찾을 수 없습니다.' }, { status: 404 });
         }
 
-        const ad = await prisma.shoppingAd.findUnique({
+        const ad = await prisma.placeAd.findUnique({
             where: { id: params.id }
         });
 
@@ -36,7 +36,7 @@ export async function GET(request, { params }) {
 
         return NextResponse.json({ ad });
     } catch (error) {
-        console.error('Error fetching shopping ad:', error);
+        console.error('Error fetching place ad:', error);
         return NextResponse.json({ error: '광고 조회 중 오류가 발생했습니다.' }, { status: 500 });
     }
 }
@@ -58,7 +58,7 @@ export async function PUT(request, { params }) {
             return NextResponse.json({ error: '사용자를 찾을 수 없습니다.' }, { status: 404 });
         }
 
-        const existingAd = await prisma.shoppingAd.findUnique({
+        const existingAd = await prisma.placeAd.findUnique({
             where: { id: params.id }
         });
 
@@ -74,13 +74,13 @@ export async function PUT(request, { params }) {
         const body = await request.json();
 
         // Zod 검증
-        const validationResult = updateShoppingAdSchema.safeParse(body);
+        const validationResult = updatePlaceAdSchema.safeParse(body);
         if (!validationResult.success) {
             const errors = validationResult.error.errors.map(e => e.message).join(', ');
             return NextResponse.json({ error: errors }, { status: 400 });
         }
 
-        const ad = await prisma.shoppingAd.update({
+        const ad = await prisma.placeAd.update({
             where: { id: params.id },
             data: validationResult.data
         });
@@ -90,7 +90,7 @@ export async function PUT(request, { params }) {
             ad
         });
     } catch (error) {
-        console.error('Error updating shopping ad:', error);
+        console.error('Error updating place ad:', error);
         return NextResponse.json({ error: '광고 수정 중 오류가 발생했습니다.' }, { status: 500 });
     }
 }
@@ -112,7 +112,7 @@ export async function DELETE(request, { params }) {
             return NextResponse.json({ error: '사용자를 찾을 수 없습니다.' }, { status: 404 });
         }
 
-        const ad = await prisma.shoppingAd.findUnique({
+        const ad = await prisma.placeAd.findUnique({
             where: { id: params.id }
         });
 
@@ -138,7 +138,7 @@ export async function DELETE(request, { params }) {
 
         // Update ad status and refund user in transaction
         await prisma.$transaction([
-            prisma.shoppingAd.update({
+            prisma.placeAd.update({
                 where: { id: params.id },
                 data: { status: 'refunded' }
             }),
@@ -153,7 +153,7 @@ export async function DELETE(request, { params }) {
             refundAmount
         });
     } catch (error) {
-        console.error('Error deleting shopping ad:', error);
+        console.error('Error deleting place ad:', error);
         return NextResponse.json({ error: '광고 삭제 중 오류가 발생했습니다.' }, { status: 500 });
     }
 }

@@ -2,9 +2,9 @@ import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import prisma from '@/lib/prisma';
-import { createShoppingAdSchema } from '@/lib/validations/shopping';
+import { createPlaceAdSchema } from '@/lib/validations/place';
 
-// GET - 사용자의 쇼핑 광고 목록 조회
+// GET - 사용자의 플레이스 광고 목록 조회
 export async function GET(request) {
     try {
         const session = await getServerSession(authOptions);
@@ -29,19 +29,19 @@ export async function GET(request) {
             where.status = status;
         }
 
-        const ads = await prisma.shoppingAd.findMany({
+        const ads = await prisma.placeAd.findMany({
             where,
             orderBy: { createdAt: 'desc' }
         });
 
         return NextResponse.json({ ads });
     } catch (error) {
-        console.error('Error fetching shopping ads:', error);
+        console.error('Error fetching place ads:', error);
         return NextResponse.json({ error: '광고 조회 중 오류가 발생했습니다.' }, { status: 500 });
     }
 }
 
-// POST - 새 쇼핑 광고 생성
+// POST - 새 플레이스 광고 생성
 export async function POST(request) {
     try {
         const session = await getServerSession(authOptions);
@@ -61,16 +61,17 @@ export async function POST(request) {
         const body = await request.json();
 
         // Zod 검증
-        const validationResult = createShoppingAdSchema.safeParse(body);
+        const validationResult = createPlaceAdSchema.safeParse(body);
         if (!validationResult.success) {
             const errors = validationResult.error.errors.map(e => e.message).join(', ');
             return NextResponse.json({ error: errors }, { status: 400 });
         }
 
-        const { productUrl, productName, productImage, keyword, serviceType, pricePerClick, dailyGoal, duration } = validationResult.data;
+        const { placeUrl, placeName, placeImage, keyword, serviceType, pricePerClick, dailyGoal, duration } = validationResult.data;
 
         // Calculate total cost
-        const totalCost = pricePerClick * dailyGoal * duration;
+        const finalPricePerClick = pricePerClick || 30;
+        const totalCost = finalPricePerClick * dailyGoal * duration;
 
         // Check user balance
         if (user.balance < totalCost) {
@@ -84,15 +85,15 @@ export async function POST(request) {
 
         // Create ad and update user balance in transaction
         const [ad] = await prisma.$transaction([
-            prisma.shoppingAd.create({
+            prisma.placeAd.create({
                 data: {
                     userId: user.id,
-                    productUrl,
-                    productName: productName || '상품명',
-                    productImage,
+                    placeUrl,
+                    placeName,
+                    placeImage,
                     keyword,
                     serviceType: serviceType || 'selma30',
-                    pricePerClick: pricePerClick || 30,
+                    pricePerClick: finalPricePerClick,
                     dailyGoal,
                     duration,
                     totalCost,
@@ -112,7 +113,7 @@ export async function POST(request) {
             ad
         });
     } catch (error) {
-        console.error('Error creating shopping ad:', error);
+        console.error('Error creating place ad:', error);
         return NextResponse.json({ error: '광고 생성 중 오류가 발생했습니다.' }, { status: 500 });
     }
 }

@@ -1,11 +1,12 @@
 import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
 import prisma from '@/lib/prisma';
 
 // GET - 순위 추적 목록 조회
 export async function GET(request) {
     try {
-        const session = await getServerSession();
+        const session = await getServerSession(authOptions);
 
         if (!session?.user?.email) {
             return NextResponse.json({ error: '로그인이 필요합니다.' }, { status: 401 });
@@ -42,7 +43,7 @@ export async function GET(request) {
 // POST - 순위 추적 등록
 export async function POST(request) {
     try {
-        const session = await getServerSession();
+        const session = await getServerSession(authOptions);
 
         if (!session?.user?.email) {
             return NextResponse.json({ error: '로그인이 필요합니다.' }, { status: 401 });
@@ -96,7 +97,7 @@ export async function POST(request) {
 // DELETE - 순위 추적 삭제
 export async function DELETE(request) {
     try {
-        const session = await getServerSession();
+        const session = await getServerSession(authOptions);
 
         if (!session?.user?.email) {
             return NextResponse.json({ error: '로그인이 필요합니다.' }, { status: 401 });

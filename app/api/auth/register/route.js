@@ -1,17 +1,20 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import bcrypt from 'bcryptjs';
+import { registerSchema } from '@/lib/validations/auth';
 
 export async function POST(request) {
     try {
-        const { email, password, name } = await request.json();
+        const body = await request.json();
 
-        if (!email || !password) {
-            return NextResponse.json(
-                { error: '이메일과 비밀번호를 입력해주세요.' },
-                { status: 400 }
-            );
+        // Zod 검증
+        const validationResult = registerSchema.safeParse(body);
+        if (!validationResult.success) {
+            const errors = validationResult.error.errors.map(e => e.message).join(', ');
+            return NextResponse.json({ error: errors }, { status: 400 });
         }
+
+        const { email, password, name } = validationResult.data;
 
         // Check if user already exists
         const existingUser = await prisma.user.findUnique({

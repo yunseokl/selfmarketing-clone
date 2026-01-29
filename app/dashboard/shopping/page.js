@@ -7,6 +7,7 @@ import DashboardLayout from '@/components/layout/DashboardLayout';
 import CreateAdModal from '@/components/shopping/CreateAdModal';
 import styles from './page.module.css';
 import { Users, DollarSign, Link2, Search, RefreshCw, Plus, Package, Trash2 } from 'lucide-react';
+import { toast } from 'sonner';
 
 const infoCards = [
     {
@@ -90,14 +91,14 @@ export default function ShoppingPage() {
             const res = await fetch(`/api/shopping-ads/${id}`, { method: 'DELETE' });
             const data = await res.json();
             if (res.ok) {
-                alert(data.message);
+                toast.success(data.message);
                 fetchAds();
             } else {
-                alert(data.error);
+                toast.error(data.error);
             }
         } catch (error) {
             console.error('Error deleting ad:', error);
-            alert('광고 삭제 중 오류가 발생했습니다.');
+            toast.error('광고 삭제 중 오류가 발생했습니다.');
         }
     };
 

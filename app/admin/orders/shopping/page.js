@@ -15,6 +15,7 @@ import {
     Clock,
     Package
 } from 'lucide-react';
+import { toast } from 'sonner';
 
 const statusOptions = [
     { id: 'all', label: '전체' },
@@ -96,7 +97,7 @@ export default function ShoppingOrdersPage() {
             }
         } catch (error) {
             console.error('Error downloading excel:', error);
-            alert('다운로드 중 오류가 발생했습니다.');
+            toast.error('다운로드 중 오류가 발생했습니다.');
         } finally {
             setDownloading(false);
         }

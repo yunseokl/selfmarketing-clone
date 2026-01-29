@@ -15,6 +15,7 @@ import {
     Clock,
     CheckCircle
 } from 'lucide-react';
+import { toast } from 'sonner';
 
 export default function AdminDashboard() {
     const { data: session, status } = useSession();
@@ -44,7 +45,7 @@ export default function AdminDashboard() {
             if (res.ok) {
                 const data = await res.json();
                 if (data.user?.role !== 'admin') {
-                    alert('관리자만 접근할 수 있습니다.');
+                    toast.error('관리자만 접근할 수 있습니다.');
                     router.push('/');
                     return;
                 }

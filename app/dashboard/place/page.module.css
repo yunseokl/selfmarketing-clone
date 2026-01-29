@@ -262,6 +262,116 @@
     font-weight: 600;
 }
 
+/* Spinning Animation */
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+.spinning {
+    animation: spin 1s linear infinite;
+}
+
+/* Ads List */
+.adsList {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.adCard {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px 20px;
+    background: rgba(15, 23, 42, 0.5);
+    border: 1px solid var(--glass-border);
+    border-radius: 12px;
+    transition: all 0.2s;
+}
+
+.adCard:hover {
+    background: rgba(255, 255, 255, 0.05);
+    border-color: rgba(255, 255, 255, 0.1);
+}
+
+.adInfo {
+    flex: 1;
+}
+
+.adName {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text-white);
+    margin-bottom: 4px;
+}
+
+.adKeyword {
+    font-size: 13px;
+    color: var(--primary-light);
+    margin-bottom: 4px;
+}
+
+.adMeta {
+    font-size: 12px;
+    color: var(--text-gray);
+    margin-bottom: 2px;
+}
+
+.adCost {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-white);
+}
+
+.adActions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.statusBadge {
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.statusBadge.active {
+    background: rgba(16, 185, 129, 0.2);
+    color: #10B981;
+}
+
+.statusBadge.refunded {
+    background: rgba(239, 68, 68, 0.2);
+    color: #EF4444;
+}
+
+.statusBadge.completed,
+.statusBadge.expired {
+    background: rgba(156, 163, 175, 0.2);
+    color: #9CA3AF;
+}
+
+.cancelBtn {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 6px 12px;
+    font-size: 12px;
+    font-weight: 500;
+    color: #EF4444;
+    background: rgba(239, 68, 68, 0.1);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    border-radius: 6px;
+    transition: all 0.2s;
+}
+
+.cancelBtn:hover {
+    background: rgba(239, 68, 68, 0.2);
+    border-color: rgba(239, 68, 68, 0.5);
+}
+
 /* Responsive */
 @media (max-width: 1024px) {
     .infoCards {

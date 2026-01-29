@@ -1,11 +1,12 @@
 import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
 import prisma from '@/lib/prisma';
 
 // GET - 사용자 정보 조회
 export async function GET() {
     try {
-        const session = await getServerSession();
+        const session = await getServerSession(authOptions);
 
         if (!session?.user?.email) {
             return NextResponse.json({ error: '로그인이 필요합니다.' }, { status: 401 });
@@ -46,7 +47,7 @@ export async function GET() {
 // PUT - 사용자 정보 수정
 export async function PUT(request) {
     try {
-        const session = await getServerSession();
+        const session = await getServerSession(authOptions);
 
         if (!session?.user?.email) {
             return NextResponse.json({ error: '로그인이 필요합니다.' }, { status: 401 });

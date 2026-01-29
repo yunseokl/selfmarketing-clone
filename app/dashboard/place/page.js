@@ -1,9 +1,10 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import styles from './page.module.css';
-import { Users, DollarSign, MapPin, Search, RefreshCw, Plus, Building2 } from 'lucide-react';
+import { Users, DollarSign, MapPin, Search, RefreshCw, Plus, Building2, X } from 'lucide-react';
+import { toast } from 'sonner';
 
 const infoCards = [
     {
@@ -26,17 +27,99 @@ const infoCards = [
     },
 ];
 
-const tabs = [
-    { id: 'active', label: '진행중', count: 0 },
-    { id: 'expired', label: '만료됨', count: 0 },
-    { id: 'refunded', label: '환불됨', count: 0 },
-    { id: 'all', label: '전체', count: 0 },
-];
-
 export default function PlacePage() {
     const [activeTab, setActiveTab] = useState('active');
     const [searchQuery, setSearchQuery] = useState('');
     const [ads, setAds] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [tabCounts, setTabCounts] = useState({
+        active: 0,
+        expired: 0,
+        refunded: 0,
+        all: 0,
+    });
+
+    const fetchAds = useCallback(async () => {
+        try {
+            setLoading(true);
+            const res = await fetch(`/api/place-ads?status=${activeTab}`);
+            if (res.ok) {
+                const data = await res.json();
+                setAds(data.ads || []);
+            } else {
+                toast.error('광고 목록을 불러오는데 실패했습니다.');
+            }
+        } catch (error) {
+            console.error('Error fetching ads:', error);
+            toast.error('광고 목록을 불러오는데 실패했습니다.');
+        } finally {
+            setLoading(false);
+        }
+    }, [activeTab]);
+
+    const fetchTabCounts = useCallback(async () => {
+        try {
+            const res = await fetch('/api/place-ads?status=all');
+            if (res.ok) {
+                const data = await res.json();
+                const allAds = data.ads || [];
+                setTabCounts({
+                    active: allAds.filter(ad => ad.status === 'active').length,
+                    expired: allAds.filter(ad => ad.status === 'expired' || ad.status === 'completed').length,
+                    refunded: allAds.filter(ad => ad.status === 'refunded').length,
+                    all: allAds.length,
+                });
+            }
+        } catch (error) {
+            console.error('Error fetching tab counts:', error);
+        }
+    }, []);
+
+    useEffect(() => {
+        fetchAds();
+    }, [fetchAds]);
+
+    useEffect(() => {
+        fetchTabCounts();
+    }, [fetchTabCounts]);
+
+    const handleRefresh = () => {
+        fetchAds();
+        fetchTabCounts();
+        toast.success('목록을 새로고침했습니다.');
+    };
+
+    const handleCancelAd = async (adId) => {
+        if (!confirm('정말 이 광고를 취소하시겠습니까? 남은 기간에 대한 환불이 진행됩니다.')) {
+            return;
+        }
+        try {
+            const res = await fetch(`/api/place-ads/${adId}`, { method: 'DELETE' });
+            const data = await res.json();
+            if (res.ok) {
+                toast.success(data.message);
+                fetchAds();
+                fetchTabCounts();
+            } else {
+                toast.error(data.error || '광고 취소에 실패했습니다.');
+            }
+        } catch (error) {
+            console.error('Error canceling ad:', error);
+            toast.error('광고 취소 중 오류가 발생했습니다.');
+        }
+    };
+
+    const filteredAds = ads.filter(ad =>
+        ad.placeName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        ad.keyword?.toLowerCase().includes(searchQuery.toLowerCase())
+    );
+
+    const tabs = [
+        { id: 'active', label: '진행중', count: tabCounts.active },
+        { id: 'expired', label: '만료됨', count: tabCounts.expired },
+        { id: 'refunded', label: '환불됨', count: tabCounts.refunded },
+        { id: 'all', label: '전체', count: tabCounts.all },
+    ];
 
     return (
         <DashboardLayout>
@@ -96,16 +179,56 @@ export default function PlacePage() {
                                 onChange={(e) => setSearchQuery(e.target.value)}
                             />
                         </div>
-                        <button className={styles.refreshBtn}>
+                        <button className={styles.refreshBtn} onClick={handleRefresh}>
                             <RefreshCw size={18} />
                         </button>
                     </div>
 
-                    <div className={styles.emptyState}>
-                        <Building2 size={48} className={styles.emptyIcon} />
-                        <h4>플레이스 광고가 없습니다.</h4>
-                        <p>새 광고를 만들어 시작해보세요.</p>
-                    </div>
+                    {loading ? (
+                        <div className={styles.emptyState}>
+                            <RefreshCw size={48} className={`${styles.emptyIcon} ${styles.spinning}`} />
+                            <h4>로딩 중...</h4>
+                        </div>
+                    ) : filteredAds.length === 0 ? (
+                        <div className={styles.emptyState}>
+                            <Building2 size={48} className={styles.emptyIcon} />
+                            <h4>플레이스 광고가 없습니다.</h4>
+                            <p>새 광고를 만들어 시작해보세요.</p>
+                        </div>
+                    ) : (
+                        <div className={styles.adsList}>
+                            {filteredAds.map((ad) => (
+                                <div key={ad.id} className={styles.adCard}>
+                                    <div className={styles.adInfo}>
+                                        <h4 className={styles.adName}>{ad.placeName}</h4>
+                                        <p className={styles.adKeyword}>키워드: {ad.keyword}</p>
+                                        <p className={styles.adMeta}>
+                                            일일 목표: {ad.dailyGoal}회 · 기간: {ad.duration}일
+                                        </p>
+                                        <p className={styles.adCost}>
+                                            총 비용: {ad.totalCost?.toLocaleString()}원
+                                        </p>
+                                    </div>
+                                    <div className={styles.adActions}>
+                                        <span className={`${styles.statusBadge} ${styles[ad.status]}`}>
+                                            {ad.status === 'active' ? '진행중' :
+                                             ad.status === 'refunded' ? '환불됨' :
+                                             ad.status === 'completed' ? '완료' : '만료됨'}
+                                        </span>
+                                        {ad.status === 'active' && (
+                                            <button
+                                                className={styles.cancelBtn}
+                                                onClick={() => handleCancelAd(ad.id)}
+                                            >
+                                                <X size={16} />
+                                                취소
+                                            </button>
+                                        )}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
 
                     <div className={styles.pagination}>
                         <button className={styles.pageBtn} disabled>◀</button>

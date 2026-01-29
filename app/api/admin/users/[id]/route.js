@@ -1,26 +1,32 @@
 import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
+import { requireAdmin } from '@/lib/auth-helpers';
 import prisma from '@/lib/prisma';
+import { updateUserSchema } from '@/lib/validations/admin';
 
 // PUT - 회원 정보 수정 (잔액 등)
 export async function PUT(request, { params }) {
     try {
-        const session = await getServerSession();
+        const session = await getServerSession(authOptions);
+        const adminCheck = await requireAdmin(session);
 
-        if (!session?.user?.email) {
-            return NextResponse.json({ error: '로그인이 필요합니다.' }, { status: 401 });
+        if (adminCheck.error) {
+            return NextResponse.json({ error: adminCheck.error }, { status: adminCheck.status });
         }
 
         const body = await request.json();
-        const { balance, role } = body;
 
-        const updateData = {};
-        if (balance !== undefined) updateData.balance = balance;
-        if (role !== undefined) updateData.role = role;
+        // Zod 검증
+        const validationResult = updateUserSchema.safeParse(body);
+        if (!validationResult.success) {
+            const errors = validationResult.error.errors.map(e => e.message).join(', ');
+            return NextResponse.json({ error: errors }, { status: 400 });
+        }
 
         const user = await prisma.user.update({
             where: { id: params.id },
-            data: updateData,
+            data: validationResult.data,
             select: {
                 id: true,
                 email: true,
