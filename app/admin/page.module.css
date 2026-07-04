@@ -112,6 +112,7 @@
 }
 
 .actionCard {
+    position: relative;
     background-color: var(--bg-white);
     border-radius: var(--border-radius);
     box-shadow: var(--shadow-sm);
@@ -119,6 +120,23 @@
     text-align: center;
     transition: all var(--transition-normal);
     border: 2px solid transparent;
+}
+
+.cardBadge {
+    position: absolute;
+    top: 16px;
+    right: 16px;
+    min-width: 22px;
+    height: 22px;
+    padding: 0 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: #DC2626;
+    color: var(--text-white);
+    border-radius: 11px;
+    font-size: 12px;
+    font-weight: 700;
 }
 
 .actionCard:hover {

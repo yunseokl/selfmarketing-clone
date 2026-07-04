@@ -3,6 +3,10 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { requireAdmin } from '@/lib/auth-helpers';
 import prisma from '@/lib/prisma';
+import { exportOrdersSchema } from '@/lib/validations/export';
+
+// 로그인 세션/쿠키를 읽는 API라 빌드 때 정적으로 고정하지 않습니다.
+export const dynamic = 'force-dynamic';
 
 // POST - 쇼핑 광고 주문 엑셀(CSV) 다운로드
 export async function POST(request) {
@@ -15,7 +19,11 @@ export async function POST(request) {
         }
 
         const body = await request.json();
-        const { orderIds } = body;
+        const validation = exportOrdersSchema.safeParse(body);
+        if (!validation.success) {
+            return NextResponse.json({ error: validation.error.flatten().fieldErrors }, { status: 400 });
+        }
+        const { orderIds } = validation.data;
 
         // 선택된 주문들 조회 (회원 정보 포함)
         const orders = await prisma.shoppingAd.findMany({

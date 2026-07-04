@@ -2,6 +2,9 @@ import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import bcrypt from 'bcryptjs';
 import { registerSchema } from '@/lib/validations/auth';
+import { createNotification } from '@/lib/notify';
+
+const SIGNUP_BONUS = 10000; // 신규가입 축하 캐시
 
 export async function POST(request) {
     try {
@@ -31,14 +34,37 @@ export async function POST(request) {
         // Hash password
         const hashedPassword = await bcrypt.hash(password, 12);
 
-        // Create user
-        const user = await prisma.user.create({
-            data: {
-                email,
-                password: hashedPassword,
-                name: name || email.split('@')[0],
-                balance: 10000, // Initial balance for testing
-            }
+        // Create user and log the signup bonus as a cash transaction atomically
+        const user = await prisma.$transaction(async (tx) => {
+            const createdUser = await tx.user.create({
+                data: {
+                    email,
+                    password: hashedPassword,
+                    name: name || email.split('@')[0],
+                    balance: SIGNUP_BONUS,
+                }
+            });
+
+            await tx.cashTransaction.create({
+                data: {
+                    userId: createdUser.id,
+                    type: 'reward',
+                    amount: SIGNUP_BONUS,
+                    balanceAfter: createdUser.balance,
+                    status: 'completed',
+                    method: 'system',
+                    description: '신규가입 축하 캐시',
+                }
+            });
+
+            return createdUser;
+        });
+
+        await createNotification(user.id, {
+            type: 'cash',
+            title: '가입 축하 캐시 10,000원이 지급되었습니다',
+            message: '첫 캠페인에 바로 사용할 수 있어요.',
+            link: '/dashboard/charge',
         });
 
         return NextResponse.json({

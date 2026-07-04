@@ -19,6 +19,11 @@ import {
     MessageCircle,
     Menu,
     X,
+    Target,
+    Megaphone,
+    LifeBuoy,
+    Wallet,
+    ShieldCheck,
 } from 'lucide-react';
 import styles from './Sidebar.module.css';
 
@@ -32,16 +37,12 @@ const menuItems = [
         ]
     },
     {
-        category: '순위 추적',
+        category: '분석 도구',
         badge: '무료 사용',
         items: [
+            { name: '키워드 분석', href: '/dashboard/keyword', icon: Target, badge: 'NEW' },
             { name: '플레이스 순위추적', href: '/dashboard/ranking/place', icon: TrendingUp },
             { name: '쇼핑 순위추적', href: '/dashboard/ranking/shopping', icon: BarChart3 },
-        ]
-    },
-    {
-        category: 'SEO 분석',
-        items: [
             { name: '쇼핑 SEO 분석', href: '/dashboard/seo', icon: Search },
         ]
     },
@@ -61,7 +62,14 @@ const menuItems = [
     {
         category: 'AI 부가서비스',
         items: [
-            { name: 'AI 이미지 생성', href: '/dashboard/ai', icon: Image },
+            { name: 'AI 콘텐츠 스튜디오', href: '/dashboard/ai', icon: Image },
+        ]
+    },
+    {
+        category: '고객 지원',
+        items: [
+            { name: '공지사항', href: '/dashboard/notice', icon: Megaphone },
+            { name: '고객센터', href: '/dashboard/support', icon: LifeBuoy },
         ]
     },
 ];
@@ -76,7 +84,13 @@ export default function Sidebar() {
         if (session?.user) {
             fetchUserInfo();
         }
-    }, [session]);
+        // 결제/충전 등 잔액 변동 시 각 페이지가 발행하는 이벤트로 즉시 갱신
+        const refresh = () => {
+            if (session?.user) fetchUserInfo();
+        };
+        window.addEventListener('balance-refresh', refresh);
+        return () => window.removeEventListener('balance-refresh', refresh);
+    }, [session, pathname]);
 
     const fetchUserInfo = async () => {
         try {
@@ -175,7 +189,17 @@ export default function Sidebar() {
                                     <span className={styles.balanceAmount}>
                                         {userInfo?.balance?.toLocaleString() || 0}원
                                     </span>
+                                    <Link href="/dashboard/charge" className={styles.chargeBtn}>
+                                        <Wallet size={13} />
+                                        충전
+                                    </Link>
                                 </div>
+                                {userInfo?.role === 'admin' && (
+                                    <Link href="/admin" className={styles.adminBtn}>
+                                        <ShieldCheck size={16} />
+                                        관리자 콘솔
+                                    </Link>
+                                )}
                                 <div className={styles.userActions}>
                                     <Link href="/dashboard/profile" className={styles.userBtn}>
                                         <User size={16} />
@@ -194,11 +218,11 @@ export default function Sidebar() {
                         </Link>
                     )}
 
-                    {/* Kakao Button */}
-                    <button className={styles.kakaoBtn}>
+                    {/* 1:1 문의 바로가기 */}
+                    <Link href="/dashboard/support" className={styles.kakaoBtn}>
                         <MessageCircle size={20} />
-                        카카오톡 문의
-                    </button>
+                        1:1 문의하기
+                    </Link>
                 </div>
             </aside>
         </>

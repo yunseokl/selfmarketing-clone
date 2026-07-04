@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -25,15 +25,7 @@ export default function UsersPage() {
     const [editingUser, setEditingUser] = useState(null);
     const [editBalance, setEditBalance] = useState(0);
 
-    useEffect(() => {
-        if (status === 'unauthenticated') {
-            router.push('/login');
-        } else if (status === 'authenticated') {
-            fetchUsers();
-        }
-    }, [status]);
-
-    const fetchUsers = async () => {
+    const fetchUsers = useCallback(async () => {
         try {
             setLoading(true);
             const res = await fetch('/api/admin/users');
@@ -46,7 +38,15 @@ export default function UsersPage() {
         } finally {
             setLoading(false);
         }
-    };
+    }, []);
+
+    useEffect(() => {
+        if (status === 'unauthenticated') {
+            router.push('/login');
+        } else if (status === 'authenticated') {
+            fetchUsers();
+        }
+    }, [fetchUsers, router, status]);
 
     const handleEditBalance = (user) => {
         setEditingUser(user.id);

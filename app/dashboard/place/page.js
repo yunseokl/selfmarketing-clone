@@ -1,10 +1,13 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import DashboardLayout from '@/components/layout/DashboardLayout';
+import CreatePlaceAdModal from '@/components/place/CreatePlaceAdModal';
 import styles from './page.module.css';
 import { Users, DollarSign, MapPin, Search, RefreshCw, Plus, Building2, X } from 'lucide-react';
 import { toast } from 'sonner';
+
+const PAGE_SIZE = 10;
 
 const infoCards = [
     {
@@ -32,6 +35,8 @@ export default function PlacePage() {
     const [searchQuery, setSearchQuery] = useState('');
     const [ads, setAds] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [currentPage, setCurrentPage] = useState(1);
+    const [isModalOpen, setIsModalOpen] = useState(false);
     const [tabCounts, setTabCounts] = useState({
         active: 0,
         expired: 0,
@@ -98,6 +103,7 @@ export default function PlacePage() {
             const data = await res.json();
             if (res.ok) {
                 toast.success(data.message);
+                window.dispatchEvent(new Event('balance-refresh'));
                 fetchAds();
                 fetchTabCounts();
             } else {
@@ -109,10 +115,27 @@ export default function PlacePage() {
         }
     };
 
-    const filteredAds = ads.filter(ad =>
+    const filteredAds = useMemo(() => ads.filter(ad =>
         ad.placeName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
         ad.keyword?.toLowerCase().includes(searchQuery.toLowerCase())
-    );
+    ), [ads, searchQuery]);
+
+    const stats = useMemo(() => {
+        const active = ads.filter(ad => ad.status === 'active').length;
+        const totalGoal = ads.reduce((sum, ad) => sum + (ad.dailyGoal || 0), 0);
+        const ranked = ads.filter(ad => typeof ad.currentRank === 'number');
+        const avgRank = ranked.length
+            ? Math.round(ranked.reduce((sum, ad) => sum + ad.currentRank, 0) / ranked.length)
+            : null;
+        return { active, totalGoal, avgRank };
+    }, [ads]);
+
+    const totalPages = Math.max(1, Math.ceil(filteredAds.length / PAGE_SIZE));
+    const pagedAds = filteredAds.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [activeTab, searchQuery]);
 
     const tabs = [
         { id: 'active', label: '진행중', count: tabCounts.active },
@@ -130,7 +153,7 @@ export default function PlacePage() {
                         <h1 className={styles.title}>플레이스 광고</h1>
                         <p className={styles.subtitle}>지역 검색에서 상위 노출되어 더 많은 고객을 만나세요</p>
                     </div>
-                    <button className={styles.createBtn}>
+                    <button className={styles.createBtn} onClick={() => setIsModalOpen(true)}>
                         <Plus size={20} />
                         광고 시작하기
                     </button>
@@ -155,6 +178,22 @@ export default function PlacePage() {
                     })}
                 </div>
 
+                {/* Summary Stats */}
+                <div className={styles.statsBar}>
+                    <div className={styles.statCell}>
+                        <span className={styles.statLabel}>활성 광고</span>
+                        <strong className={styles.statValue}>{stats.active}개</strong>
+                    </div>
+                    <div className={styles.statCell}>
+                        <span className={styles.statLabel}>총 일 목표 유입</span>
+                        <strong className={styles.statValue}>{stats.totalGoal.toLocaleString()}회</strong>
+                    </div>
+                    <div className={styles.statCell}>
+                        <span className={styles.statLabel}>평균 순위</span>
+                        <strong className={styles.statValue}>{stats.avgRank ? `${stats.avgRank}위` : '-'}</strong>
+                    </div>
+                </div>
+
                 {/* Management Section */}
                 <div className={styles.management}>
                     <div className={styles.tabs}>
@@ -165,6 +204,7 @@ export default function PlacePage() {
                                 onClick={() => setActiveTab(tab.id)}
                             >
                                 {tab.label}
+                                <span className={styles.tabCount}>{tab.count}</span>
                             </button>
                         ))}
                     </div>
@@ -197,7 +237,7 @@ export default function PlacePage() {
                         </div>
                     ) : (
                         <div className={styles.adsList}>
-                            {filteredAds.map((ad) => (
+                            {pagedAds.map((ad) => (
                                 <div key={ad.id} className={styles.adCard}>
                                     <div className={styles.adInfo}>
                                         <h4 className={styles.adName}>{ad.placeName}</h4>
@@ -210,6 +250,11 @@ export default function PlacePage() {
                                         </p>
                                     </div>
                                     <div className={styles.adActions}>
+                                        {typeof ad.currentRank === 'number' && (
+                                            <span className={`${styles.rankBadge} ${ad.currentRank <= 10 ? styles.rankBadgeTop : ''}`}>
+                                                {ad.currentRank}위
+                                            </span>
+                                        )}
                                         <span className={`${styles.statusBadge} ${styles[ad.status]}`}>
                                             {ad.status === 'active' ? '진행중' :
                                              ad.status === 'refunded' ? '환불됨' :
@@ -230,13 +275,45 @@ export default function PlacePage() {
                         </div>
                     )}
 
-                    <div className={styles.pagination}>
-                        <button className={styles.pageBtn} disabled>◀</button>
-                        <span className={styles.pageNum}>1</span>
-                        <button className={styles.pageBtn} disabled>▶</button>
-                    </div>
+                    {filteredAds.length > 0 && (
+                        <div className={styles.pagination}>
+                            <button
+                                className={styles.pageBtn}
+                                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                                disabled={currentPage === 1}
+                            >
+                                ◀
+                            </button>
+                            {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
+                                <button
+                                    key={page}
+                                    className={page === currentPage ? styles.pageNum : styles.pageBtn}
+                                    onClick={() => setCurrentPage(page)}
+                                >
+                                    {page}
+                                </button>
+                            ))}
+                            <button
+                                className={styles.pageBtn}
+                                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                                disabled={currentPage === totalPages}
+                            >
+                                ▶
+                            </button>
+                        </div>
+                    )}
                 </div>
             </div>
+
+            <CreatePlaceAdModal
+                isOpen={isModalOpen}
+                onClose={() => setIsModalOpen(false)}
+                onSuccess={() => {
+                    setIsModalOpen(false);
+                    fetchAds();
+                    fetchTabCounts();
+                }}
+            />
         </DashboardLayout>
     );
 }

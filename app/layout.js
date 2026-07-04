@@ -8,7 +8,7 @@ export const metadata = {
     },
     description: '프리미엄 셀프 마케팅 플랫폼, 혼잘마. 쇼핑, 플레이스, SEO까지 한 번에 관리하세요.',
     icons: {
-        icon: '/favicon.ico',
+        icon: '/favicon.svg',
     },
 };
 

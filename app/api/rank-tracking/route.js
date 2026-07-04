@@ -2,28 +2,101 @@ import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import prisma from '@/lib/prisma';
+import { resolveTrackedRank, hasNaverKeys } from '@/lib/naver';
+import { createNotification } from '@/lib/notify';
+import { createRankTrackingSchema, refreshRankTrackingSchema } from '@/lib/validations/rank-tracking';
 
-// GET - 순위 추적 목록 조회
+// 로그인 세션/쿠키를 읽는 API라 빌드 때 정적으로 고정하지 않습니다.
+export const dynamic = 'force-dynamic';
+
+// 사용자당 순위추적 등록 한도(타입별)
+const MAX_TRACKINGS = 10;
+// 히스토리 보관 개수(약 3개월치 일별 스냅샷)
+const MAX_HISTORY = 90;
+// 순위가 이 계단 이상 변동하면 알림을 생성합니다.
+const NOTIFY_THRESHOLD = 5;
+
+async function getCurrentUser() {
+    const session = await getServerSession(authOptions);
+
+    if (!session?.user?.email) {
+        return { error: '로그인이 필요합니다.', status: 401 };
+    }
+
+    const user = await prisma.user.findUnique({
+        where: { email: session.user.email }
+    });
+
+    if (!user) {
+        return { error: '사용자를 찾을 수 없습니다.', status: 404 };
+    }
+
+    return { user };
+}
+
+// KST 기준 YYYY-MM-DD — 히스토리 스냅샷의 하루 단위 키
+function kstDateKey(date = new Date()) {
+    const kst = new Date(date.getTime() + 9 * 60 * 60 * 1000);
+    return kst.toISOString().slice(0, 10);
+}
+
+function parseHistory(rankHistory) {
+    try {
+        const parsed = rankHistory ? JSON.parse(rankHistory) : [];
+        return Array.isArray(parsed) ? parsed : [];
+    } catch {
+        return [];
+    }
+}
+
+// 이 요청 시점에 재조회하지 않은 항목의 출처 추정 — 쇼핑+API키가 있어야 실순위(naver)입니다.
+function sourceFor(tracking) {
+    return tracking.type === 'shopping' && hasNaverKeys() ? 'naver' : 'estimate';
+}
+
+// 하루가 지난 항목을 재조회해 히스토리에 하루치 스냅샷을 append 합니다.
+// 순위가 크게 바뀌면 알림을 남겨, 접속만 해도 추이가 쌓이도록 합니다.
+async function applyDailyUpdate(tracking, today) {
+    const resolved = await resolveTrackedRank(tracking);
+    const newRank = resolved.rank;
+    const prevRank = tracking.currentRank ?? null;
+    const history = parseHistory(tracking.rankHistory);
+    const nextHistory = [...history, { date: today, rank: newRank }].slice(-MAX_HISTORY);
+
+    const updated = await prisma.rankTracking.update({
+        where: { id: tracking.id },
+        data: {
+            previousRank: prevRank,
+            currentRank: newRank,
+            rankHistory: JSON.stringify(nextHistory),
+        }
+    });
+
+    if (prevRank != null && newRank != null && Math.abs(newRank - prevRank) >= NOTIFY_THRESHOLD) {
+        const rising = newRank < prevRank;
+        await createNotification(tracking.userId, {
+            type: 'rank',
+            title: `'${tracking.keyword}' 순위 ${rising ? '상승' : '하락'}! ${prevRank}위 → ${newRank}위`,
+            message: `${tracking.name}의 '${tracking.keyword}' 키워드 순위가 ${prevRank}위에서 ${newRank}위로 ${rising ? '올랐습니다.' : '내려갔습니다.'}`,
+            link: tracking.type === 'shopping' ? '/dashboard/ranking/shopping' : '/dashboard/ranking/place',
+        });
+    }
+
+    return { ...updated, source: resolved.source };
+}
+
+// GET - 순위 추적 목록 조회 (오늘 갱신 안 된 항목은 자동 재조회)
 export async function GET(request) {
     try {
-        const session = await getServerSession(authOptions);
-
-        if (!session?.user?.email) {
-            return NextResponse.json({ error: '로그인이 필요합니다.' }, { status: 401 });
-        }
-
-        const user = await prisma.user.findUnique({
-            where: { email: session.user.email }
-        });
-
-        if (!user) {
-            return NextResponse.json({ error: '사용자를 찾을 수 없습니다.' }, { status: 404 });
+        const userCheck = await getCurrentUser();
+        if (userCheck.error) {
+            return NextResponse.json({ error: userCheck.error }, { status: userCheck.status });
         }
 
         const { searchParams } = new URL(request.url);
         const type = searchParams.get('type'); // 'shopping' or 'place'
 
-        const where = { userId: user.id };
+        const where = { userId: userCheck.user.id };
         if (type) {
             where.type = type;
         }
@@ -33,60 +106,77 @@ export async function GET(request) {
             orderBy: { createdAt: 'desc' }
         });
 
-        return NextResponse.json({ trackings });
+        const today = kstDateKey();
+        const result = [];
+        for (const tracking of trackings) {
+            const history = parseHistory(tracking.rankHistory);
+            const last = history[history.length - 1];
+
+            if (last && last.date === today) {
+                // 오늘 이미 기록됨 — 그대로 반환
+                result.push({ ...tracking, source: sourceFor(tracking) });
+            } else {
+                result.push(await applyDailyUpdate(tracking, today));
+            }
+        }
+
+        return NextResponse.json({ trackings: result });
     } catch (error) {
         console.error('Error fetching rank trackings:', error);
         return NextResponse.json({ error: '순위 추적 조회 중 오류가 발생했습니다.' }, { status: 500 });
     }
 }
 
-// POST - 순위 추적 등록
+// POST - 순위 추적 등록 (등록 즉시 1회 순위 조회)
 export async function POST(request) {
     try {
-        const session = await getServerSession(authOptions);
-
-        if (!session?.user?.email) {
-            return NextResponse.json({ error: '로그인이 필요합니다.' }, { status: 401 });
-        }
-
-        const user = await prisma.user.findUnique({
-            where: { email: session.user.email }
-        });
-
-        if (!user) {
-            return NextResponse.json({ error: '사용자를 찾을 수 없습니다.' }, { status: 404 });
+        const userCheck = await getCurrentUser();
+        if (userCheck.error) {
+            return NextResponse.json({ error: userCheck.error }, { status: userCheck.status });
         }
 
         const body = await request.json();
-        const { type, url, name, image, keyword } = body;
+        const validation = createRankTrackingSchema.safeParse(body);
 
-        // Check limit (5 items per user per type)
-        const existingCount = await prisma.rankTracking.count({
-            where: { userId: user.id, type }
-        });
-
-        if (existingCount >= 5) {
-            return NextResponse.json({
-                error: `${type === 'shopping' ? '쇼핑' : '플레이스'} 순위 추적은 최대 5개까지 등록 가능합니다.`
-            }, { status: 400 });
+        if (!validation.success) {
+            return NextResponse.json({ error: validation.error.flatten().fieldErrors }, { status: 400 });
         }
 
-        // Create tracking
-        const tracking = await prisma.rankTracking.create({
+        const { type, url, name, image, keyword } = validation.data;
+
+        const existingCount = await prisma.rankTracking.count({
+            where: { userId: userCheck.user.id, type }
+        });
+
+        if (existingCount >= MAX_TRACKINGS) {
+            return NextResponse.json({ error: '최대 10개까지 추적할 수 있습니다.' }, { status: 400 });
+        }
+
+        const created = await prisma.rankTracking.create({
             data: {
-                userId: user.id,
+                userId: userCheck.user.id,
                 type,
                 url,
                 name: name || url,
-                image,
+                image: image || null,
                 keyword,
-                currentRank: Math.floor(Math.random() * 50) + 1, // Simulated rank for demo
+            }
+        });
+
+        // 등록 직후 1회 조회해 현재 순위와 히스토리 시작점을 만듭니다.
+        const resolved = await resolveTrackedRank(created);
+        const today = kstDateKey();
+        const tracking = await prisma.rankTracking.update({
+            where: { id: created.id },
+            data: {
+                currentRank: resolved.rank,
+                rankHistory: JSON.stringify([{ date: today, rank: resolved.rank }]),
             }
         });
 
         return NextResponse.json({
             message: '순위 추적이 등록되었습니다.',
-            tracking
+            tracking: { ...tracking, source: resolved.source }
         });
     } catch (error) {
         console.error('Error creating rank tracking:', error);
@@ -94,13 +184,74 @@ export async function POST(request) {
     }
 }
 
+// PATCH - 순위 즉시 재조회(강제 갱신)
+export async function PATCH(request) {
+    try {
+        const userCheck = await getCurrentUser();
+        if (userCheck.error) {
+            return NextResponse.json({ error: userCheck.error }, { status: userCheck.status });
+        }
+
+        const body = await request.json();
+        const validation = refreshRankTrackingSchema.safeParse(body);
+
+        if (!validation.success) {
+            return NextResponse.json({ error: validation.error.flatten().fieldErrors }, { status: 400 });
+        }
+
+        const tracking = await prisma.rankTracking.findFirst({
+            where: {
+                id: validation.data.id,
+                userId: userCheck.user.id,
+            }
+        });
+
+        if (!tracking) {
+            return NextResponse.json({ error: '순위 추적 항목을 찾을 수 없습니다.' }, { status: 404 });
+        }
+
+        const resolved = await resolveTrackedRank(tracking);
+        const newRank = resolved.rank;
+        const today = kstDateKey();
+        const history = parseHistory(tracking.rankHistory);
+        const last = history[history.length - 1];
+        const sameDay = last && last.date === today;
+
+        // 같은 날 강제 갱신이면 오늘 스냅샷을 교체, 새 날이면 append(최대 90개)
+        const nextHistory = sameDay
+            ? [...history.slice(0, -1), { date: today, rank: newRank }]
+            : [...history, { date: today, rank: newRank }].slice(-MAX_HISTORY);
+
+        const data = {
+            currentRank: newRank,
+            rankHistory: JSON.stringify(nextHistory),
+        };
+        // 같은 날 재조회는 전일 대비 변동 비교가 깨지지 않도록 previousRank를 유지합니다.
+        if (!sameDay) {
+            data.previousRank = tracking.currentRank ?? null;
+        }
+
+        const updated = await prisma.rankTracking.update({
+            where: { id: tracking.id },
+            data,
+        });
+
+        return NextResponse.json({
+            message: '순위 정보가 갱신되었습니다.',
+            tracking: { ...updated, source: resolved.source }
+        });
+    } catch (error) {
+        console.error('Error refreshing rank tracking:', error);
+        return NextResponse.json({ error: '순위 정보 갱신 중 오류가 발생했습니다.' }, { status: 500 });
+    }
+}
+
 // DELETE - 순위 추적 삭제
 export async function DELETE(request) {
     try {
-        const session = await getServerSession(authOptions);
-
-        if (!session?.user?.email) {
-            return NextResponse.json({ error: '로그인이 필요합니다.' }, { status: 401 });
+        const userCheck = await getCurrentUser();
+        if (userCheck.error) {
+            return NextResponse.json({ error: userCheck.error }, { status: userCheck.status });
         }
 
         const { searchParams } = new URL(request.url);
@@ -110,8 +261,19 @@ export async function DELETE(request) {
             return NextResponse.json({ error: 'ID가 필요합니다.' }, { status: 400 });
         }
 
+        const tracking = await prisma.rankTracking.findFirst({
+            where: {
+                id,
+                userId: userCheck.user.id,
+            }
+        });
+
+        if (!tracking) {
+            return NextResponse.json({ error: '순위 추적 항목을 찾을 수 없습니다.' }, { status: 404 });
+        }
+
         await prisma.rankTracking.delete({
-            where: { id }
+            where: { id: tracking.id }
         });
 
         return NextResponse.json({ message: '순위 추적이 삭제되었습니다.' });

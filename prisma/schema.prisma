@@ -23,11 +23,17 @@ model User {
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
-  shoppingAds   ShoppingAd[]
-  placeAds      PlaceAd[]
-  rankTracking  RankTracking[]
-  accounts      Account[]
-  sessions      Session[]
+  shoppingAds      ShoppingAd[]
+  placeAds         PlaceAd[]
+  rankTracking     RankTracking[]
+  accounts         Account[]
+  sessions         Session[]
+  cashTransactions CashTransaction[]
+  inquiries        Inquiry[]
+  blogCampaigns    BlogCampaign[]
+  refundRequests   RefundRequest[]
+  notifications    Notification[]
+  keywordSearches  KeywordSearch[]
 }
 
 model Account {
@@ -101,6 +107,133 @@ model PlaceAd {
   updatedAt     DateTime  @updatedAt
 
   user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// 캐시(광고비) 원장: 충전 신청/승인, 광고 결제 차감, 환불 등 모든 잔액 변동 기록
+model CashTransaction {
+  id            String    @id @default(cuid())
+  userId        String
+  type          String    // "charge"(충전) | "use"(사용) | "refund"(환불) | "reward"(적립/보너스)
+  amount        Int       // 양수: 잔액 증가, 음수: 잔액 감소
+  balanceAfter  Int?      // 처리(승인/즉시차감) 후 잔액
+  status        String    @default("pending") // pending | completed | rejected
+  method        String?   // "bank"(무통장입금) | "system"(자동차감/환불) | "admin"(관리자 조정)
+  depositorName String?   // 무통장입금 입금자명
+  description   String?   // 예: "쇼핑 트래픽 광고 - 텀블러"
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([status])
+}
+
+// 1:1 문의 (일반 문의 + 쿠팡 견적 문의 포함)
+model Inquiry {
+  id         String    @id @default(cuid())
+  userId     String
+  category   String    // "general" | "payment" | "ad" | "coupang" | "refund" | "etc"
+  title      String
+  content    String
+  status     String    @default("open") // open | answered | closed
+  answer     String?
+  answeredAt DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([status])
+}
+
+// 공지사항
+model Notice {
+  id        String   @id @default(cuid())
+  title     String
+  content   String
+  category  String   @default("notice") // notice | update | event
+  isPinned  Boolean  @default(false)
+  views     Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([isPinned, createdAt])
+}
+
+// 플레이스 블로그 배포 캠페인 신청
+model BlogCampaign {
+  id             String   @id @default(cuid())
+  userId         String
+  placeName      String
+  placeUrl       String
+  keyword        String
+  postCount      Int      // 배포할 포스팅 수
+  requirement    String?  // 원고 요청사항
+  totalCost      Int
+  status         String   @default("pending") // pending | in_progress | completed | cancelled
+  publishedCount Int      @default(0)
+  publishedLinks String?  // JSON 배열: 발행된 글 링크
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([status])
+}
+
+// 매체별 광고비 환급 신청
+model RefundRequest {
+  id             String   @id @default(cuid())
+  userId         String
+  mediaType      String   // "naver_sa" | "naver_gfa" | "kakao" | "google" | "meta" | "coupang"
+  accountId      String   // 광고 계정 ID/이메일
+  monthlySpend   Int      // 월 평균 광고비
+  contact        String
+  memo           String?
+  status         String   @default("pending") // pending | reviewing | approved | rejected | paid
+  expectedRefund Int?     // 예상 환급액
+  adminMemo      String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([status])
+}
+
+// 사용자 알림
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  type      String   // "rank" | "cash" | "ad" | "inquiry" | "notice" | "system"
+  title     String
+  message   String
+  link      String?
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isRead, createdAt])
+}
+
+// 키워드 분석 검색 기록 (결과 캐시 포함)
+model KeywordSearch {
+  id        String   @id @default(cuid())
+  userId    String
+  keyword   String
+  type      String   @default("shopping") // shopping | place
+  result    String   // JSON 직렬화된 분석 결과
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([keyword])
 }
 
 model RankTracking {

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -13,7 +13,11 @@ import {
     DollarSign,
     TrendingUp,
     Clock,
-    CheckCircle
+    CheckCircle,
+    Wallet,
+    MessageSquare,
+    Megaphone,
+    FileText
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -27,19 +31,29 @@ export default function AdminDashboard() {
         completedOrders: 0,
         totalUsers: 0,
         totalRevenue: 0,
+        pendingCash: 0,
+        openInquiries: 0,
+        pendingBlog: 0,
+        pendingRefunds: 0,
     });
     const [isAdmin, setIsAdmin] = useState(false);
     const [loading, setLoading] = useState(true);
 
-    useEffect(() => {
-        if (status === 'unauthenticated') {
-            router.push('/login');
-        } else if (status === 'authenticated') {
-            checkAdminAccess();
+    const fetchStats = useCallback(async () => {
+        try {
+            const res = await fetch('/api/admin/stats');
+            if (res.ok) {
+                const data = await res.json();
+                setStats(data);
+            }
+        } catch (error) {
+            console.error('Error fetching stats:', error);
+        } finally {
+            setLoading(false);
         }
-    }, [status]);
+    }, []);
 
-    const checkAdminAccess = async () => {
+    const checkAdminAccess = useCallback(async () => {
         try {
             const res = await fetch('/api/user');
             if (res.ok) {
@@ -58,21 +72,15 @@ export default function AdminDashboard() {
             console.error('Error:', error);
             router.push('/');
         }
-    };
+    }, [fetchStats, router]);
 
-    const fetchStats = async () => {
-        try {
-            const res = await fetch('/api/admin/stats');
-            if (res.ok) {
-                const data = await res.json();
-                setStats(data);
-            }
-        } catch (error) {
-            console.error('Error fetching stats:', error);
-        } finally {
-            setLoading(false);
+    useEffect(() => {
+        if (status === 'unauthenticated') {
+            router.push('/login');
+        } else if (status === 'authenticated') {
+            checkAdminAccess();
         }
-    };
+    }, [checkAdminAccess, router, status]);
 
     if (status === 'loading' || loading || !isAdmin) {
         return <div className={styles.loading}>로딩 중...</div>;
@@ -174,6 +182,40 @@ export default function AdminDashboard() {
                         <Users size={32} />
                         <h3>회원 관리</h3>
                         <p>회원 목록 조회 및 잔액 관리</p>
+                    </Link>
+
+                    <Link href="/admin/cash" className={styles.actionCard}>
+                        {stats.pendingCash > 0 && <span className={styles.cardBadge}>{stats.pendingCash}</span>}
+                        <Wallet size={32} />
+                        <h3>캐시 충전 관리</h3>
+                        <p>충전 신청 승인 및 잔액 반영</p>
+                    </Link>
+
+                    <Link href="/admin/inquiries" className={styles.actionCard}>
+                        {stats.openInquiries > 0 && <span className={styles.cardBadge}>{stats.openInquiries}</span>}
+                        <MessageSquare size={32} />
+                        <h3>1:1 문의</h3>
+                        <p>회원 문의 확인 및 답변 등록</p>
+                    </Link>
+
+                    <Link href="/admin/notices" className={styles.actionCard}>
+                        <Megaphone size={32} />
+                        <h3>공지 관리</h3>
+                        <p>공지사항 작성 및 수정/삭제</p>
+                    </Link>
+
+                    <Link href="/admin/blog" className={styles.actionCard}>
+                        {stats.pendingBlog > 0 && <span className={styles.cardBadge}>{stats.pendingBlog}</span>}
+                        <FileText size={32} />
+                        <h3>블로그 캠페인</h3>
+                        <p>플레이스 블로그 배포 신청 관리</p>
+                    </Link>
+
+                    <Link href="/admin/refunds" className={styles.actionCard}>
+                        {stats.pendingRefunds > 0 && <span className={styles.cardBadge}>{stats.pendingRefunds}</span>}
+                        <DollarSign size={32} />
+                        <h3>환급 신청</h3>
+                        <p>매체별 광고비 환급 신청 처리</p>
                     </Link>
                 </div>
             </div>

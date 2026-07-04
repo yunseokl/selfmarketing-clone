@@ -2,13 +2,14 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Home, ShoppingCart, MapPin, User, Menu } from 'lucide-react';
+import { Home, ShoppingCart, MapPin, User, Target } from 'lucide-react';
 import styles from './MobileBottomBar.module.css';
 
 const mobileNavItems = [
     { name: '홈', href: '/', icon: Home },
     { name: '쇼핑', href: '/dashboard/shopping', icon: ShoppingCart },
     { name: '플레이스', href: '/dashboard/place', icon: MapPin },
+    { name: '키워드', href: '/dashboard/keyword', icon: Target },
     { name: '내 정보', href: '/dashboard/profile', icon: User },
     // Menu is handled by toggle in Sidebar, but here we might link to a full menu page or trigger
     // For simplicity, let's link to blog for now or remove 'Menu' if Sidebar toggle serves that.

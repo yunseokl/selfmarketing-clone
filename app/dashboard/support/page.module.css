@@ -1,0 +1,411 @@
+/* Glassmorphism Support Page */
+
+.container {
+    padding: 0;
+}
+
+/* Header */
+.header {
+    margin-bottom: 32px;
+}
+
+.title {
+    font-size: 28px;
+    font-weight: 800;
+    color: var(--text-white);
+    margin-bottom: 8px;
+    background: linear-gradient(to right, #fff, #cbd5e1);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+.subtitle {
+    font-size: 14px;
+    color: var(--text-gray);
+}
+
+/* Section */
+.section {
+    background: var(--glass-bg);
+    backdrop-filter: blur(16px);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--border-radius);
+    box-shadow: var(--glass-shadow);
+    padding: 28px;
+    margin-bottom: 24px;
+}
+
+.sectionTitleRow {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: var(--primary);
+    margin-bottom: 20px;
+}
+
+.sectionTitleRow h2 {
+    font-size: 17px;
+    font-weight: 700;
+    color: var(--text-white);
+}
+
+/* FAQ Tabs */
+.faqTabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 20px;
+}
+
+.faqTab {
+    padding: 8px 16px;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-gray);
+    background: rgba(15, 23, 42, 0.5);
+    border: 1px solid var(--glass-border);
+    border-radius: 20px;
+    transition: all 0.2s;
+}
+
+.faqTab:hover {
+    color: var(--text-white);
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.faqTab.active {
+    color: white;
+    background: var(--primary);
+    border-color: var(--primary);
+    box-shadow: 0 2px 8px rgba(109, 40, 217, 0.4);
+}
+
+/* FAQ List */
+.faqList {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.faqItem {
+    border: 1px solid var(--glass-border);
+    border-radius: 12px;
+    overflow: hidden;
+    background: rgba(15, 23, 42, 0.3);
+}
+
+.faqQuestion {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    width: 100%;
+    padding: 16px 18px;
+    text-align: left;
+    transition: background 0.2s;
+}
+
+.faqQuestion:hover {
+    background: rgba(255, 255, 255, 0.03);
+}
+
+.faqQ,
+.faqA {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 800;
+}
+
+.faqQ {
+    color: var(--primary);
+    background: var(--primary-light);
+}
+
+.faqA {
+    color: var(--secondary);
+    background: rgba(59, 130, 246, 0.15);
+    margin-top: 2px;
+}
+
+.faqQuestionText {
+    flex: 1;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-white);
+}
+
+.chevron {
+    flex-shrink: 0;
+    color: var(--text-dim);
+    transition: transform 0.2s;
+}
+
+.chevron.open {
+    transform: rotate(180deg);
+    color: var(--text-white);
+}
+
+.faqAnswer {
+    display: flex;
+    align-items: flex-start;
+    gap: 14px;
+    padding: 0 18px 20px 18px;
+}
+
+.faqAnswer p {
+    flex: 1;
+    font-size: 13.5px;
+    line-height: 1.8;
+    color: var(--text-gray);
+    white-space: pre-line;
+}
+
+/* Inquiry Form */
+.inquiryForm {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.formRow {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.formLabel {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-gray);
+}
+
+.select,
+.input,
+.textarea {
+    width: 100%;
+    padding: 12px 16px;
+    background: rgba(15, 23, 42, 0.5);
+    border: 1px solid var(--glass-border);
+    border-radius: 12px;
+    font-size: 14px;
+    color: var(--text-white);
+    font-family: inherit;
+    transition: all 0.2s;
+}
+
+.select {
+    max-width: 240px;
+}
+
+.textarea {
+    resize: vertical;
+    min-height: 120px;
+    line-height: 1.6;
+}
+
+.select:focus,
+.input:focus,
+.textarea:focus {
+    outline: none;
+    border-color: var(--primary);
+    box-shadow: 0 0 0 2px var(--primary-light);
+    background: rgba(15, 23, 42, 0.7);
+}
+
+.submitBtn {
+    align-self: flex-end;
+    padding: 12px 28px;
+    font-size: 14px;
+    font-weight: 600;
+    color: white;
+    background: linear-gradient(135deg, var(--primary) 0%, #7C3AED 100%);
+    border-radius: 12px;
+    box-shadow: 0 4px 12px rgba(109, 40, 217, 0.3);
+    transition: all 0.2s;
+}
+
+.submitBtn:hover:not(:disabled) {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 20px rgba(109, 40, 217, 0.4);
+}
+
+.submitBtn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+/* Inquiry List */
+.inquiryList {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.inquiryItem {
+    border: 1px solid var(--glass-border);
+    border-radius: 12px;
+    overflow: hidden;
+    background: rgba(15, 23, 42, 0.3);
+}
+
+.inquiryHeader {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    padding: 14px 18px;
+    text-align: left;
+    transition: background 0.2s;
+}
+
+.inquiryHeader:hover {
+    background: rgba(255, 255, 255, 0.03);
+}
+
+.inquiryCategoryBadge {
+    flex-shrink: 0;
+    padding: 4px 10px;
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 700;
+    color: #A78BFA;
+    background: var(--primary-light);
+}
+
+.inquiryTitle {
+    flex: 1;
+    min-width: 0;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-white);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.statusBadge {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 10px;
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 600;
+}
+
+.statusOpen {
+    color: var(--warning);
+    background: rgba(245, 158, 11, 0.15);
+}
+
+.statusAnswered {
+    color: var(--success);
+    background: rgba(16, 185, 129, 0.15);
+}
+
+.statusClosed {
+    color: var(--text-dim);
+    background: rgba(148, 163, 184, 0.15);
+}
+
+.inquiryDate {
+    flex-shrink: 0;
+    font-size: 12px;
+    color: var(--text-dim);
+}
+
+.inquiryBody {
+    padding: 4px 18px 20px 18px;
+    border-top: 1px solid var(--glass-border);
+}
+
+.inquiryContent {
+    padding-top: 16px;
+    font-size: 13.5px;
+    line-height: 1.7;
+    color: var(--text-gray);
+    white-space: pre-line;
+}
+
+.answerBox {
+    margin-top: 14px;
+    padding: 14px 16px;
+    background: rgba(109, 40, 217, 0.08);
+    border: 1px solid rgba(109, 40, 217, 0.2);
+    border-radius: 10px;
+}
+
+.answerLabel {
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 700;
+    color: #A78BFA;
+    margin-bottom: 6px;
+}
+
+.answerBox p {
+    font-size: 13.5px;
+    line-height: 1.7;
+    color: var(--text-white);
+    white-space: pre-line;
+}
+
+.noAnswer {
+    margin-top: 14px;
+    font-size: 13px;
+    color: var(--text-dim);
+}
+
+/* Empty State */
+.emptyState {
+    padding: 60px 20px;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.emptyIcon {
+    color: var(--text-dim);
+    margin-bottom: 16px;
+    opacity: 0.5;
+}
+
+.emptyState h4 {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text-white);
+    margin-bottom: 6px;
+}
+
+.emptyState p {
+    font-size: 13px;
+    color: var(--text-gray);
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .section {
+        padding: 20px;
+    }
+
+    .inquiryHeader {
+        flex-wrap: wrap;
+    }
+
+    .inquiryTitle {
+        order: 3;
+        flex-basis: 100%;
+        white-space: normal;
+    }
+
+    .submitBtn {
+        align-self: stretch;
+    }
+}

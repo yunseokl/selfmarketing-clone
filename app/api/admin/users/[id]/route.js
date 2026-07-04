@@ -5,6 +5,9 @@ import { requireAdmin } from '@/lib/auth-helpers';
 import prisma from '@/lib/prisma';
 import { updateUserSchema } from '@/lib/validations/admin';
 
+// 로그인 세션/쿠키를 읽는 API라 빌드 때 정적으로 고정하지 않습니다.
+export const dynamic = 'force-dynamic';
+
 // PUT - 회원 정보 수정 (잔액 등)
 export async function PUT(request, { params }) {
     try {

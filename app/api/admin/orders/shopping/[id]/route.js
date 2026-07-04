@@ -4,6 +4,12 @@ import { authOptions } from '@/lib/auth';
 import { requireAdmin } from '@/lib/auth-helpers';
 import prisma from '@/lib/prisma';
 import { updateAdStatusSchema } from '@/lib/validations/admin';
+import { createNotification } from '@/lib/notify';
+
+// 로그인 세션/쿠키를 읽는 API라 빌드 때 정적으로 고정하지 않습니다.
+export const dynamic = 'force-dynamic';
+
+const statusLabels = { pending: '대기중', active: '진행중', completed: '완료', refunded: '환불' };
 
 // PUT - 주문 상태 변경
 export async function PUT(request, { params }) {
@@ -27,6 +33,13 @@ export async function PUT(request, { params }) {
         const order = await prisma.shoppingAd.update({
             where: { id: params.id },
             data: validationResult.data
+        });
+
+        await createNotification(order.userId, {
+            type: 'ad',
+            title: '쇼핑 광고 상태가 변경되었습니다',
+            message: `"${order.productName}" 쇼핑 광고가 ${statusLabels[order.status] || order.status} 상태로 변경되었습니다.`,
+            link: '/dashboard/shopping',
         });
 
         return NextResponse.json({

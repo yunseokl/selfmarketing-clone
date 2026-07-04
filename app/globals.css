@@ -41,6 +41,24 @@
 
   /* Transitions */
   --transition: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* 레거시 별칭 — 관리자 섹션 CSS가 참조하는 구 라이트 테마 변수를 다크 테마 등가값으로 매핑 */
+  --bg-white: var(--bg-secondary);
+  --bg-light: var(--bg-main);
+  --border-color: var(--glass-border);
+  --border-radius-lg: 20px;
+  --error-red: var(--error);
+  --success-green: var(--success);
+  --primary-blue: var(--secondary);
+  --primary-blue-hover: #2563EB;
+  --primary-blue-light: rgba(59, 130, 246, 0.15);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.35);
+  --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.45);
+  --text-dark: var(--text-white);
+  --text-light: var(--text-gray);
+  --transition-fast: 0.15s ease;
+  --transition-normal: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 /* ===== Reset & Base ===== */

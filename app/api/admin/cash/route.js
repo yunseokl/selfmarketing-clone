@@ -1,0 +1,43 @@
+import { NextResponse } from 'next/server';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
+import { requireAdmin } from '@/lib/auth-helpers';
+import prisma from '@/lib/prisma';
+
+// 로그인 세션/쿠키를 읽는 API라 빌드 때 정적으로 고정하지 않습니다.
+export const dynamic = 'force-dynamic';
+
+// GET - 전체 캐시 충전 신청 목록 (관리자)
+export async function GET(request) {
+    try {
+        const session = await getServerSession(authOptions);
+        const adminCheck = await requireAdmin(session);
+
+        if (adminCheck.error) {
+            return NextResponse.json({ error: adminCheck.error }, { status: adminCheck.status });
+        }
+
+        const { searchParams } = new URL(request.url);
+        const statusFilter = searchParams.get('status');
+
+        const where = { type: 'charge' };
+        if (statusFilter && statusFilter !== 'all') {
+            where.status = statusFilter;
+        }
+
+        const transactions = await prisma.cashTransaction.findMany({
+            where,
+            orderBy: { createdAt: 'desc' },
+            include: {
+                user: {
+                    select: { email: true, name: true }
+                }
+            }
+        });
+
+        return NextResponse.json({ transactions });
+    } catch (error) {
+        console.error('Error fetching cash charge requests:', error);
+        return NextResponse.json({ error: '충전 신청 조회 중 오류가 발생했습니다.' }, { status: 500 });
+    }
+}

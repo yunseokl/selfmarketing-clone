@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -35,15 +35,7 @@ export default function ShoppingOrdersPage() {
     const [selectedOrders, setSelectedOrders] = useState([]);
     const [downloading, setDownloading] = useState(false);
 
-    useEffect(() => {
-        if (status === 'unauthenticated') {
-            router.push('/login');
-        } else if (status === 'authenticated') {
-            fetchOrders();
-        }
-    }, [status, statusFilter]);
-
-    const fetchOrders = async () => {
+    const fetchOrders = useCallback(async () => {
         try {
             setLoading(true);
             const res = await fetch(`/api/admin/orders/shopping?status=${statusFilter}`);
@@ -56,7 +48,15 @@ export default function ShoppingOrdersPage() {
         } finally {
             setLoading(false);
         }
-    };
+    }, [statusFilter]);
+
+    useEffect(() => {
+        if (status === 'unauthenticated') {
+            router.push('/login');
+        } else if (status === 'authenticated') {
+            fetchOrders();
+        }
+    }, [fetchOrders, router, status]);
 
     const handleSelectAll = (e) => {
         if (e.target.checked) {

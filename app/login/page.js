@@ -1,14 +1,15 @@
 'use client';
 
-import { useState } from 'react';
+import { Suspense, useState } from 'react';
 import { signIn } from 'next-auth/react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import styles from './page.module.css';
-import { Mail, Lock, User, Eye, EyeOff, MessageCircle, Sparkles } from 'lucide-react';
+import { Mail, Lock, User, Eye, EyeOff, Gift, Sparkles } from 'lucide-react';
 
-export default function LoginPage() {
+function LoginForm() {
     const router = useRouter();
-    const [isLogin, setIsLogin] = useState(true);
+    const searchParams = useSearchParams();
+    const [isLogin, setIsLogin] = useState(searchParams.get('mode') !== 'register');
     const [showPassword, setShowPassword] = useState(false);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
@@ -88,8 +89,8 @@ export default function LoginPage() {
 
                     <div className={styles.testimonial}>
                         <p className={styles.testimonialQuote}>
-                            "혼잘마 도입 후 광고 효율이 200% 증가했습니다. <br />
-                            직관적인 대시보드 덕분에 데이터 분석이 정말 쉬워졌어요."
+                            &quot;혼잘마 도입 후 광고 효율이 200% 증가했습니다. <br />
+                            직관적인 대시보드 덕분에 데이터 분석이 정말 쉬워졌어요.&quot;
                         </p>
                         <div className={styles.testimonialAuthor}>
                             <div className={styles.authorAvatar}>K</div>
@@ -133,6 +134,7 @@ export default function LoginPage() {
                                 <input
                                     type="text"
                                     placeholder="이름"
+                                    autoComplete="name"
                                     value={formData.name}
                                     onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                                 />
@@ -144,6 +146,7 @@ export default function LoginPage() {
                             <input
                                 type="email"
                                 placeholder="이메일 주소"
+                                autoComplete="email"
                                 value={formData.email}
                                 onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                                 required
@@ -155,6 +158,7 @@ export default function LoginPage() {
                             <input
                                 type={showPassword ? 'text' : 'password'}
                                 placeholder="비밀번호"
+                                autoComplete={isLogin ? 'current-password' : 'new-password'}
                                 value={formData.password}
                                 onChange={(e) => setFormData({ ...formData, password: e.target.value })}
                                 required
@@ -173,24 +177,21 @@ export default function LoginPage() {
                         <button type="submit" className={styles.submitBtn} disabled={loading}>
                             {loading ? '처리 중...' : (isLogin ? '이메일로 로그인' : '무료로 시작하기')}
                         </button>
+
+                        {!isLogin && (
+                            <p className={styles.consentText}>
+                                가입 시 <a href="/terms" target="_blank" rel="noopener noreferrer" className={styles.consentLink}>이용약관</a> 및{' '}
+                                <a href="/privacy" target="_blank" rel="noopener noreferrer" className={styles.consentLink}>개인정보처리방침</a>에 동의하는 것으로 간주됩니다.
+                            </p>
+                        )}
                     </form>
 
-                    {/* Divider */}
-                    <div className={styles.divider}>
-                        <span>또는 소셜 계정으로 계속하기</span>
-                    </div>
-
-                    {/* Social Login */}
-                    <div className={styles.socialButtons}>
-                        <button className={styles.kakaoBtn}>
-                            <MessageCircle size={20} />
-                            카카오로 시작하기
-                        </button>
-                        <button className={styles.naverBtn}>
-                            <span className={styles.naverIcon}>N</span>
-                            네이버로 시작하기
-                        </button>
-                    </div>
+                    {!isLogin && (
+                        <div className={styles.bonusBadge}>
+                            <Gift size={16} />
+                            지금 가입하면 축하 캐시 10,000원 즉시 지급
+                        </div>
+                    )}
 
                     {/* Footer */}
                     <p className={styles.footer} style={{ marginTop: '24px' }}>
@@ -200,8 +201,23 @@ export default function LoginPage() {
                             <>이미 계정이 있으신가요? <button style={{ color: '#8B5CF6', fontWeight: 600, marginLeft: 8 }} onClick={() => setIsLogin(true)}>로그인</button></>
                         )}
                     </p>
+
+                    {/* Legal Links */}
+                    <div className={styles.legalFooter}>
+                        <a href="/terms" target="_blank" rel="noopener noreferrer">이용약관</a>
+                        <span className={styles.legalDivider}>·</span>
+                        <a href="/privacy" target="_blank" rel="noopener noreferrer">개인정보처리방침</a>
+                    </div>
                 </div>
             </div>
         </div>
+    );
+}
+
+export default function LoginPage() {
+    return (
+        <Suspense fallback={null}>
+            <LoginForm />
+        </Suspense>
     );
 }

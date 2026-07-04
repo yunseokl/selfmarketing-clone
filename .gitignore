@@ -48,3 +48,8 @@ prisma/dev.db-journal
 # OS
 .DS_Store
 *.log
+
+# Agent tooling state (local only)
+.omc/
+.omx/
+.playwright-mcp/

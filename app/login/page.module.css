@@ -206,7 +206,7 @@
 
 .inputGroup input {
     width: 100%;
-    padding: 16px 16px 16px 48px;
+    padding: 16px 48px 16px 48px;
     background: rgba(30, 41, 59, 0.5);
     border: 1px solid rgba(255, 255, 255, 0.1);
     border-radius: 12px;
@@ -220,6 +220,26 @@
     border-color: #8B5CF6;
     background: rgba(30, 41, 59, 0.8);
     box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.2);
+}
+
+.eyeBtn {
+    position: absolute;
+    right: 14px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 32px;
+    height: 32px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: #64748B;
+    border-radius: 8px;
+    z-index: 2;
+}
+
+.eyeBtn:hover {
+    color: #CBD5E1;
+    background: rgba(255, 255, 255, 0.06);
 }
 
 .submitBtn {
@@ -240,54 +260,20 @@
     box-shadow: 0 8px 20px rgba(124, 58, 237, 0.4);
 }
 
-.divider {
-    display: flex;
-    align-items: center;
-    margin: 24px 0;
-    color: #64748B;
-    font-size: 14px;
-}
-
-.divider::before,
-.divider::after {
-    content: '';
-    flex: 1;
-    height: 1px;
-    background: rgba(255, 255, 255, 0.1);
-}
-
-.divider span {
-    padding: 0 16px;
-}
-
-.socialButtons {
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-}
-
-.kakaoBtn,
-.naverBtn {
-    /* ... Keep previous styles but ensure width is 100% */
-    width: 100%;
-    padding: 16px;
-    border-radius: 12px;
-    font-weight: 700;
+.bonusBadge {
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 10px;
-    transition: all 0.2s;
-}
-
-.kakaoBtn {
-    background: #FEE500;
-    color: #1A1A1A;
-}
-
-.naverBtn {
-    background: #03C75A;
-    color: white;
+    gap: 8px;
+    margin-top: 24px;
+    padding: 14px 18px;
+    background: rgba(245, 158, 11, 0.1);
+    border: 1px solid rgba(245, 158, 11, 0.3);
+    border-radius: 12px;
+    color: #FBBF24;
+    font-size: 13.5px;
+    font-weight: 600;
+    text-align: center;
 }
 
 /* Responsive */
@@ -295,6 +281,47 @@
     .brandingSection {
         display: flex;
     }
+}
+
+.consentText {
+    font-size: 12px;
+    color: #64748B;
+    text-align: center;
+    line-height: 1.6;
+    margin-top: 4px;
+}
+
+.consentLink {
+    color: #A78BFA;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+
+.consentLink:hover {
+    color: #C4B5FD;
+}
+
+.legalFooter {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    margin-top: 20px;
+    font-size: 12px;
+    color: #64748B;
+}
+
+.legalFooter a {
+    color: #64748B;
+    transition: color 0.2s;
+}
+
+.legalFooter a:hover {
+    color: #CBD5E1;
+}
+
+.legalDivider {
+    color: #475569;
 }
 
 @media (max-width: 1023px) {

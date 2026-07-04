@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -35,15 +35,7 @@ export default function PlaceOrdersPage() {
     const [selectedOrders, setSelectedOrders] = useState([]);
     const [downloading, setDownloading] = useState(false);
 
-    useEffect(() => {
-        if (status === 'unauthenticated') {
-            router.push('/login');
-        } else if (status === 'authenticated') {
-            fetchOrders();
-        }
-    }, [status, statusFilter]);
-
-    const fetchOrders = async () => {
+    const fetchOrders = useCallback(async () => {
         try {
             setLoading(true);
             const res = await fetch(`/api/admin/orders/place?status=${statusFilter}`);
@@ -56,7 +48,15 @@ export default function PlaceOrdersPage() {
         } finally {
             setLoading(false);
         }
-    };
+    }, [statusFilter]);
+
+    useEffect(() => {
+        if (status === 'unauthenticated') {
+            router.push('/login');
+        } else if (status === 'authenticated') {
+            fetchOrders();
+        }
+    }, [fetchOrders, router, status]);
 
     const handleSelectAll = (e) => {
         if (e.target.checked) {
@@ -71,6 +71,22 @@ export default function PlaceOrdersPage() {
             setSelectedOrders(selectedOrders.filter(oid => oid !== id));
         } else {
             setSelectedOrders([...selectedOrders, id]);
+        }
+    };
+
+    const handleUpdateStatus = async (orderId, newStatus) => {
+        try {
+            const res = await fetch(`/api/admin/orders/place/${orderId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ status: newStatus }),
+            });
+
+            if (res.ok) {
+                fetchOrders();
+            }
+        } catch (error) {
+            console.error('Error updating status:', error);
         }
     };
 
@@ -217,16 +233,17 @@ export default function PlaceOrdersPage() {
                             <th>금액</th>
                             <th>상태</th>
                             <th>주문일</th>
+                            <th>작업</th>
                         </tr>
                     </thead>
                     <tbody>
                         {loading ? (
                             <tr>
-                                <td colSpan={11} className={styles.emptyCell}>로딩 중...</td>
+                                <td colSpan={12} className={styles.emptyCell}>로딩 중...</td>
                             </tr>
                         ) : filteredOrders.length === 0 ? (
                             <tr>
-                                <td colSpan={11} className={styles.emptyCell}>
+                                <td colSpan={12} className={styles.emptyCell}>
                                     <MapPin size={48} className={styles.emptyIcon} />
                                     <p>플레이스 광고 주문이 없습니다.</p>
                                 </td>
@@ -260,6 +277,18 @@ export default function PlaceOrdersPage() {
                                     <td className={styles.amount}>{order.totalCost?.toLocaleString()}원</td>
                                     <td>{getStatusBadge(order.status)}</td>
                                     <td>{formatDate(order.createdAt)}</td>
+                                    <td>
+                                        <select
+                                            className={styles.statusSelect}
+                                            value={order.status}
+                                            onChange={(e) => handleUpdateStatus(order.id, e.target.value)}
+                                        >
+                                            <option value="pending">대기중</option>
+                                            <option value="active">진행중</option>
+                                            <option value="completed">완료</option>
+                                            <option value="refunded">환불</option>
+                                        </select>
+                                    </td>
                                 </tr>
                             ))
                         )}

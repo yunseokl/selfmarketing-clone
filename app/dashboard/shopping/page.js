@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import DashboardLayout from '@/components/layout/DashboardLayout';
@@ -19,16 +19,18 @@ const infoCards = [
     {
         icon: DollarSign,
         title: '저렴한 광고비용',
-        description: '대행사가 다니 개발사로 가격을 줄이며 실질적인 금액으로만 이용하세요.',
+        description: '대행사 거품 없이 개발사 직영가로, 필요한 만큼만 결제하세요.',
         color: '#10B981'
     },
     {
         icon: Link2,
         title: '대형 매체 연동',
-        description: '국내 500+ 대형 매체와의 연동 되어있벗습니다 없는 고효율의 트래픽 제공합니다.',
+        description: '국내 500+ 매체 네트워크를 통해 고효율 트래픽을 안정적으로 공급합니다.',
         color: '#8B5CF6'
     },
 ];
+
+const PAGE_SIZE = 10;
 
 const tabs = [
     { id: 'active', label: '진행중' },
@@ -56,16 +58,10 @@ export default function ShoppingPage() {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [ads, setAds] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [currentPage, setCurrentPage] = useState(1);
+    const [tabCounts, setTabCounts] = useState({ active: 0, expired: 0, refunded: 0, all: 0 });
 
-    useEffect(() => {
-        if (status === 'unauthenticated') {
-            router.push('/login');
-        } else if (status === 'authenticated') {
-            fetchAds();
-        }
-    }, [status, activeTab]);
-
-    const fetchAds = async () => {
+    const fetchAds = useCallback(async () => {
         try {
             setLoading(true);
             const res = await fetch(`/api/shopping-ads?status=${activeTab}`);
@@ -78,7 +74,34 @@ export default function ShoppingPage() {
         } finally {
             setLoading(false);
         }
-    };
+    }, [activeTab]);
+
+    const fetchTabCounts = useCallback(async () => {
+        try {
+            const res = await fetch('/api/shopping-ads?status=all');
+            if (res.ok) {
+                const data = await res.json();
+                const allAds = data.ads || [];
+                setTabCounts({
+                    active: allAds.filter(ad => ad.status === 'active').length,
+                    expired: allAds.filter(ad => ad.status === 'expired' || ad.status === 'completed').length,
+                    refunded: allAds.filter(ad => ad.status === 'refunded').length,
+                    all: allAds.length,
+                });
+            }
+        } catch (error) {
+            console.error('Error fetching tab counts:', error);
+        }
+    }, []);
+
+    useEffect(() => {
+        if (status === 'unauthenticated') {
+            router.push('/login');
+        } else if (status === 'authenticated') {
+            fetchAds();
+            fetchTabCounts();
+        }
+    }, [fetchAds, fetchTabCounts, router, status]);
 
     const handleRefresh = () => {
         fetchAds();
@@ -92,7 +115,9 @@ export default function ShoppingPage() {
             const data = await res.json();
             if (res.ok) {
                 toast.success(data.message);
+                window.dispatchEvent(new Event('balance-refresh'));
                 fetchAds();
+                fetchTabCounts();
             } else {
                 toast.error(data.error);
             }
@@ -105,6 +130,7 @@ export default function ShoppingPage() {
     const handleAdCreated = () => {
         setIsModalOpen(false);
         fetchAds();
+        fetchTabCounts();
     };
 
     const getStatusBadge = (status) => {
@@ -133,11 +159,28 @@ export default function ShoppingPage() {
         return date.toLocaleDateString('ko-KR', { month: '2-digit', day: '2-digit' });
     };
 
-    const filteredAds = ads.filter(ad =>
+    const filteredAds = useMemo(() => ads.filter(ad =>
         !searchQuery ||
         ad.productName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
         ad.keyword?.toLowerCase().includes(searchQuery.toLowerCase())
-    );
+    ), [ads, searchQuery]);
+
+    const stats = useMemo(() => {
+        const active = ads.filter(ad => ad.status === 'active').length;
+        const totalGoal = ads.reduce((sum, ad) => sum + (ad.dailyGoal || 0), 0);
+        const ranked = ads.filter(ad => typeof ad.currentRank === 'number');
+        const avgRank = ranked.length
+            ? Math.round(ranked.reduce((sum, ad) => sum + ad.currentRank, 0) / ranked.length)
+            : null;
+        return { active, totalGoal, avgRank };
+    }, [ads]);
+
+    const totalPages = Math.max(1, Math.ceil(filteredAds.length / PAGE_SIZE));
+    const pagedAds = filteredAds.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [activeTab, searchQuery]);
 
     if (status === 'loading') {
         return <DashboardLayout><div className={styles.container}>로딩 중...</div></DashboardLayout>;
@@ -180,6 +223,22 @@ export default function ShoppingPage() {
                     })}
                 </div>
 
+                {/* Summary Stats */}
+                <div className={styles.statsBar}>
+                    <div className={styles.statCell}>
+                        <span className={styles.statLabel}>활성 광고</span>
+                        <strong className={styles.statValue}>{stats.active}개</strong>
+                    </div>
+                    <div className={styles.statCell}>
+                        <span className={styles.statLabel}>총 일 목표 유입</span>
+                        <strong className={styles.statValue}>{stats.totalGoal.toLocaleString()}건</strong>
+                    </div>
+                    <div className={styles.statCell}>
+                        <span className={styles.statLabel}>평균 순위</span>
+                        <strong className={styles.statValue}>{stats.avgRank ? `${stats.avgRank}위` : '-'}</strong>
+                    </div>
+                </div>
+
                 {/* Management Section */}
                 <div className={styles.management}>
                     {/* Tabs */}
@@ -191,6 +250,7 @@ export default function ShoppingPage() {
                                 onClick={() => setActiveTab(tab.id)}
                             >
                                 {tab.label}
+                                <span className={styles.tabCount}>{tabCounts[tab.id]}</span>
                             </button>
                         ))}
                     </div>
@@ -241,11 +301,13 @@ export default function ShoppingPage() {
                                         </td>
                                     </tr>
                                 ) : (
-                                    filteredAds.map((ad) => (
+                                    pagedAds.map((ad) => (
                                         <tr key={ad.id}>
                                             <td>
                                                 <div className={styles.thumbnail}>
                                                     {ad.productImage ? (
+                                                        // 사용자가 입력한 외부 이미지라 도메인을 미리 고정할 수 없어 기본 img를 씁니다.
+                                                        // eslint-disable-next-line @next/next/no-img-element
                                                         <img src={ad.productImage} alt="" />
                                                     ) : (
                                                         <Package size={24} />
@@ -256,7 +318,13 @@ export default function ShoppingPage() {
                                             <td>{ad.keyword}</td>
                                             <td>{ad.dailyGoal}건</td>
                                             <td>{formatDate(ad.startDate)} ~ {formatDate(ad.endDate)}</td>
-                                            <td>{ad.currentRank ? `${ad.currentRank}위` : '-'}</td>
+                                            <td>
+                                                {ad.currentRank ? (
+                                                    <span className={`${styles.rankBadge} ${ad.currentRank <= 10 ? styles.rankBadgeTop : ''}`}>
+                                                        {ad.currentRank}위
+                                                    </span>
+                                                ) : '-'}
+                                            </td>
                                             <td>{getStatusBadge(ad.status)}</td>
                                             <td>
                                                 {ad.status === 'active' && (
@@ -276,11 +344,33 @@ export default function ShoppingPage() {
                     </div>
 
                     {/* Pagination */}
-                    <div className={styles.pagination}>
-                        <button className={styles.pageBtn} disabled>◀</button>
-                        <span className={styles.pageNum}>1</span>
-                        <button className={styles.pageBtn} disabled>▶</button>
-                    </div>
+                    {filteredAds.length > 0 && (
+                        <div className={styles.pagination}>
+                            <button
+                                className={styles.pageBtn}
+                                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                                disabled={currentPage === 1}
+                            >
+                                ◀
+                            </button>
+                            {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
+                                <button
+                                    key={page}
+                                    className={page === currentPage ? styles.pageNum : styles.pageBtn}
+                                    onClick={() => setCurrentPage(page)}
+                                >
+                                    {page}
+                                </button>
+                            ))}
+                            <button
+                                className={styles.pageBtn}
+                                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                                disabled={currentPage === totalPages}
+                            >
+                                ▶
+                            </button>
+                        </div>
+                    )}
                 </div>
             </div>
 

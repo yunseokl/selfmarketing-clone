@@ -1,0 +1,413 @@
+.container {
+    padding: 0;
+}
+
+.header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 24px;
+}
+
+.title {
+    color: var(--text-white);
+    font-size: 28px;
+    font-weight: 800;
+    margin-bottom: 8px;
+}
+
+.subtitle {
+    color: var(--text-gray);
+    font-size: 14px;
+}
+
+.badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    color: var(--accent);
+    background: rgba(163, 230, 53, 0.12);
+    border: 1px solid rgba(163, 230, 53, 0.2);
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 800;
+    white-space: nowrap;
+}
+
+/* Form */
+.formCard {
+    background: var(--glass-bg);
+    backdrop-filter: blur(16px);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--border-radius);
+    box-shadow: var(--glass-shadow);
+    padding: 24px;
+    margin-bottom: 24px;
+}
+
+.formGrid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 16px;
+    margin-bottom: 16px;
+}
+
+.formField {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.formField label {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-gray);
+}
+
+.formField input {
+    width: 100%;
+    padding: 12px 14px;
+    color: var(--text-white);
+    background: rgba(15, 23, 42, 0.55);
+    border: 1px solid var(--glass-border);
+    border-radius: 10px;
+    font-size: 14px;
+    transition: all 0.2s;
+}
+
+.formField input:focus {
+    outline: none;
+    border-color: var(--primary);
+    box-shadow: 0 0 0 2px var(--primary-light);
+}
+
+.presetRow {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-bottom: 20px;
+}
+
+.presetRow span {
+    font-size: 12px;
+    color: var(--text-dim);
+}
+
+.presetBtns {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.presetBtns button {
+    padding: 6px 12px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-gray);
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid var(--glass-border);
+    border-radius: 999px;
+    transition: all 0.2s;
+}
+
+.presetBtns button:hover {
+    color: var(--text-white);
+    background: rgba(255, 255, 255, 0.08);
+    border-color: rgba(255, 255, 255, 0.2);
+}
+
+.submitBtn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 12px 24px;
+    color: white;
+    background: linear-gradient(135deg, var(--primary) 0%, #7C3AED 100%);
+    border-radius: 10px;
+    font-size: 14px;
+    font-weight: 800;
+    box-shadow: 0 4px 12px rgba(109, 40, 217, 0.28);
+    transition: all 0.2s;
+}
+
+.submitBtn:hover {
+    transform: translateY(-1px);
+}
+
+/* Empty State */
+.emptyState {
+    min-height: 320px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 56px 20px;
+    text-align: center;
+    color: var(--text-gray);
+    background: var(--glass-bg);
+    border: 1px dashed var(--glass-border);
+    border-radius: var(--border-radius);
+}
+
+.emptyIcon {
+    color: var(--text-dim);
+    margin-bottom: 16px;
+}
+
+.emptyState h4 {
+    color: var(--text-white);
+    font-size: 18px;
+    font-weight: 700;
+    margin-bottom: 8px;
+}
+
+.emptyState p {
+    max-width: 380px;
+    font-size: 14px;
+}
+
+/* Result Layout */
+.resultLayout {
+    display: grid;
+    grid-template-columns: minmax(240px, 300px) 1fr;
+    grid-template-areas: "score check" "score suggestion";
+    gap: 18px;
+}
+
+.scoreCard {
+    grid-area: score;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 18px;
+    padding: 28px 20px;
+    background: var(--glass-bg);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--border-radius);
+    box-shadow: var(--glass-shadow);
+    height: fit-content;
+}
+
+.gaugeWrap {
+    position: relative;
+    width: 140px;
+    height: 140px;
+}
+
+.gaugeTrack {
+    fill: none;
+    stroke: rgba(255, 255, 255, 0.08);
+    stroke-width: 12;
+}
+
+.gaugeProgress {
+    fill: none;
+    stroke-width: 12;
+    stroke-linecap: round;
+    transform: rotate(-90deg);
+    transform-origin: 50% 50%;
+    transition: stroke-dashoffset 0.6s ease;
+}
+
+.gradeA {
+    stroke: var(--success);
+}
+
+.gradeB {
+    stroke: #60A5FA;
+}
+
+.gradeC {
+    stroke: var(--warning);
+}
+
+.gradeD {
+    stroke: #F87171;
+}
+
+.gaugeCenter {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+}
+
+.gaugeCenter strong {
+    font-size: 34px;
+    font-weight: 800;
+    color: var(--text-white);
+    line-height: 1;
+}
+
+.gaugeCenter span {
+    margin-top: 6px;
+    font-size: 11px;
+    color: var(--text-gray);
+    white-space: nowrap;
+}
+
+.keywordLink {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 14px;
+    color: var(--primary-light);
+    background: rgba(109, 40, 217, 0.12);
+    border: 1px solid rgba(109, 40, 217, 0.24);
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 700;
+    text-align: center;
+    transition: all 0.2s;
+}
+
+.keywordLink:hover {
+    background: rgba(109, 40, 217, 0.2);
+}
+
+/* Checklist */
+.checkCard {
+    grid-area: check;
+    padding: 22px;
+    background: var(--glass-bg);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--border-radius);
+    box-shadow: var(--glass-shadow);
+}
+
+.checkCard h3,
+.suggestionCard h3 {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--text-white);
+    margin-bottom: 14px;
+}
+
+.checkList {
+    display: grid;
+    gap: 10px;
+}
+
+.checkItem {
+    padding: 12px 14px;
+    border-radius: 10px;
+    border-left: 3px solid transparent;
+    background: rgba(15, 23, 42, 0.35);
+}
+
+.checkItem.checkPass {
+    border-left-color: var(--success);
+}
+
+.checkItem.checkFail {
+    border-left-color: var(--warning);
+}
+
+.checkHeader {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 4px;
+}
+
+.checkHeader span {
+    flex: 1;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-white);
+}
+
+.checkHeader em {
+    font-size: 11px;
+    font-style: normal;
+    color: var(--text-dim);
+}
+
+.checkPass .checkHeader svg {
+    color: var(--success);
+}
+
+.checkFail .checkHeader svg {
+    color: var(--warning);
+}
+
+.checkItem p {
+    font-size: 12px;
+    color: var(--text-gray);
+    line-height: 1.5;
+    margin-left: 24px;
+}
+
+/* Suggestions */
+.suggestionCard {
+    grid-area: suggestion;
+    padding: 22px;
+    background: var(--glass-bg);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--border-radius);
+    box-shadow: var(--glass-shadow);
+}
+
+.suggestionGrid {
+    display: grid;
+    gap: 10px;
+}
+
+.suggestionItem {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px 14px;
+    background: rgba(163, 230, 53, 0.06);
+    border: 1px solid rgba(163, 230, 53, 0.18);
+    border-radius: 10px;
+}
+
+.suggestionItem p {
+    font-size: 13px;
+    color: var(--text-white);
+    line-height: 1.5;
+    overflow-wrap: anywhere;
+}
+
+.suggestionItem button {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    flex-shrink: 0;
+    padding: 6px 10px;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--accent);
+    background: rgba(163, 230, 53, 0.12);
+    border-radius: 8px;
+    white-space: nowrap;
+}
+
+.suggestionItem button:hover {
+    background: rgba(163, 230, 53, 0.2);
+}
+
+@media (max-width: 900px) {
+    .resultLayout {
+        grid-template-columns: 1fr;
+        grid-template-areas: "score" "check" "suggestion";
+    }
+}
+
+@media (max-width: 768px) {
+    .header {
+        flex-direction: column;
+    }
+
+    .formGrid {
+        grid-template-columns: 1fr;
+    }
+}

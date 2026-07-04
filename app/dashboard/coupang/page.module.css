@@ -1,0 +1,323 @@
+.container {
+    padding: 0;
+}
+
+/* Hero */
+.hero {
+    background: var(--glass-bg);
+    backdrop-filter: blur(16px);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--border-radius);
+    box-shadow: var(--glass-shadow);
+    padding: 32px;
+    margin-bottom: 24px;
+}
+
+.heroBadge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    color: var(--accent);
+    background: rgba(163, 230, 53, 0.12);
+    border: 1px solid rgba(163, 230, 53, 0.2);
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 800;
+    margin-bottom: 16px;
+}
+
+.heroTitle {
+    font-size: 28px;
+    font-weight: 800;
+    line-height: 1.4;
+    color: var(--text-white);
+    margin-bottom: 12px;
+}
+
+.heroSubtitle {
+    font-size: 14px;
+    color: var(--text-gray);
+    max-width: 560px;
+    margin-bottom: 28px;
+}
+
+.featureGrid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+}
+
+.featureCard {
+    padding: 20px;
+    background: rgba(15, 23, 42, 0.4);
+    border: 1px solid var(--glass-border);
+    border-radius: 14px;
+}
+
+.featureIcon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    color: var(--primary);
+    background: var(--primary-light);
+    border-radius: 12px;
+    margin-bottom: 14px;
+}
+
+.featureCard h4 {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--text-white);
+    margin-bottom: 6px;
+}
+
+.featureCard p {
+    font-size: 13px;
+    color: var(--text-gray);
+    line-height: 1.5;
+}
+
+/* Form */
+.formCard {
+    background: var(--glass-bg);
+    backdrop-filter: blur(16px);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--border-radius);
+    box-shadow: var(--glass-shadow);
+    padding: 24px;
+    margin-bottom: 32px;
+}
+
+.formTitle {
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--text-white);
+    margin-bottom: 18px;
+}
+
+.formGrid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+    margin-bottom: 16px;
+}
+
+.formField {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 16px;
+}
+
+.formField label {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-gray);
+}
+
+.formField input,
+.formField textarea,
+.formField select {
+    width: 100%;
+    padding: 12px 14px;
+    background: rgba(15, 23, 42, 0.5);
+    border: 1px solid var(--glass-border);
+    border-radius: 10px;
+    font-size: 14px;
+    color: var(--text-white);
+    font-family: inherit;
+    resize: vertical;
+    transition: all 0.2s;
+}
+
+.formField select {
+    cursor: pointer;
+}
+
+.formField select option {
+    background: #1E293B;
+    color: var(--text-white);
+}
+
+.formField input:focus,
+.formField textarea:focus,
+.formField select:focus {
+    outline: none;
+    border-color: var(--primary);
+    box-shadow: 0 0 0 2px var(--primary-light);
+    background: rgba(15, 23, 42, 0.7);
+}
+
+.submitBtn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: 100%;
+    padding: 14px;
+    font-size: 15px;
+    font-weight: 700;
+    color: white;
+    background: linear-gradient(135deg, var(--primary) 0%, #7C3AED 100%);
+    border-radius: 12px;
+    box-shadow: 0 4px 12px rgba(109, 40, 217, 0.3);
+    transition: all 0.2s;
+}
+
+.submitBtn:hover:not(:disabled) {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 20px rgba(109, 40, 217, 0.4);
+}
+
+.submitBtn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+/* List Section */
+.listSection {
+    margin-top: 8px;
+}
+
+.listTitle {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--text-white);
+    margin-bottom: 16px;
+}
+
+.emptyState {
+    background: var(--glass-bg);
+    backdrop-filter: blur(16px);
+    border: 1px dashed var(--glass-border);
+    border-radius: var(--border-radius);
+    padding: 80px 20px;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.emptyIcon {
+    color: var(--text-dim);
+    margin-bottom: 16px;
+    opacity: 0.5;
+}
+
+.emptyState h4 {
+    font-size: 16px;
+    font-weight: 600;
+    margin-bottom: 8px;
+    color: var(--text-white);
+}
+
+.emptyState p {
+    font-size: 14px;
+    color: var(--text-gray);
+}
+
+/* Inquiry Cards */
+.inquiryList {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.inquiryCard {
+    background: var(--glass-bg);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--border-radius);
+    box-shadow: var(--glass-shadow);
+    padding: 20px 24px;
+}
+
+.inquiryTop {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 12px;
+}
+
+.inquiryTop h3 {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--text-white);
+    margin-bottom: 4px;
+}
+
+.inquiryTop p {
+    font-size: 12px;
+    color: var(--text-dim);
+}
+
+.statusBadge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 5px 10px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.statusPending {
+    color: var(--warning);
+    background: rgba(245, 158, 11, 0.12);
+}
+
+.statusAnswered {
+    color: var(--success);
+    background: rgba(16, 185, 129, 0.12);
+}
+
+.inquiryContent {
+    font-size: 13px;
+    color: var(--text-gray);
+    line-height: 1.6;
+    white-space: pre-line;
+}
+
+.answerBox {
+    margin-top: 14px;
+    padding: 14px 16px;
+    background: rgba(109, 40, 217, 0.08);
+    border: 1px solid rgba(109, 40, 217, 0.2);
+    border-radius: 12px;
+}
+
+.answerLabel {
+    display: block;
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--primary-light);
+    margin-bottom: 6px;
+}
+
+.answerBox p {
+    font-size: 13px;
+    color: var(--text-white);
+    line-height: 1.6;
+    white-space: pre-line;
+}
+
+/* Responsive */
+@media (max-width: 1024px) {
+    .featureGrid {
+        grid-template-columns: 1fr;
+    }
+
+    .formGrid {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 768px) {
+    .inquiryTop {
+        flex-direction: column;
+    }
+}

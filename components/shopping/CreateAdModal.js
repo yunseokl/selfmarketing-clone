@@ -1,21 +1,27 @@
 'use client';
 
-import { useState } from 'react';
-import { X, Check } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { X, Check, Wallet } from 'lucide-react';
+import { toast } from 'sonner';
 import styles from './CreateAdModal.module.css';
 
 const serviceTypes = [
-    { id: 'selma30', name: '셀마 쇼핑 유입 30원', price: 30 },
-    { id: 'selma50', name: '셀마 쇼핑 유입 50원', price: 50 },
+    { id: 'selma30', name: '베이직 쇼핑 유입 30원', price: 30 },
+    { id: 'selma50', name: '스탠다드 쇼핑 유입 50원', price: 50 },
     { id: 'premium', name: '프리미엄 쇼핑 유입 100원', price: 100 },
 ];
 
 const durationOptions = [10, 20, 30];
 
 export default function CreateAdModal({ isOpen, onClose, onSuccess }) {
+    const router = useRouter();
     const [step, setStep] = useState(1);
     const [loading, setLoading] = useState(false);
+    const [checking, setChecking] = useState(false);
     const [error, setError] = useState('');
+    const [balance, setBalance] = useState(null);
+    const [balanceLoading, setBalanceLoading] = useState(false);
     const [formData, setFormData] = useState({
         productUrl: '',
         productName: '',
@@ -26,21 +32,61 @@ export default function CreateAdModal({ isOpen, onClose, onSuccess }) {
         duration: 10,
     });
 
-    const handleUrlCheck = async () => {
-        if (!formData.productUrl) return;
+    // 모달이 열릴 때 현재 캐시 잔액을 불러와 결제 미리보기에 사용합니다.
+    useEffect(() => {
+        if (!isOpen) return;
+        let active = true;
+        setBalanceLoading(true);
+        fetch('/api/user')
+            .then(res => (res.ok ? res.json() : null))
+            .then(data => {
+                if (active && data?.user) setBalance(data.user.balance ?? 0);
+            })
+            .catch(() => {})
+            .finally(() => {
+                if (active) setBalanceLoading(false);
+            });
+        return () => {
+            active = false;
+        };
+    }, [isOpen]);
 
-        // Simulate URL check - in production, you would call an API to fetch product info
-        if (formData.productUrl.includes('smartstore.naver.com') ||
-            formData.productUrl.includes('shopping.naver.com') ||
-            formData.productUrl.includes('naver.com')) {
+    const handleUrlCheck = async () => {
+        const url = formData.productUrl.trim();
+        if (!url) return;
+
+        if (!/naver\.com/i.test(url)) {
+            setError('올바른 네이버 쇼핑 URL을 입력해주세요.');
+            return;
+        }
+
+        setChecking(true);
+        setError('');
+        let resolvedName = formData.productName.trim();
+        try {
+            // 서버에서 og:title/og:image를 조회해 상품명·이미지를 프리필합니다.
+            const res = await fetch('/api/url-preview', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ url }),
+            });
+            const data = res.ok ? await res.json() : null;
+            resolvedName = resolvedName || (data?.title || '').trim();
             setFormData(prev => ({
                 ...prev,
-                productName: '네이버 쇼핑 상품',
+                productName: prev.productName || data?.title || '',
+                productImage: data?.image || prev.productImage || '',
             }));
+        } catch {
+            // 조회 실패는 정상 흐름 — 사용자가 상품명을 직접 입력합니다.
+        } finally {
+            setChecking(false);
+        }
+        // 상품명이 확보된 경우에만 자동 진행 — 없으면 1단계에 머물며 직접 입력을 안내
+        if (resolvedName) {
             setStep(2);
-            setError('');
         } else {
-            setError('올바른 네이버 쇼핑 URL을 입력해주세요.');
+            setError('상품 정보를 가져오지 못했습니다. 상품명을 직접 입력한 뒤 다음을 눌러주세요.');
         }
     };
 
@@ -83,7 +129,9 @@ export default function CreateAdModal({ isOpen, onClose, onSuccess }) {
             const data = await res.json();
 
             if (!res.ok) {
-                setError(data.error);
+                const message = data.error || '광고 생성 중 오류가 발생했습니다.';
+                setError(message);
+                toast.error(message);
             } else {
                 // Reset form and close
                 setStep(1);
@@ -96,19 +144,28 @@ export default function CreateAdModal({ isOpen, onClose, onSuccess }) {
                     dailyGoal: 100,
                     duration: 10,
                 });
+                toast.success('광고가 생성되었습니다.');
+                window.dispatchEvent(new Event('balance-refresh'));
                 if (onSuccess) onSuccess();
             }
         } catch (err) {
             setError('광고 생성 중 오류가 발생했습니다.');
+            toast.error('광고 생성 중 오류가 발생했습니다.');
         } finally {
             setLoading(false);
         }
     };
 
-    const calculateTotal = () => {
-        const service = serviceTypes.find(s => s.id === formData.serviceType);
-        return service ? (service.price * formData.dailyGoal * formData.duration).toLocaleString() : 0;
+    const goToCharge = () => {
+        onClose();
+        router.push('/dashboard/charge');
     };
+
+    const selectedService = serviceTypes.find(s => s.id === formData.serviceType);
+    const totalCost = selectedService ? selectedService.price * formData.dailyGoal * formData.duration : 0;
+    const afterBalance = balance != null ? balance - totalCost : null;
+    const insufficient = balance != null && afterBalance < 0;
+    const shortfall = insufficient ? totalCost - balance : 0;
 
     const getEndDate = () => {
         const date = new Date();
@@ -164,11 +221,20 @@ export default function CreateAdModal({ isOpen, onClose, onSuccess }) {
                                 <button
                                     className={styles.checkBtn}
                                     onClick={handleUrlCheck}
-                                    disabled={!formData.productUrl}
+                                    disabled={!formData.productUrl || checking}
                                 >
-                                    조회
+                                    {checking ? '조회 중...' : '조회'}
                                 </button>
                             </div>
+
+                            <label className={styles.label}>상품명</label>
+                            <input
+                                type="text"
+                                className={styles.input}
+                                placeholder="조회 후 자동 입력되며, 직접 수정할 수 있습니다"
+                                value={formData.productName}
+                                onChange={e => setFormData(prev => ({ ...prev, productName: e.target.value }))}
+                            />
                             {error && <p className={styles.error}>{error}</p>}
                         </div>
                     )}
@@ -274,9 +340,31 @@ export default function CreateAdModal({ isOpen, onClose, onSuccess }) {
                                     <span>{formData.duration}일</span>
                                 </div>
                                 <div className={`${styles.summaryRow} ${styles.total}`}>
-                                    <span>총 예상 금액</span>
-                                    <span className={styles.totalAmount}>{calculateTotal()}원</span>
+                                    <span>총 광고비</span>
+                                    <span className={styles.totalAmount}>{totalCost.toLocaleString()}원</span>
                                 </div>
+                            </div>
+
+                            <div className={styles.balanceCard}>
+                                <div className={styles.balanceHead}>
+                                    <Wallet size={16} />
+                                    <span>캐시 결제</span>
+                                </div>
+                                <div className={styles.balanceRow}>
+                                    <span>현재 잔액</span>
+                                    <span>{balanceLoading || balance == null ? '조회 중...' : `${balance.toLocaleString()}원`}</span>
+                                </div>
+                                <div className={styles.balanceRow}>
+                                    <span>결제 후 잔액</span>
+                                    <span className={insufficient ? styles.negative : styles.positive}>
+                                        {afterBalance == null ? '-' : `${afterBalance.toLocaleString()}원`}
+                                    </span>
+                                </div>
+                                {insufficient && (
+                                    <div className={styles.insufficientNote}>
+                                        캐시가 <strong>{shortfall.toLocaleString()}원</strong> 부족합니다. 충전 후 다시 시도해주세요.
+                                    </div>
+                                )}
                             </div>
 
                             <div className={styles.infoBox}>
@@ -310,13 +398,18 @@ export default function CreateAdModal({ isOpen, onClose, onSuccess }) {
                         >
                             다음
                         </button>
+                    ) : insufficient ? (
+                        <button className={styles.chargeBtn} onClick={goToCharge}>
+                            <Wallet size={16} />
+                            캐시 충전하러 가기
+                        </button>
                     ) : (
                         <button
                             className={styles.submitBtn}
                             onClick={handleSubmit}
-                            disabled={loading}
+                            disabled={loading || balanceLoading}
                         >
-                            {loading ? '생성 중...' : '광고 생성하기'}
+                            {loading ? '생성 중...' : `${totalCost.toLocaleString()}원 결제하고 광고 생성`}
                         </button>
                     )}
                 </div>

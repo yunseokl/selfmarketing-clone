@@ -3,6 +3,10 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import prisma from '@/lib/prisma';
 import { updatePlaceAdSchema } from '@/lib/validations/place';
+import { createNotification } from '@/lib/notify';
+
+// 로그인 세션/쿠키를 읽는 API라 빌드 때 정적으로 고정하지 않습니다.
+export const dynamic = 'force-dynamic';
 
 // GET - 특정 광고 조회
 export async function GET(request, { params }) {
@@ -136,17 +140,37 @@ export async function DELETE(request, { params }) {
         const remainingDays = Math.max(0, Math.ceil((endDate - now) / (1000 * 60 * 60 * 24)));
         const refundAmount = Math.floor((ad.totalCost / ad.duration) * remainingDays);
 
-        // Update ad status and refund user in transaction
-        await prisma.$transaction([
-            prisma.placeAd.update({
+        // Update ad status, refund user, and log the cash transaction atomically
+        await prisma.$transaction(async (tx) => {
+            await tx.placeAd.update({
                 where: { id: params.id },
                 data: { status: 'refunded' }
-            }),
-            prisma.user.update({
+            });
+
+            const updatedUser = await tx.user.update({
                 where: { id: user.id },
                 data: { balance: { increment: refundAmount } }
-            })
-        ]);
+            });
+
+            await tx.cashTransaction.create({
+                data: {
+                    userId: user.id,
+                    type: 'refund',
+                    amount: refundAmount,
+                    balanceAfter: updatedUser.balance,
+                    status: 'completed',
+                    method: 'system',
+                    description: `광고 취소 환불 - ${ad.placeName} (${ad.keyword})`,
+                }
+            });
+        });
+
+        await createNotification(user.id, {
+            type: 'cash',
+            title: '환불 완료',
+            message: `광고 취소로 ${refundAmount.toLocaleString()}원이 환불되었습니다.`,
+            link: '/dashboard/charge',
+        });
 
         return NextResponse.json({
             message: `광고가 취소되었습니다. ${refundAmount.toLocaleString()}원이 환불되었습니다.`,

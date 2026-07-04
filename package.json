@@ -9,7 +9,8 @@
     "lint": "next lint",
     "postinstall": "prisma generate",
     "db:push": "dotenv -- prisma db push",
-    "db:generate": "dotenv -- prisma generate"
+    "db:generate": "dotenv -- prisma generate",
+    "admin:create": "dotenv -- node scripts/create-admin.js"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.1",
