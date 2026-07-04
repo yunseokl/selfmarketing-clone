@@ -2,10 +2,10 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
-import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import styles from './page.module.css';
-import { HelpCircle, ChevronDown, Send, Inbox, Clock, CheckCircle2 } from 'lucide-react';
+import { HelpCircle, ChevronDown, Send, Inbox, Clock, CheckCircle2, LogIn } from 'lucide-react';
 import { toast } from 'sonner';
 
 const faqCategories = [
@@ -98,7 +98,6 @@ const statusInfo = {
 
 export default function SupportPage() {
     const { status } = useSession();
-    const router = useRouter();
 
     const [activeFaqCategory, setActiveFaqCategory] = useState('all');
     const [openFaqId, setOpenFaqId] = useState(null);
@@ -125,13 +124,12 @@ export default function SupportPage() {
         }
     }, []);
 
+    // FAQ는 비로그인에도 공개 — 문의 작성/내역만 로그인 필요
     useEffect(() => {
-        if (status === 'unauthenticated') {
-            router.push('/login');
-        } else if (status === 'authenticated') {
+        if (status === 'authenticated') {
             fetchInquiries();
         }
-    }, [status, router, fetchInquiries]);
+    }, [status, fetchInquiries]);
 
     const filteredFaqs = activeFaqCategory === 'all'
         ? faqs
@@ -237,6 +235,16 @@ export default function SupportPage() {
                         <h2>1:1 문의하기</h2>
                     </div>
 
+                    {status !== 'authenticated' ? (
+                        <div className={styles.loginPrompt}>
+                            <LogIn size={32} className={styles.loginPromptIcon} />
+                            <h4>로그인 후 문의를 남길 수 있어요</h4>
+                            <p>비밀번호 분실 등 계정 문제라면, 가입하신 이메일로 임시 비밀번호 발급을 요청해주세요.</p>
+                            <Link href="/login" className={styles.loginPromptBtn}>
+                                로그인 / 회원가입
+                            </Link>
+                        </div>
+                    ) : (
                     <form className={styles.inquiryForm} onSubmit={handleSubmit}>
                         <div className={styles.formRow}>
                             <label className={styles.formLabel}>카테고리</label>
@@ -281,9 +289,11 @@ export default function SupportPage() {
                             {submitting ? '접수 중...' : '문의 접수하기'}
                         </button>
                     </form>
+                    )}
                 </section>
 
-                {/* My Inquiries Section */}
+                {/* My Inquiries Section — 로그인 시에만 노출 */}
+                {status === 'authenticated' && (
                 <section className={styles.section}>
                     <div className={styles.sectionTitleRow}>
                         <Inbox size={20} />
@@ -339,6 +349,7 @@ export default function SupportPage() {
                         )}
                     </div>
                 </section>
+                )}
             </div>
         </DashboardLayout>
     );

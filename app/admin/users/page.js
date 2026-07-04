@@ -13,7 +13,8 @@ import {
     DollarSign,
     Edit2,
     Save,
-    X
+    X,
+    KeyRound
 } from 'lucide-react';
 
 export default function UsersPage() {
@@ -67,6 +68,29 @@ export default function UsersPage() {
             }
         } catch (error) {
             console.error('Error updating balance:', error);
+        }
+    };
+
+    const handleResetPassword = async (user) => {
+        if (!confirm(`${user.email} 회원의 비밀번호를 초기화하시겠습니까?\n임시 비밀번호가 발급되며, 기존 비밀번호는 즉시 사용할 수 없게 됩니다.`)) return;
+
+        try {
+            const res = await fetch(`/api/admin/users/${user.id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ resetPassword: true }),
+            });
+            const data = await res.json();
+
+            if (res.ok) {
+                // 임시 비밀번호는 이 알림에서만 확인 가능 — 관리자가 회원에게 직접 전달
+                prompt('임시 비밀번호가 발급되었습니다. 아래 값을 복사해 회원에게 전달하세요. (다시 조회 불가)', data.tempPassword);
+            } else {
+                alert(data.error || '비밀번호 초기화에 실패했습니다.');
+            }
+        } catch (error) {
+            console.error('Error resetting password:', error);
+            alert('비밀번호 초기화 중 오류가 발생했습니다.');
         }
     };
 
@@ -178,13 +202,22 @@ export default function UsersPage() {
                                     <td>{user._count?.rankTracking || 0}건</td>
                                     <td>{formatDate(user.createdAt)}</td>
                                     <td>
-                                        <button
-                                            className={styles.editBtn}
-                                            onClick={() => handleEditBalance(user)}
-                                        >
-                                            <Edit2 size={14} />
-                                            잔액 수정
-                                        </button>
+                                        <div className={styles.rowActions}>
+                                            <button
+                                                className={styles.editBtn}
+                                                onClick={() => handleEditBalance(user)}
+                                            >
+                                                <Edit2 size={14} />
+                                                잔액 수정
+                                            </button>
+                                            <button
+                                                className={styles.resetBtn}
+                                                onClick={() => handleResetPassword(user)}
+                                            >
+                                                <KeyRound size={14} />
+                                                비번 초기화
+                                            </button>
+                                        </div>
                                     </td>
                                 </tr>
                             ))

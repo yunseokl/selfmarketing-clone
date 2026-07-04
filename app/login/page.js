@@ -2,6 +2,7 @@
 
 import { Suspense, useState } from 'react';
 import { signIn } from 'next-auth/react';
+import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import styles from './page.module.css';
 import { Mail, Lock, User, Eye, EyeOff, Gift, Sparkles } from 'lucide-react';
@@ -171,6 +172,14 @@ function LoginForm() {
                                 {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
                             </button>
                         </div>
+
+                        {isLogin && (
+                            <div className={styles.forgotRow}>
+                                <Link href="/dashboard/support" className={styles.forgotLink}>
+                                    비밀번호를 잊으셨나요?
+                                </Link>
+                            </div>
+                        )}
 
                         {error && <p className={styles.error}>{error}</p>}
 

@@ -354,3 +354,20 @@
         border-radius: 24px;
     }
 }
+
+.forgotRow {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: -6px;
+}
+
+.forgotLink {
+    font-size: 13px;
+    color: var(--text-gray);
+    transition: color 0.2s;
+}
+
+.forgotLink:hover {
+    color: var(--text-white);
+    text-decoration: underline;
+}

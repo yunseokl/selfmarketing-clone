@@ -409,3 +409,53 @@
         align-self: stretch;
     }
 }
+
+/* 비로그인 상태의 문의 영역 안내 */
+.loginPrompt {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: 8px;
+    padding: 40px 24px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px dashed var(--glass-border);
+    border-radius: var(--border-radius-sm);
+}
+
+.loginPromptIcon {
+    color: var(--text-dim);
+    margin-bottom: 4px;
+}
+
+.loginPrompt h4 {
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--text-white);
+}
+
+.loginPrompt p {
+    font-size: 13px;
+    color: var(--text-gray);
+    line-height: 1.6;
+    max-width: 420px;
+}
+
+.loginPromptBtn {
+    margin-top: 12px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 10px 20px;
+    font-size: 14px;
+    font-weight: 600;
+    color: #fff;
+    background: linear-gradient(135deg, var(--primary) 0%, #7C3AED 100%);
+    border-radius: 10px;
+    transition: all 0.2s;
+}
+
+.loginPromptBtn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 20px rgba(109, 40, 217, 0.4);
+}
