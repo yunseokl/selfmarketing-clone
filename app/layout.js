@@ -9,8 +9,15 @@ export const metadata = {
     },
     description: '프리미엄 셀프 마케팅 플랫폼, 혼잘마. 쇼핑, 플레이스, SEO까지 한 번에 관리하세요.',
     keywords: ['셀프마케팅', '플레이스 상위노출', '쇼핑 순위', '키워드 분석', '순위추적', '스마트스토어 마케팅'],
+    manifest: '/manifest.json',
     icons: {
         icon: '/favicon.svg',
+        apple: '/apple-touch-icon.png',
+    },
+    appleWebApp: {
+        capable: true,
+        statusBarStyle: 'black-translucent',
+        title: '혼잘마',
     },
     openGraph: {
         type: 'website',
@@ -24,6 +31,12 @@ export const metadata = {
         title: '혼잘마 - 혼자서도 잘하는 마케팅',
         description: '대행사 없이 플레이스·쇼핑 상위노출부터 키워드 분석, 순위추적까지 한 곳에서.',
     },
+};
+
+export const viewport = {
+    width: 'device-width',
+    initialScale: 1,
+    themeColor: '#0F172A',
 };
 
 export default function RootLayout({ children }) {

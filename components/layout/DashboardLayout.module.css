@@ -5,6 +5,9 @@
 
 .main {
     flex: 1;
+    /* flex 아이템의 min-width:auto가 내부 광폭 콘텐츠(테이블/탭)만큼 main을 늘려
+       모바일 가로 스크롤을 유발하므로 0으로 고정 — 내부 스크롤 컨테이너가 대신 동작 */
+    min-width: 0;
     margin-left: var(--sidebar-width);
     min-height: 100vh;
     background: transparent;
@@ -19,5 +22,12 @@
         margin-left: 0;
         padding: 80px 20px 20px;
         /* Adjusted padding for mobile header */
+    }
+}
+
+/* 하단 고정 내비게이션(64px)이 노출되는 구간 — 마지막 콘텐츠가 가려지지 않도록 여백 확보 */
+@media (max-width: 768px) {
+    .main {
+        padding-bottom: calc(96px + env(safe-area-inset-bottom));
     }
 }
