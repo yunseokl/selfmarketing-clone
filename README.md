@@ -35,6 +35,8 @@ Next.js 14(App Router), NextAuth, Prisma, PostgreSQL 기반.
 - `NEXTAUTH_SECRET`: 세션 암호화용 긴 랜덤 문자열
 - `NEXTAUTH_URL`: 배포 주소 또는 로컬 주소
 - `ADMIN_EMAIL`, `ADMIN_PASSWORD`: 관리자 계정 생성 스크립트용
+- `CRON_SECRET`: 순위 스냅샷 배치 엔드포인트(`/api/cron/rank-snapshot`) 인증 키.
+  미설정 시 해당 엔드포인트는 503으로 비활성화됩니다
 - (선택) `NAVER_CLIENT_ID`, `NAVER_CLIENT_SECRET`: 네이버 오픈API 키.
   등록 시 키워드 분석·쇼핑 순위추적이 **네이버 실데이터**로 동작하고,
   없으면 결정론적 추정 데이터로 폴백(UI에 '추정 데이터' 뱃지 표시)
@@ -56,11 +58,19 @@ npm run lint
 npm run build
 ```
 
-## Railway 참고
+## Railway 배포
 
-로컬 저장소에는 Railway 연결 정보가 없습니다. 기존 Railway 프로젝트를 확인하려면:
+- 프로젝트: `selfmarketing-clone` (Postgres + 앱 서비스). GitHub `master` 푸시 시 자동 배포됩니다.
+- 도메인: https://selfmarketing-clone-production.up.railway.app
+- `start` 스크립트가 `prisma db push`를 포함해 부팅 시 스키마가 자동 반영됩니다.
+- 로컬에서 연결하려면: `railway link` → `railway status`
 
-```bash
-railway link
-railway status
-```
+## 순위 스냅샷 cron
+
+사용자가 접속하지 않아도 순위추적 이력이 매일 쌓이도록, GitHub Actions
+(`.github/workflows/rank-snapshot.yml`)가 매일 06:00 KST에
+`GET /api/cron/rank-snapshot`을 `Authorization: Bearer $CRON_SECRET`로 호출합니다.
+
+- 저장소 시크릿 `CRON_URL`(배포 주소)과 `CRON_SECRET`(Railway Variables와 동일 값)이
+  필요하며, 없으면 워크플로는 아무것도 하지 않습니다.
+- 수동 실행: GitHub Actions 탭에서 `rank-snapshot` → Run workflow.

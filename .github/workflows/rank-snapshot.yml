@@ -1,0 +1,25 @@
+name: rank-snapshot
+
+# 매일 06:00 KST(21:00 UTC)에 배포된 서비스의 순위 스냅샷 엔드포인트를 호출합니다.
+# 저장소 시크릿 CRON_URL(배포 주소, 예: https://example.up.railway.app)과
+# CRON_SECRET(Railway Variables의 CRON_SECRET과 동일 값)이 설정되어 있어야 하며,
+# 없으면 아무것도 하지 않고 건너뜁니다.
+
+on:
+  schedule:
+    - cron: '0 21 * * *'
+  workflow_dispatch: {}
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    env:
+      CRON_URL: ${{ secrets.CRON_URL }}
+      CRON_SECRET: ${{ secrets.CRON_SECRET }}
+    steps:
+      - name: Call rank snapshot endpoint
+        if: ${{ env.CRON_URL != '' && env.CRON_SECRET != '' }}
+        run: |
+          curl -fsS -m 300 \
+            -H "Authorization: Bearer $CRON_SECRET" \
+            "$CRON_URL/api/cron/rank-snapshot"
