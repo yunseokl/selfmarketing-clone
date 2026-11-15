@@ -40,6 +40,7 @@ export default function ChargePage() {
     const [submitting, setSubmitting] = useState(false);
     const [activeTab, setActiveTab] = useState('all');
     const [transactions, setTransactions] = useState([]);
+    const [depositAccount, setDepositAccount] = useState(null);
     const [loading, setLoading] = useState(true);
 
     const fetchBalance = useCallback(async () => {
@@ -61,6 +62,7 @@ export default function ChargePage() {
             if (res.ok) {
                 const data = await res.json();
                 setTransactions(data.transactions || []);
+                if (data.depositAccount) setDepositAccount(data.depositAccount);
             }
         } catch (error) {
             console.error('Error fetching transactions:', error);
@@ -91,8 +93,10 @@ export default function ChargePage() {
     };
 
     const handleCopyAccount = () => {
-        navigator.clipboard.writeText('123456-04-567890');
-        toast.success('계좌번호가 복사되었습니다.');
+        if (!depositAccount) return;
+        navigator.clipboard.writeText(depositAccount.account)
+            .then(() => toast.success('계좌번호가 복사되었습니다.'))
+            .catch(() => toast.error('복사하지 못했습니다. 계좌번호를 직접 적어 주세요.'));
     };
 
     const handleSubmit = async (e) => {
@@ -219,7 +223,11 @@ export default function ChargePage() {
                                 <span>무통장입금 안내</span>
                             </div>
                             <div className={styles.bankAccount}>
-                                <span>국민은행 123456-04-567890 (예금주: (주)혼잘마)</span>
+                                <span>
+                                    {depositAccount
+                                        ? `${depositAccount.bank} ${depositAccount.account} (예금주: ${depositAccount.holder})`
+                                        : '계좌 정보를 불러오는 중...'}
+                                </span>
                                 <button type="button" className={styles.copyBtn} onClick={handleCopyAccount}>
                                     <Copy size={14} />
                                     복사

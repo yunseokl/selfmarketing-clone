@@ -1,0 +1,1052 @@
+/* 오늘 시작하는 AI 노출 가이드 — 카드 틀·버튼은 page.module.css 를 함께 씁니다.
+ * 색은 시트(.sheet)의 토큰만 씁니다: 보라(--ai) = 지금 바로 할 수 있는 통로, 주황 = 주의사항, 초록 = 끝낸 일, 먹색 = 중립.
+ * 면은 밝기 단계(raised → raised-2 → sunk)로 나눕니다. */
+
+.headWrap {
+    flex-wrap: wrap;
+}
+
+.headWrap > div:first-child {
+    flex: 1 1 280px;
+    min-width: 0;
+}
+
+.headTools {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+}
+
+.progress {
+    flex-shrink: 0;
+    padding: 3px 12px;
+    font-size: 14px;
+    font-weight: 700;
+    white-space: nowrap;
+    color: var(--ai-ink);
+    background: var(--ai-wash);
+    border-radius: var(--r);
+    font-variant-numeric: tabular-nums;
+}
+
+/* ───────── AI별 반영 타임라인(가로) ─────────
+ * 이름 칸 + 시간 칸(--cols 개). 막대는 그 AI의 반영 구간이고, 눈금 간격은 실제 시간 비율이 아닙니다. */
+
+.timelineBox {
+    margin-bottom: 14px;
+    padding: 16px 16px 14px;
+    background: var(--raised-2);
+    border-radius: var(--r);
+}
+
+.timelineBox h3 {
+    margin: 0 0 12px;
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--ink);
+}
+
+.timelineBox h3 small {
+    margin-left: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--ink-2);
+}
+
+.tlScroll {
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+}
+
+.tl {
+    --name-w: 148px;
+    min-width: 600px;
+    padding-bottom: 2px;
+}
+
+.tlAxis,
+.tlRow {
+    display: grid;
+    grid-template-columns: var(--name-w) minmax(0, 1fr);
+    align-items: center;
+}
+
+.tlTicks,
+.tlTrack {
+    display: grid;
+    grid-template-columns: repeat(var(--cols), minmax(0, 1fr));
+}
+
+/* 눈금 글자는 칸의 왼쪽 선(그 시각)에 붙입니다. 마지막 칸만 오른쪽 끝 글자를 함께 둡니다. */
+.tlTick {
+    display: flex;
+    justify-content: space-between;
+    gap: 4px;
+    min-width: 0;
+    padding: 0 4px 6px 5px;
+    font-size: 12px;
+    font-weight: 700;
+    white-space: nowrap;
+    color: var(--ink-2);
+    border-left: 1px solid var(--rule);
+    font-variant-numeric: tabular-nums;
+}
+
+.tlTick em {
+    font-style: normal;
+    font-weight: 600;
+}
+
+.tlRows {
+    display: grid;
+    gap: 4px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.tlRow {
+    width: 100%;
+    padding: 0;
+    font: inherit;
+    text-align: left;
+    color: var(--ink);
+    background: none;
+    border: 0;
+    border-radius: var(--r);
+    cursor: pointer;
+}
+
+/* 옆으로 밀어도 AI 이름은 왼쪽에 붙어 있게 합니다(배경으로 지나가는 눈금·막대를 가림). */
+.tlName,
+.tlAxis > span:first-child {
+    position: sticky;
+    left: 0;
+    z-index: 1;
+    align-self: stretch;
+    background: var(--raised-2);
+}
+
+.tlName {
+    display: grid;
+    align-content: center;
+    gap: 1px;
+    min-width: 0;
+    padding-right: 10px;
+}
+
+.tlName strong {
+    font-size: 14px;
+    font-weight: 700;
+    overflow-wrap: anywhere;
+}
+
+.tlName small {
+    font-size: 12px;
+    line-height: 1.35;
+    color: var(--ink-2);
+    overflow-wrap: anywhere;
+}
+
+/* 좁은 화면에서는 막대 글자가 밀려 안 보일 수 있어 이름 아래에도 시간을 적습니다(넓은 화면에서는 숨김). */
+.tlName .tlRange {
+    display: none;
+    font-size: 12px;
+    font-style: normal;
+    font-weight: 700;
+    color: var(--ai-ink);
+    font-variant-numeric: tabular-nums;
+}
+
+/* 시간 칸마다 가는 세로선을 그어 눈금과 막대 끝을 맞춰 읽게 합니다. */
+.tlTrack {
+    align-items: center;
+    min-height: 44px;
+    background-color: var(--raised);
+    background-image: linear-gradient(to right, var(--rule) 1px, transparent 1px);
+    background-size: calc(100% / var(--cols)) 100%;
+    border-radius: var(--r);
+}
+
+.tlBar {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 0;
+    height: 28px;
+    margin: 0 1px 0 2px;
+    padding: 0 6px;
+    font-size: 13px;
+    font-weight: 700;
+    white-space: nowrap;
+    color: var(--raised);
+    background: var(--ai);
+    border-radius: var(--r);
+    font-variant-numeric: tabular-nums;
+    transition: background-color 0.15s ease, transform var(--duration-fast) ease, box-shadow var(--duration-normal) ease;
+}
+
+.tlRow:hover .tlBar {
+    background: var(--ai-ink);
+}
+
+/* 숫자로 적히지 않은 구간("수일")은 끝이 열려 있다는 뜻으로 점선 테두리만 둡니다. */
+.tlBar[data-open='true'] {
+    color: var(--ai-ink);
+    background: var(--ai-wash);
+    border: 1px dashed var(--ai);
+}
+
+.tlRow:hover .tlBar[data-open='true'] {
+    background: var(--raised);
+}
+
+.legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 14px;
+    margin-top: 12px;
+    font-size: 12px;
+    color: var(--ink-2);
+}
+
+.legend span {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.legendBar,
+.legendOpen {
+    display: inline-block;
+    width: 18px;
+    height: 10px;
+    border-radius: 2px;
+}
+
+.legendBar {
+    background: var(--ai);
+}
+
+.legendOpen {
+    background: var(--ai-wash);
+    border: 1px dashed var(--ai);
+}
+
+/* 좁은 화면에서만 보이는 안내 */
+.legend .swipeHint {
+    display: none;
+}
+
+/* ───────── AI 탭: 요약을 겸합니다 ───────── */
+
+.aiTabs {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 6px;
+    margin-bottom: 8px;
+}
+
+.aiTab {
+    display: grid;
+    align-content: start;
+    gap: 3px;
+    min-width: 0;
+    min-height: 44px;
+    padding: 12px;
+    scroll-margin-top: 72px;
+    font: inherit;
+    text-align: left;
+    color: var(--ink);
+    background: var(--raised-2);
+    border: 0;
+    border-radius: var(--r);
+    cursor: pointer;
+    transition: background-color 0.15s ease, color 0.15s ease, transform 0.15s var(--ease), box-shadow var(--duration-normal) ease;
+}
+
+.aiTab:hover {
+    background: var(--sunk);
+}
+
+.aiTab strong {
+    font-size: 15px;
+    font-weight: 700;
+    overflow-wrap: anywhere;
+}
+
+.aiTab span {
+    font-size: 12px;
+    line-height: 1.45;
+    color: var(--ink-2);
+    overflow-wrap: anywhere;
+}
+
+.aiTab .aiCount b {
+    font-size: 14px;
+    color: var(--ai-ink);
+    font-variant-numeric: tabular-nums;
+}
+
+.aiTab .aiDone {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-weight: 700;
+    color: var(--good-ink);
+}
+
+.aiTab[aria-pressed='true'] {
+    color: var(--raised);
+    background: var(--ink);
+}
+
+.aiTab[aria-pressed='true'] span,
+.aiTab[aria-pressed='true'] .aiCount b,
+.aiTab[aria-pressed='true'] .aiDone {
+    color: var(--raised);
+}
+
+.aiTab[aria-pressed='true'] span {
+    opacity: 0.82;
+}
+
+/* 선택한 AI의 반영 시간(로드맵의 '반영까지'와 같은 값·같은 문구) */
+.aiInfo {
+    margin-bottom: 14px;
+    padding: 10px 12px;
+    font-size: 14px;
+    line-height: 1.55;
+    color: var(--ink);
+    background: var(--ai-wash);
+    border-left: 3px solid var(--ai);
+    border-radius: var(--r);
+    overflow-wrap: anywhere;
+}
+
+.aiInfo b {
+    margin-right: 6px;
+    color: var(--ai-ink);
+}
+
+.aiInfo small {
+    font-size: 12px;
+    color: var(--ink-2);
+}
+
+/* ───────── 전략 카드 ───────── */
+
+.group {
+    margin-top: 16px;
+}
+
+.group h3 {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 8px;
+    margin: 0 0 8px;
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--ink);
+}
+
+.group h3 svg {
+    flex-shrink: 0;
+    color: var(--ai);
+}
+
+.group h3.groupPrep svg {
+    color: var(--ink-3);
+}
+
+.group h3 small {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--ink-2);
+}
+
+.cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(340px, 100%), 1fr));
+    align-items: start;
+    gap: 8px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.card {
+    min-width: 0;
+    padding: 14px 16px 16px;
+    background: var(--raised-2);
+    border-left: 3px solid var(--ai);
+    border-radius: var(--r);
+    scroll-margin-top: 72px;
+}
+
+.cardPrep {
+    border-left-color: var(--rule);
+}
+
+.cardDone {
+    border-left-color: var(--good);
+}
+
+.cardHead {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.cardHead h4 {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 700;
+    line-height: 1.4;
+    letter-spacing: -0.01em;
+    color: var(--ink);
+    overflow-wrap: anywhere;
+}
+
+.stepCount {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding-top: 2px;
+    font-size: 12px;
+    font-weight: 700;
+    white-space: nowrap;
+    color: var(--ink-2);
+    font-variant-numeric: tabular-nums;
+}
+
+.cardDone .stepCount {
+    color: var(--good-ink);
+}
+
+.meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 8px;
+}
+
+.metaTime,
+.metaChip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 1px 8px;
+    font-size: 12px;
+    font-weight: 700;
+    white-space: nowrap;
+    border-radius: var(--r);
+}
+
+.metaTime {
+    color: var(--ai-ink);
+    background: var(--ai-wash);
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+
+.metaTime svg {
+    flex-shrink: 0;
+}
+
+.metaChip {
+    color: var(--ink-2);
+    background: var(--sunk);
+}
+
+/* 난이도는 색과 함께 '쉬움/보통/어려움' 글자로도 구분합니다 */
+.dEasy {
+    color: var(--good-ink);
+    background: var(--good-wash);
+}
+
+.dNormal {
+    color: var(--warn-ink);
+    background: var(--warn-wash);
+}
+
+.dHard {
+    color: var(--bad-ink);
+    background: var(--bad-wash);
+}
+
+.why {
+    margin-top: 8px;
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--ink-2);
+    overflow-wrap: anywhere;
+}
+
+.needs {
+    margin-top: 8px;
+    padding: 8px 10px;
+    font-size: 13px;
+    line-height: 1.55;
+    color: var(--ink);
+    background: var(--sunk);
+    border-radius: var(--r);
+    overflow-wrap: anywhere;
+}
+
+.needs b {
+    margin-right: 6px;
+    color: var(--ink-2);
+}
+
+.steps {
+    display: grid;
+    gap: 4px;
+    margin: 10px 0 0;
+    padding: 0;
+    list-style: none;
+}
+
+.steps li {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 10px;
+    background: var(--raised);
+    border-radius: var(--r);
+}
+
+.steps input[type='checkbox'],
+.day input[type='checkbox'] {
+    flex-shrink: 0;
+    width: 18px;
+    height: 18px;
+    margin: 2px 0 0;
+    accent-color: var(--ai-ink);
+    cursor: pointer;
+}
+
+.steps label {
+    min-width: 0;
+    font-size: 14px;
+    line-height: 1.55;
+    color: var(--ink);
+    cursor: pointer;
+    overflow-wrap: anywhere;
+}
+
+.steps label b {
+    margin-right: 7px;
+    font-weight: 800;
+    color: var(--ai-ink);
+    font-variant-numeric: tabular-nums;
+}
+
+.stepOn label {
+    color: var(--ink-2);
+    text-decoration: line-through;
+    text-decoration-color: var(--ink-3);
+}
+
+.cautions {
+    display: grid;
+    gap: 5px;
+    margin: 10px 0 0;
+    padding: 10px 12px;
+    list-style: none;
+    background: var(--warn-wash);
+    border-radius: var(--r);
+}
+
+.cautions li {
+    display: flex;
+    align-items: flex-start;
+    gap: 7px;
+    font-size: 13px;
+    line-height: 1.55;
+    color: var(--ink);
+}
+
+.cautions li span {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.cautions svg {
+    flex-shrink: 0;
+    margin-top: 3px;
+    color: var(--warn-ink);
+}
+
+.draft {
+    margin-top: 10px;
+}
+
+.draft summary {
+    display: inline-flex;
+    align-items: center;
+    min-height: 32px;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--ink);
+    cursor: pointer;
+    text-decoration: underline;
+    text-decoration-color: var(--ai);
+    text-decoration-thickness: 2px;
+    text-underline-offset: 4px;
+}
+
+.draft pre {
+    max-height: 260px;
+    margin: 6px 0 8px;
+    padding: 12px 14px;
+    overflow: auto;
+    font-family: inherit;
+    font-size: 13px;
+    line-height: 1.7;
+    color: var(--ink);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    background: var(--raised);
+    border-left: 3px solid var(--rule);
+    border-radius: var(--r);
+}
+
+/* ───────── 원데이 플랜 ───────── */
+
+.startField {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--ink-2);
+}
+
+.startField input {
+    height: 34px;
+    padding: 0 8px;
+    font: inherit;
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--ink);
+    background: var(--raised-2);
+    border: 1px solid var(--field);
+    border-radius: var(--r);
+    font-variant-numeric: tabular-nums;
+}
+
+.day {
+    display: grid;
+    gap: 4px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.day > li {
+    --check: 18px;
+    display: grid;
+    grid-template-columns: 74px var(--check) minmax(0, 1fr);
+    align-items: start;
+    gap: 12px;
+    padding: 12px 14px;
+    background: var(--raised-2);
+    border-left: 3px solid var(--rule);
+    border-radius: var(--r);
+}
+
+.day > li[data-kind='strategy'] {
+    border-left-color: var(--ai);
+}
+
+/* 재는 일(기준점·다시 재기)은 통로를 여는 일과 구분합니다 */
+.day > li[data-kind='measure'],
+.day > li[data-kind='remeasure'] {
+    background: var(--ai-wash);
+    border-left-color: var(--ai-ink);
+}
+
+.day > li.dayDone {
+    border-left-color: var(--good);
+}
+
+.dayTime strong {
+    display: block;
+    font-size: 17px;
+    font-weight: 800;
+    line-height: 1.3;
+    letter-spacing: -0.02em;
+    color: var(--ink);
+    font-variant-numeric: tabular-nums;
+}
+
+.dayTime small {
+    font-size: 12px;
+    color: var(--ink-2);
+}
+
+.dayBody {
+    min-width: 0;
+}
+
+.dayTitle {
+    display: block;
+    font-size: 15px;
+    font-weight: 700;
+    line-height: 1.45;
+    color: var(--ink);
+    cursor: pointer;
+    overflow-wrap: anywhere;
+}
+
+.dayDone .dayTitle {
+    color: var(--ink-2);
+    text-decoration: line-through;
+    text-decoration-color: var(--ink-3);
+}
+
+.dayBody p {
+    margin-top: 3px;
+    font-size: 13px;
+    line-height: 1.55;
+    color: var(--ink-2);
+    overflow-wrap: anywhere;
+}
+
+.dayBody .dayTags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 5px;
+}
+
+.dayTags span {
+    padding: 0 8px;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--ink-2);
+    background: var(--sunk);
+    border-radius: var(--r);
+}
+
+.dayTags .tagAi {
+    color: var(--ai-ink);
+    background: var(--ai-wash);
+}
+
+.dayBody .dayExpect {
+    font-weight: 700;
+    color: var(--ai-ink);
+    font-variant-numeric: tabular-nums;
+}
+
+.linkBtn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    min-height: 32px;
+    margin-top: 2px;
+    padding: 0;
+    font: inherit;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--ink);
+    background: none;
+    border: 0;
+    cursor: pointer;
+    text-decoration: underline;
+    text-decoration-color: var(--ai);
+    text-decoration-thickness: 2px;
+    text-underline-offset: 4px;
+}
+
+@media (max-width: 1100px) {
+    .aiTabs {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 640px) {
+    .aiTabs {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    /* 좁은 화면에서도 가로 타임라인을 유지하고 옆으로 밀어 봅니다(.tl 의 min-width) */
+    .tl {
+        --name-w: 104px;
+        min-width: 540px;
+    }
+
+    .tlName .tlRange {
+        display: block;
+    }
+
+    .legend .swipeHint {
+        display: inline-flex;
+        font-weight: 700;
+        color: var(--ai-ink);
+    }
+}
+
+@media (max-width: 520px) {
+    .day > li {
+        grid-template-columns: var(--check) minmax(0, 1fr);
+    }
+
+    .dayTime {
+        grid-column: 1 / -1;
+        display: flex;
+        align-items: baseline;
+        gap: 8px;
+    }
+}
+
+/* ───────── 마이크로 인터랙션 ─────────
+ * 시간·곡선은 시트(.sheet)의 --duration-*, --ease-* 를 씁니다. 올림(:hover)은 마우스로 가리킬 수 있는 화면에서만 쓰고,
+ * 누름(:active)은 그 뒤에 두어 누르는 동안 눌린 모양이 이기게 합니다. */
+
+/* 타임라인 막대: 처음 보일 때 왼쪽에서 오른쪽으로 열립니다(폭을 늘리면 글자가 찌그러져 가리개로 엽니다) */
+.tlBar {
+    animation: tlWipe 0.7s var(--ease-out-expo) backwards;
+}
+
+.tlRows li:nth-child(2) .tlBar { animation-delay: 60ms; }
+.tlRows li:nth-child(3) .tlBar { animation-delay: 120ms; }
+.tlRows li:nth-child(4) .tlBar { animation-delay: 180ms; }
+.tlRows li:nth-child(5) .tlBar { animation-delay: 240ms; }
+.tlRows li:nth-child(n + 6) .tlBar { animation-delay: 300ms; }
+
+@keyframes tlWipe {
+    from { clip-path: inset(0 100% 0 0); }
+    to { clip-path: inset(0); }
+}
+
+/* AI 탭: 고른 탭이 톡 튀고, 그 AI의 안내와 전략 카드가 차례로 떠오릅니다 */
+.aiTab[aria-pressed='true'] {
+    animation: tabPick var(--duration-slow) var(--ease-spring);
+}
+
+@keyframes tabPick {
+    from { transform: scale(0.96); }
+}
+
+.aiInfo {
+    animation: contentIn var(--duration-slow) var(--ease-out-expo);
+}
+
+.card {
+    animation: contentIn var(--duration-slow) var(--ease-out-expo) backwards;
+    transition: transform var(--duration-normal) var(--ease), box-shadow 0.25s var(--ease), border-color var(--duration-normal) ease;
+}
+
+.cards > li:nth-child(2) { animation-delay: 50ms; }
+.cards > li:nth-child(3) { animation-delay: 100ms; }
+.cards > li:nth-child(n + 4) { animation-delay: 150ms; }
+
+@keyframes contentIn {
+    from {
+        opacity: 0;
+        transform: translateY(6px);
+    }
+}
+
+/* 체크 칸이 든 줄은 누를 곳이 움직이지 않게 테두리만 켭니다 */
+.steps li,
+.day > li {
+    transition: box-shadow var(--duration-normal) ease, background-color var(--duration-normal) ease, border-color var(--duration-normal) ease;
+}
+
+.steps label,
+.dayTitle,
+.stepCount {
+    transition: color var(--duration-normal) ease;
+}
+
+.steps input[type='checkbox'],
+.day input[type='checkbox'] {
+    transition: transform var(--duration-fast) ease;
+}
+
+.steps input[type='checkbox']:checked,
+.day input[type='checkbox']:checked {
+    animation: checkPop var(--duration-slow) var(--ease-spring);
+}
+
+@keyframes checkPop {
+    40% { transform: scale(1.2); }
+}
+
+.startField input {
+    transition: border-color 0.15s ease, box-shadow var(--duration-normal) ease;
+}
+
+.startField input:focus {
+    border-color: var(--ink);
+    box-shadow: 0 0 0 3px var(--ai-wash);
+}
+
+.linkBtn,
+.draft summary {
+    transition: text-decoration-color var(--duration-normal) ease, opacity var(--duration-fast) ease;
+}
+
+.linkBtn svg {
+    transition: transform var(--duration-normal) var(--ease);
+}
+
+/* 접기·펼치기: 화살표가 돌고, 펼친 내용이 떠오르며 나타납니다 */
+.draft summary::after {
+    content: '';
+    width: 6px;
+    height: 6px;
+    margin-left: 8px;
+    border-right: 2px solid var(--ink-3);
+    border-bottom: 2px solid var(--ink-3);
+    transform: translateY(-2px) rotate(45deg);
+    transition: transform var(--duration-normal) var(--ease-out-expo);
+}
+
+.draft[open] summary::after {
+    transform: translateY(1px) rotate(225deg);
+}
+
+.draft[open] > :not(summary) {
+    animation: contentIn var(--duration-normal) var(--ease-out-expo);
+}
+
+/* 높이까지 부드럽게 여닫는 것은 지원하는 브라우저에서만(그 밖에는 위 떠오름만 보입니다) */
+@supports selector(::details-content) and (interpolate-size: allow-keywords) {
+    .draft {
+        interpolate-size: allow-keywords;
+    }
+
+    .draft::details-content {
+        block-size: 0;
+        overflow: clip;
+        transition: block-size var(--duration-slow) var(--ease-out-expo), content-visibility var(--duration-slow) allow-discrete;
+    }
+
+    .draft[open]::details-content {
+        block-size: auto;
+    }
+}
+
+@media (hover: hover) {
+    .card:hover {
+        transform: translateY(-2px);
+        box-shadow: var(--lift);
+    }
+
+    .steps li:hover,
+    .day > li:hover {
+        box-shadow: inset 0 0 0 1px var(--rule);
+    }
+
+    .aiTab:hover {
+        transform: translateY(-1px);
+        box-shadow: var(--lift-sm);
+    }
+
+    .tlRow:hover .tlBar {
+        box-shadow: var(--lift-sm);
+    }
+
+    .linkBtn:hover,
+    .draft summary:hover {
+        text-decoration-color: var(--ink);
+    }
+
+    .linkBtn:hover svg {
+        transform: translateX(3px);
+    }
+
+    .startField input:hover:not(:focus) {
+        border-color: var(--field-hover);
+    }
+}
+
+.aiTab:active {
+    transform: translateY(1px) scale(0.98);
+    box-shadow: var(--press);
+    transition-duration: var(--duration-fast);
+}
+
+.tlRow:active .tlBar {
+    transform: scale(0.97);
+}
+
+.linkBtn:active {
+    opacity: 0.6;
+}
+
+.steps input[type='checkbox']:active,
+.day input[type='checkbox']:active {
+    transform: scale(0.88);
+}
+
+/* 손가락으로 쓰는 화면: 누르는 영역을 44px 이상으로 넓힙니다(글자 크기와 줄 간격은 그대로 둡니다) */
+@media (pointer: coarse), (max-width: 768px) {
+    .startField input {
+        height: 44px;
+    }
+
+    .day > li {
+        --check: 22px;
+    }
+
+    .steps input[type='checkbox'],
+    .day input[type='checkbox'] {
+        width: 22px;
+        height: 22px;
+        margin-top: 0;
+    }
+
+    .steps label,
+    .dayTitle {
+        margin-block: -11px;
+        padding-block: 11px;
+    }
+
+    .linkBtn {
+        position: relative;
+    }
+
+    .linkBtn::after {
+        content: '';
+        position: absolute;
+        inset: -6px 0;
+    }
+
+    .draft summary {
+        min-height: 44px;
+        margin-block: -6px;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .tlBar,
+    .aiTab,
+    .card,
+    .steps li,
+    .day > li,
+    .linkBtn svg,
+    .draft summary::after,
+    .draft::details-content {
+        transition: none;
+    }
+
+    .tlBar,
+    .aiTab[aria-pressed='true'],
+    .aiInfo,
+    .card,
+    .draft[open] > :not(summary),
+    .steps input[type='checkbox']:checked,
+    .day input[type='checkbox']:checked {
+        animation: none;
+    }
+}

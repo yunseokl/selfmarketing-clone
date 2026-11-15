@@ -20,8 +20,10 @@ export async function POST(request) {
         const { email, password, name } = validationResult.data;
 
         // Check if user already exists
-        const existingUser = await prisma.user.findUnique({
-            where: { email }
+        // (email 은 스키마에서 trim+소문자로 정규화됨. 정규화 도입 전 대문자 가입자와도 겹치지 않게 대소문자 무시 조회)
+        const existingUser = await prisma.user.findFirst({
+            where: { email: { equals: email, mode: 'insensitive' } },
+            select: { id: true }
         });
 
         if (existingUser) {
@@ -76,6 +78,10 @@ export async function POST(request) {
             }
         });
     } catch (error) {
+        // 동시 가입으로 unique 제약에 걸린 경우(P2002)도 중복 이메일로 안내
+        if (error?.code === 'P2002') {
+            return NextResponse.json({ error: '이미 등록된 이메일입니다.' }, { status: 400 });
+        }
         console.error('Registration error:', error);
         return NextResponse.json(
             { error: '회원가입 중 오류가 발생했습니다.' },

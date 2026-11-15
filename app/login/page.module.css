@@ -371,3 +371,44 @@
     color: var(--text-white);
     text-decoration: underline;
 }
+
+/* 무료 도구 목록 (브랜딩 영역) */
+.toolList {
+    display: grid;
+    gap: 10px;
+    list-style: none;
+    margin: 14px 0 0;
+    padding: 0;
+}
+
+.toolList li {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 14px;
+    color: rgba(255, 255, 255, 0.85);
+}
+
+.toolList svg {
+    flex-shrink: 0;
+    color: var(--accent);
+}
+
+/* 비밀번호 재설정 요청 접수 안내 */
+.success {
+    padding: 12px 14px;
+    font-size: 13px;
+    line-height: 1.6;
+    color: #A7F3D0;
+    background: rgba(16, 185, 129, 0.12);
+    border: 1px solid rgba(16, 185, 129, 0.3);
+    border-radius: 10px;
+}
+
+button.forgotLink {
+    background: none;
+    border: 0;
+    padding: 0;
+    font-family: inherit;
+    cursor: pointer;
+}

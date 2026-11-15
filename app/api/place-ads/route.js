@@ -3,7 +3,8 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import prisma from '@/lib/prisma';
 import { createPlaceAdSchema } from '@/lib/validations/place';
-import { simulateAdRank } from '@/lib/naver';
+import { createAdOrder } from '@/lib/ad-orders';
+import { InsufficientBalanceError } from '@/lib/cash-ledger';
 
 // 로그인 세션/쿠키를 읽는 API라 빌드 때 정적으로 고정하지 않습니다.
 export const dynamic = 'force-dynamic';
@@ -35,8 +36,14 @@ export async function GET(request) {
         const status = searchParams.get('status');
 
         const where = { userId: user.id };
+        // 화면 탭 묶음: 진행중 = 대기중+진행중, 만료됨 = 기간 만료+관리자 완료 처리
+        const STATUS_GROUPS = {
+            active: ['pending', 'active'],
+            expired: ['expired', 'completed'],
+            refunded: ['refunded'],
+        };
         if (status && status !== 'all') {
-            where.status = status;
+            where.status = { in: STATUS_GROUPS[status] || [status] };
         }
 
         const ads = await prisma.placeAd.findMany({
@@ -44,12 +51,9 @@ export async function GET(request) {
             orderBy: { createdAt: 'desc' }
         });
 
-        // 진행중인 광고는 경과일 기반으로 실시간 순위를 계산해 덮어씁니다 (DB 저장 없음)
-        const adsWithRank = ads.map((ad) =>
-            ad.status === 'active'
-                ? { ...ad, currentRank: simulateAdRank(ad.id, ad.startDate, ad.duration) }
-                : ad
-        );
+        // 광고 순위는 측정할 공식 경로가 없어 내려보내지 않습니다.
+        // (예전에는 경과일에 따라 순위가 오르는 것처럼 계산한 값을 보여 줬는데, 실제 순위가 아니어서 제거)
+        const adsWithRank = ads.map((ad) => ({ ...ad, currentRank: null }));
 
         return NextResponse.json({ ads: adsWithRank });
     } catch (error) {
@@ -84,61 +88,16 @@ export async function POST(request) {
             return NextResponse.json({ error: errors }, { status: 400 });
         }
 
-        const { placeUrl, placeName, placeImage, keyword, serviceType, pricePerClick, dailyGoal, duration } = validationResult.data;
-
-        // Calculate total cost
-        const finalPricePerClick = pricePerClick || 30;
-        const totalCost = finalPricePerClick * dailyGoal * duration;
-
-        // Check user balance
-        if (user.balance < totalCost) {
-            return NextResponse.json({ error: '잔액이 부족합니다.' }, { status: 400 });
+        // 금액은 서버 가격표로만 계산하고, 잔액 확인·차감·광고 생성을 한 트랜잭션으로 처리합니다.
+        let ad;
+        try {
+            ad = await createAdOrder('place', user.id, validationResult.data);
+        } catch (error) {
+            if (error instanceof InsufficientBalanceError) {
+                return NextResponse.json({ error: '잔액이 부족합니다.' }, { status: 400 });
+            }
+            throw error;
         }
-
-        // Calculate dates
-        const startDate = new Date();
-        const endDate = new Date();
-        endDate.setDate(endDate.getDate() + duration);
-
-        // Create ad, decrement balance, and log the cash transaction atomically
-        const ad = await prisma.$transaction(async (tx) => {
-            const createdAd = await tx.placeAd.create({
-                data: {
-                    userId: user.id,
-                    placeUrl,
-                    placeName,
-                    placeImage,
-                    keyword,
-                    serviceType: serviceType || 'selma30',
-                    pricePerClick: finalPricePerClick,
-                    dailyGoal,
-                    duration,
-                    totalCost,
-                    startDate,
-                    endDate,
-                    status: 'active',
-                }
-            });
-
-            const updatedUser = await tx.user.update({
-                where: { id: user.id },
-                data: { balance: { decrement: totalCost } }
-            });
-
-            await tx.cashTransaction.create({
-                data: {
-                    userId: user.id,
-                    type: 'use',
-                    amount: -totalCost,
-                    balanceAfter: updatedUser.balance,
-                    status: 'completed',
-                    method: 'system',
-                    description: `플레이스 트래픽 광고 - ${createdAd.placeName} (${keyword})`,
-                }
-            });
-
-            return createdAd;
-        });
 
         return NextResponse.json({
             message: '광고가 생성되었습니다.',

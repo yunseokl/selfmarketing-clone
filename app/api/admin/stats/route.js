@@ -3,6 +3,9 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { requireAdmin } from '@/lib/auth-helpers';
 import prisma from '@/lib/prisma';
+import { getDepositAccount } from '@/lib/site-config';
+import { trendConfig } from '@/lib/naver-trend';
+import { placeLookupStatus } from '@/lib/place-service';
 
 // 로그인 세션/쿠키를 읽는 API라 빌드 때 정적으로 고정하지 않습니다.
 export const dynamic = 'force-dynamic';
@@ -28,8 +31,8 @@ export async function GET() {
             completedShoppingOrders,
             completedPlaceOrders,
             totalUsers,
-            shoppingRevenueData,
-            placeRevenueData,
+            usedLedger,
+            refundedLedger,
             pendingCash,
             openInquiries,
             pendingBlog,
@@ -44,13 +47,15 @@ export async function GET() {
             prisma.shoppingAd.count({ where: { status: 'completed' } }),
             prisma.placeAd.count({ where: { status: 'completed' } }),
             prisma.user.count(),
-            prisma.shoppingAd.aggregate({
-                _sum: { totalCost: true },
-                where: { status: { not: 'refunded' } }
+            // 총 매출 = 원장 기준 결제(use) 합계의 절댓값 − 환불(refund) 합계. 관리자 수동 조정(method='admin')은 제외.
+            // 광고(쇼핑/플레이스)와 블로그 결제를 모두 포함하고, 부분 환불도 그대로 반영됩니다.
+            prisma.cashTransaction.aggregate({
+                _sum: { amount: true },
+                where: { type: 'use', status: 'completed', OR: [{ method: null }, { method: { not: 'admin' } }] }
             }),
-            prisma.placeAd.aggregate({
-                _sum: { totalCost: true },
-                where: { status: { not: 'refunded' } }
+            prisma.cashTransaction.aggregate({
+                _sum: { amount: true },
+                where: { type: 'refund', status: 'completed', OR: [{ method: null }, { method: { not: 'admin' } }] }
             }),
             prisma.cashTransaction.count({ where: { status: 'pending', type: 'charge' } }),
             prisma.inquiry.count({ where: { status: 'open' } }),
@@ -64,11 +69,17 @@ export async function GET() {
             activeOrders: activeShoppingOrders + activePlaceOrders,
             completedOrders: completedShoppingOrders + completedPlaceOrders,
             totalUsers,
-            totalRevenue: (shoppingRevenueData._sum.totalCost || 0) + (placeRevenueData._sum.totalCost || 0),
+            totalRevenue: Math.abs(usedLedger._sum.amount || 0) - (refundedLedger._sum.amount || 0),
             pendingCash,
             openInquiries,
             pendingBlog,
-            pendingRefunds
+            pendingRefunds,
+            // 운영자가 확인해야 할 설정 상태
+            system: {
+                depositAccountConfigured: getDepositAccount().configured,
+                keywordTrendConfigured: Boolean(trendConfig()),
+                placeLookup: placeLookupStatus(),
+            }
         });
     } catch (error) {
         console.error('Error fetching admin stats:', error);

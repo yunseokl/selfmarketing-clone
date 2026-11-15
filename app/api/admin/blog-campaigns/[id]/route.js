@@ -5,6 +5,8 @@ import { requireAdmin } from '@/lib/auth-helpers';
 import prisma from '@/lib/prisma';
 import { updateBlogCampaignSchema } from '@/lib/validations/content';
 import { createNotification } from '@/lib/notify';
+import { calculateBlogRefund } from '@/lib/pricing';
+import { creditBalance, logCash, AlreadyProcessedError } from '@/lib/cash-ledger';
 
 // 로그인 세션/쿠키를 읽는 API라 빌드 때 정적으로 고정하지 않습니다.
 export const dynamic = 'force-dynamic';
@@ -49,36 +51,96 @@ export async function PATCH(request, { params }) {
             return NextResponse.json({ error: '캠페인을 찾을 수 없습니다.' }, { status: 404 });
         }
 
-        const data = {};
-        if (status) data.status = status;
-
-        if (addLink) {
-            const links = existing.publishedLinks ? JSON.parse(existing.publishedLinks) : [];
-            links.push(addLink);
-            data.publishedLinks = JSON.stringify(links);
-            data.publishedCount = links.length;
+        // 취소된 캠페인은 환불이 끝난 상태라 되돌릴 수 없습니다(재환불 방지).
+        if (existing.status === 'cancelled') {
+            return NextResponse.json({ error: '이미 취소(환불)된 캠페인은 변경할 수 없습니다.' }, { status: 400 });
         }
 
-        const campaign = await prisma.blogCampaign.update({
-            where: { id: params.id },
-            data
-        });
+        let campaign;
+        let refundAmount = null;
+
+        if (status === 'cancelled') {
+            // 취소: 아직 발행되지 않은 건수만큼 캐시로 환불합니다. 상태 선점에 성공한 요청 하나만 진행.
+            try {
+                ({ campaign, refundAmount } = await prisma.$transaction(async (tx) => {
+                    const claimed = await tx.blogCampaign.updateMany({
+                        where: { id: params.id, status: { in: ['pending', 'in_progress'] } },
+                        data: { status: 'cancelled' },
+                    });
+                    if (claimed.count !== 1) {
+                        throw new AlreadyProcessedError('접수·진행중인 캠페인만 취소할 수 있습니다.');
+                    }
+
+                    const cancelled = await tx.blogCampaign.findUnique({ where: { id: params.id } });
+                    const amount = calculateBlogRefund({
+                        totalCost: cancelled.totalCost,
+                        postCount: cancelled.postCount,
+                        publishedCount: cancelled.publishedCount,
+                    });
+                    const balanceAfter = await creditBalance(tx, cancelled.userId, amount);
+                    if (amount > 0) {
+                        await logCash(tx, {
+                            userId: cancelled.userId,
+                            type: 'refund',
+                            amount,
+                            balanceAfter,
+                            description: `블로그 배포 취소 환불 - ${cancelled.placeName} (미발행 ${cancelled.postCount - cancelled.publishedCount}건)`,
+                        });
+                    }
+                    return { campaign: cancelled, refundAmount: amount };
+                }));
+            } catch (error) {
+                if (error instanceof AlreadyProcessedError) {
+                    return NextResponse.json({ error: error.message }, { status: 400 });
+                }
+                throw error;
+            }
+        } else {
+            const data = {};
+            if (status) data.status = status;
+
+            if (addLink) {
+                let links = [];
+                try {
+                    const parsed = existing.publishedLinks ? JSON.parse(existing.publishedLinks) : [];
+                    links = Array.isArray(parsed) ? parsed : [];
+                } catch {
+                    links = [];
+                }
+                if (links.length >= existing.postCount) {
+                    return NextResponse.json({ error: `신청한 ${existing.postCount}건이 모두 발행되었습니다.` }, { status: 400 });
+                }
+                links.push(addLink);
+                data.publishedLinks = JSON.stringify(links);
+                data.publishedCount = links.length;
+            }
+
+            campaign = await prisma.blogCampaign.update({
+                where: { id: params.id },
+                data
+            });
+        }
 
         if (status) {
             const message = getStatusMessage(status, campaign);
             if (message) {
                 await createNotification(campaign.userId, {
-                    type: 'ad',
+                    type: refundAmount ? 'cash' : 'ad',
                     title: message,
-                    message: `"${campaign.placeName}" 블로그 배포 현황을 확인해보세요.`,
-                    link: '/dashboard/blog',
+                    message: refundAmount
+                        ? `"${campaign.placeName}" 블로그 배포가 취소되어 ${refundAmount.toLocaleString()}원이 캐시로 환불되었습니다.`
+                        : `"${campaign.placeName}" 블로그 배포 현황을 확인해보세요.`,
+                    link: refundAmount ? '/dashboard/charge' : '/dashboard/blog',
                 });
             }
         }
 
         return NextResponse.json({
-            message: '캠페인이 업데이트되었습니다.',
-            campaign
+            message: refundAmount != null
+                ? `캠페인을 취소했습니다. ${refundAmount.toLocaleString()}원이 회원 캐시로 환불되었습니다.`
+                : '캠페인이 업데이트되었습니다.',
+            campaign,
+            refundAmount
         });
     } catch (error) {
         console.error('Error updating blog campaign:', error);

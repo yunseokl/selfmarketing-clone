@@ -14,6 +14,10 @@ export async function POST(request, { params }) {
 
         return NextResponse.json({ views: notice.views });
     } catch (error) {
+        // 없는 공지 ID — Prisma 'Record to update not found'
+        if (error?.code === 'P2025') {
+            return NextResponse.json({ error: '공지사항을 찾을 수 없습니다.' }, { status: 404 });
+        }
         console.error('Error updating notice views:', error);
         return NextResponse.json({ error: '조회수 업데이트 중 오류가 발생했습니다.' }, { status: 500 });
     }

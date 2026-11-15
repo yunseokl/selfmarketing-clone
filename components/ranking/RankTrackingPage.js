@@ -10,8 +10,10 @@ import {
     ExternalLink,
     Info,
     Minus,
+    Pencil,
     Plus,
     RefreshCw,
+    ScanSearch,
     Search,
     Trash2,
     TrendingDown,
@@ -39,8 +41,12 @@ function getValidationMessage(error) {
 }
 
 function getRankChange(tracking) {
+    if ((tracking.recordCount || 0) < 2) {
+        return { type: 'same', label: tracking.recordCount ? '첫 기록' : '기록 전', Icon: Minus };
+    }
+    // 둘 중 하나가 "순위권 밖"이면 계단 수를 계산할 수 없습니다.
     if (!tracking.previousRank || !tracking.currentRank) {
-        return { type: 'same', label: '신규', Icon: Minus };
+        return { type: 'same', label: '-', Icon: Minus };
     }
 
     // previousRank - currentRank 가 양수면 순위 숫자가 줄어든 것 = 상승
@@ -58,20 +64,16 @@ function formatDate(value) {
     });
 }
 
-function parseHistory(tracking) {
-    try {
-        const parsed = tracking.rankHistory ? JSON.parse(tracking.rankHistory) : [];
-        if (!Array.isArray(parsed)) return [];
-        return parsed
-            .filter(point => point && typeof point.rank === 'number')
-            .map(point => ({
-                // 신규 스냅샷은 date, 구형 데이터는 checkedAt 을 라벨로 사용
-                label: point.date || (point.checkedAt ? String(point.checkedAt).slice(5, 10) : ''),
-                rank: point.rank,
-            }));
-    } catch {
-        return [];
-    }
+// 차트용: 순위 숫자가 있는 기록만 (순위권 밖은 선에서 제외)
+function chartPoints(tracking) {
+    return (tracking.history || [])
+        .filter(point => typeof point.rank === 'number')
+        .map(point => ({ label: point.date.slice(5).replace('-', '/'), rank: point.rank }));
+}
+
+function rankText(tracking) {
+    if (!tracking.recordCount) return '기록 없음';
+    return tracking.currentRank ? `${tracking.currentRank}위` : '순위권 밖';
 }
 
 function rankClass(rank) {
@@ -111,7 +113,10 @@ export default function RankTrackingPage({
     const [loading, setLoading] = useState(true);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [saving, setSaving] = useState(false);
-    const [refreshingId, setRefreshingId] = useState('');
+    const [recordingId, setRecordingId] = useState('');
+    const [lookingUpId, setLookingUpId] = useState('');
+    const [today, setToday] = useState('');
+    const [recordForm, setRecordForm] = useState({ date: '', rank: '', outOfRank: false });
     const [deletingId, setDeletingId] = useState('');
     const [expandedId, setExpandedId] = useState('');
     const [searchQuery, setSearchQuery] = useState('');
@@ -119,6 +124,7 @@ export default function RankTrackingPage({
         url: '',
         name: '',
         keyword: '',
+        rank: '',
     });
     const [formErrors, setFormErrors] = useState({});
 
@@ -130,12 +136,13 @@ export default function RankTrackingPage({
 
             if (res.ok) {
                 setTrackings(data.trackings || []);
+                setToday(data.today || '');
             } else {
                 toast.error(getValidationMessage(data.error));
             }
         } catch (error) {
             console.error('Error fetching rank trackings:', error);
-            toast.error('순위 추적 목록을 불러오지 못했습니다.');
+            toast.error('순위 기록장을 불러오지 못했습니다.');
         } finally {
             setLoading(false);
         }
@@ -160,15 +167,10 @@ export default function RankTrackingPage({
         );
     }, [searchQuery, trackings]);
 
-    const isEstimate = useMemo(
-        () => trackings.some(item => item.source === 'estimate'),
-        [trackings]
-    );
-
     const atLimit = trackings.length >= MAX_TRACKINGS;
 
     const resetForm = () => {
-        setFormData({ url: '', name: '', keyword: '' });
+        setFormData({ url: '', name: '', keyword: '', rank: '' });
         setFormErrors({});
     };
 
@@ -185,14 +187,19 @@ export default function RankTrackingPage({
 
         if (!url) {
             errors.url = 'URL을 입력해주세요.';
-        } else if (!/naver\.com/i.test(url)) {
+        } else if (!/naver\.(com|me)/i.test(url)) {
             errors.url = type === 'shopping'
                 ? '네이버 쇼핑 또는 스마트스토어 상품 URL을 입력해주세요.'
                 : '네이버 플레이스 또는 지도 URL을 입력해주세요.';
         }
 
         if (!keyword) {
-            errors.keyword = '추적할 키워드를 입력해주세요.';
+            errors.keyword = '기록할 키워드를 입력해주세요.';
+        }
+
+        const rank = formData.rank.trim();
+        if (rank && !(Number.isInteger(Number(rank)) && Number(rank) >= 1 && Number(rank) <= 1000)) {
+            errors.rank = '순위는 1~1000 사이 숫자로 입력해주세요.';
         }
 
         return errors;
@@ -217,6 +224,7 @@ export default function RankTrackingPage({
                     url: formData.url.trim(),
                     name: formData.name.trim() || undefined,
                     keyword: formData.keyword.trim(),
+                    rank: formData.rank.trim() ? Number(formData.rank.trim()) : undefined,
                 }),
             });
             const data = await res.json();
@@ -230,38 +238,108 @@ export default function RankTrackingPage({
             }
         } catch (error) {
             console.error('Error creating rank tracking:', error);
-            toast.error('순위 추적 등록 중 오류가 발생했습니다.');
+            toast.error('등록 중 오류가 발생했습니다.');
         } finally {
             setSaving(false);
         }
     };
 
-    const handleRefresh = async (id) => {
+    const openRecord = (id) => {
+        setExpandedId(id);
+        setRecordForm({ date: today, rank: '', outOfRank: false });
+    };
+
+    const toggleExpand = (id) => {
+        if (expandedId === id) {
+            setExpandedId('');
+        } else {
+            openRecord(id);
+        }
+    };
+
+    const sendRecord = async (id, payload, failMessage) => {
         try {
-            setRefreshingId(id);
+            setRecordingId(id);
             const res = await fetch('/api/rank-tracking', {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ id }),
+                body: JSON.stringify({ id, ...payload }),
             });
             const data = await res.json();
 
             if (res.ok) {
                 toast.success(data.message);
                 setTrackings(prev => prev.map(item => item.id === id ? data.tracking : item));
-            } else {
-                toast.error(getValidationMessage(data.error));
+                return true;
+            }
+            toast.error(getValidationMessage(data.error));
+        } catch (error) {
+            console.error('Error recording rank:', error);
+            toast.error(failMessage);
+        } finally {
+            setRecordingId('');
+        }
+        return false;
+    };
+
+    const handleRecord = async (event, id) => {
+        event.preventDefault();
+        const rankNumber = Number(recordForm.rank);
+        if (!recordForm.outOfRank && !(Number.isInteger(rankNumber) && rankNumber >= 1 && rankNumber <= 1000)) {
+            toast.error('순위는 1~1000 사이 숫자로 입력하거나 "순위권 밖"을 선택해주세요.');
+            return;
+        }
+        const ok = await sendRecord(
+            id,
+            { date: recordForm.date || today, rank: recordForm.outOfRank ? null : rankNumber },
+            '순위 기록 중 오류가 발생했습니다.'
+        );
+        if (ok) setRecordForm(prev => ({ ...prev, rank: '', outOfRank: false }));
+    };
+
+    // 플레이스 전용: 네이버 목록에서 실제 순위를 찾아 오늘 기록으로 저장합니다.
+    const handleLookup = async (id) => {
+        try {
+            setLookingUpId(id);
+            const res = await fetch('/api/place-insight/rank', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ trackingId: id }),
+            });
+            const data = await res.json();
+            if (!res.ok) {
+                toast.error(typeof data.error === 'string' ? data.error : '순위를 조회하지 못했습니다.');
+                return;
+            }
+            if (!data.recorded?.saved) {
+                toast.error('이 키워드로 검색된 매장이 없어 기록하지 않았습니다. 키워드를 확인해주세요.');
+                return;
+            }
+            toast.success(data.result.status === 'found'
+                ? `지금 ${data.result.rank}위입니다. 오늘 기록으로 저장했습니다.`
+                : '1,000위 안에서 찾지 못해 순위권 밖으로 기록했습니다.');
+            // 화면을 '불러오는 중'으로 바꾸지 않고 목록만 새로 받아옵니다.
+            const fresh = await fetch(`/api/rank-tracking?type=${type}`);
+            if (fresh.ok) {
+                const list = await fresh.json();
+                setTrackings(list.trackings || []);
+                setToday(list.today || '');
             }
         } catch (error) {
-            console.error('Error refreshing rank tracking:', error);
-            toast.error('순위 갱신 중 오류가 발생했습니다.');
+            console.error('Error looking up rank:', error);
+            toast.error('순위 조회 중 오류가 발생했습니다.');
         } finally {
-            setRefreshingId('');
+            setLookingUpId('');
         }
     };
 
+    const handleRemoveRecord = async (id, date) => {
+        if (!confirm(`${date} 기록을 삭제하시겠습니까?`)) return;
+        await sendRecord(id, { date, remove: true }, '기록 삭제 중 오류가 발생했습니다.');
+    };
+
     const handleDelete = async (id) => {
-        if (!confirm('이 순위 추적 항목을 삭제하시겠습니까?')) return;
+        if (!confirm('이 항목과 기록을 모두 삭제하시겠습니까?')) return;
 
         try {
             setDeletingId(id);
@@ -276,7 +354,7 @@ export default function RankTrackingPage({
             }
         } catch (error) {
             console.error('Error deleting rank tracking:', error);
-            toast.error('순위 추적 삭제 중 오류가 발생했습니다.');
+            toast.error('삭제 중 오류가 발생했습니다.');
         } finally {
             setDeletingId('');
         }
@@ -298,7 +376,7 @@ export default function RankTrackingPage({
                         <h1 className={styles.title}>{title}</h1>
                         <p className={styles.subtitle}>{subtitle}</p>
                     </div>
-                    <span className={styles.badge}>무료 {MAX_TRACKINGS}개</span>
+                    <span className={styles.badge}>무료 · {MAX_TRACKINGS}개까지</span>
                 </div>
 
                 <div className={styles.toolbar}>
@@ -325,15 +403,21 @@ export default function RankTrackingPage({
                     <span className={styles.counter}>{trackings.length}/{MAX_TRACKINGS}</span>
                 </div>
 
-                {isEstimate && (
-                    <div className={styles.estimateBar}>
-                        <Info size={15} />
-                        현재 추정 데이터로 표시 중 — 네이버 API 키 등록 시 실순위로 전환됩니다.
-                    </div>
-                )}
+                <div className={styles.estimateBar}>
+                    <Info size={15} />
+                    <span>
+                        {type === 'shopping'
+                            ? '네이버 쇼핑에서 키워드를 검색해 내 상품이 광고를 빼고 몇 번째인지 세어 기록하세요.'
+                            : '네이버 지도·플레이스에서 키워드를 검색해 내 가게가 광고를 빼고 몇 번째인지 세어 기록하세요.'}
+                        {' '}매주 같은 요일·시간, {type === 'place' ? '같은 위치에서 ' : '로그아웃 상태에서 '}확인하면 추이를 비교하기 좋아요.
+                        {type === 'place'
+                            ? " '지금 조회'를 누르면 네이버 목록에서 실제 순위를 찾아 오늘 기록으로 저장합니다. 지어낸 값은 보여 드리지 않습니다."
+                            : ' 순위는 자동으로 조회하지 않으며, 직접 적은 값만 보여 드립니다.'}
+                    </span>
+                </div>
 
                 {loading ? (
-                    <div className={styles.emptyState}>순위 추적 목록을 불러오는 중입니다.</div>
+                    <div className={styles.emptyState}>순위 기록장을 불러오는 중입니다.</div>
                 ) : filteredTrackings.length === 0 ? (
                     <div className={styles.emptyState}>
                         <Icon size={48} className={styles.emptyIcon} />
@@ -342,8 +426,8 @@ export default function RankTrackingPage({
                         <div className={styles.emptyExample}>
                             <span>예시</span>
                             {type === 'shopping'
-                                ? '스마트스토어 상품 URL + "남자 겨울 패딩" 키워드를 등록하면 매일 순위를 자동으로 기록합니다.'
-                                : '네이버 플레이스 URL + "강남 미용실" 키워드를 등록하면 매일 노출 순위를 자동으로 기록합니다.'}
+                                ? '스마트스토어 상품 URL + "남자 겨울 패딩" 키워드를 등록하고, 검색해서 확인한 순위를 주 1회 적어 보세요.'
+                                : '네이버 플레이스 URL + "강남 미용실" 키워드를 등록하고, 검색해서 확인한 순위를 주 1회 적어 보세요.'}
                         </div>
                         <button
                             className={styles.emptyBtn}
@@ -359,24 +443,25 @@ export default function RankTrackingPage({
                         {filteredTrackings.map((tracking) => {
                             const change = getRankChange(tracking);
                             const ChangeIcon = change.Icon;
-                            const history = parseHistory(tracking);
+                            const history = chartPoints(tracking);
                             const sparkData = history.slice(-14);
                             const expandData = history.slice(-30);
                             const bestRank = history.length ? Math.min(...history.map(p => p.rank)) : null;
                             const expanded = expandedId === tracking.id;
-                            const refreshing = refreshingId === tracking.id;
+                            const recording = recordingId === tracking.id;
+                            const recentRecords = [...(tracking.history || [])].reverse().slice(0, 8);
 
                             return (
                                 <article key={tracking.id} className={`${styles.row} ${expanded ? styles.rowOpen : ''}`}>
                                     <div
                                         className={styles.rowMain}
-                                        onClick={() => setExpandedId(expanded ? '' : tracking.id)}
+                                        onClick={() => toggleExpand(tracking.id)}
                                         role="button"
                                         tabIndex={0}
                                         onKeyDown={(event) => {
                                             if (event.key === 'Enter' || event.key === ' ') {
                                                 event.preventDefault();
-                                                setExpandedId(expanded ? '' : tracking.id);
+                                                toggleExpand(tracking.id);
                                             }
                                         }}
                                     >
@@ -396,8 +481,8 @@ export default function RankTrackingPage({
                                         </div>
 
                                         <div className={styles.rankBlock}>
-                                            <strong className={`${styles.rankValue} ${tracking.currentRank ? rankClass(tracking.currentRank) : ''}`}>
-                                                {tracking.currentRank ? `${tracking.currentRank}위` : '-'}
+                                            <strong className={`${styles.rankValue} ${tracking.currentRank ? rankClass(tracking.currentRank) : styles.rankNone}`}>
+                                                {rankText(tracking)}
                                             </strong>
                                             <span className={`${styles.rankChange} ${styles[change.type]}`}>
                                                 <ChangeIcon size={13} />
@@ -421,7 +506,7 @@ export default function RankTrackingPage({
                                                     </LineChart>
                                                 </ResponsiveContainer>
                                             ) : (
-                                                <span className={styles.sparkEmpty}>추이 수집 중</span>
+                                                <span className={styles.sparkEmpty}>2회 기록부터 추이 표시</span>
                                             )}
                                         </div>
 
@@ -435,19 +520,30 @@ export default function RankTrackingPage({
                                             >
                                                 <ExternalLink size={16} />
                                             </a>
+                                            {type === 'place' && (
+                                                <button
+                                                    type="button"
+                                                    className={styles.lookupBtn}
+                                                    onClick={() => handleLookup(tracking.id)}
+                                                    disabled={lookingUpId !== ''}
+                                                >
+                                                    <ScanSearch size={14} />
+                                                    {lookingUpId === tracking.id ? '조회 중' : '지금 조회'}
+                                                </button>
+                                            )}
                                             <button
-                                                className={styles.iconBtn}
-                                                onClick={() => handleRefresh(tracking.id)}
-                                                disabled={refreshing}
-                                                aria-label="순위 갱신"
+                                                type="button"
+                                                className={styles.recordBtn}
+                                                onClick={() => openRecord(tracking.id)}
                                             >
-                                                <RefreshCw size={16} className={refreshing ? styles.spinning : ''} />
+                                                <Pencil size={14} />
+                                                기록
                                             </button>
                                             <button
                                                 className={`${styles.iconBtn} ${styles.dangerBtn}`}
                                                 onClick={() => handleDelete(tracking.id)}
                                                 disabled={deletingId === tracking.id}
-                                                aria-label="순위 추적 삭제"
+                                                aria-label="항목 삭제"
                                             >
                                                 <Trash2 size={16} />
                                             </button>
@@ -460,6 +556,45 @@ export default function RankTrackingPage({
 
                                     {expanded && (
                                         <div className={styles.expand}>
+                                            <form className={styles.recordForm} onSubmit={(event) => handleRecord(event, tracking.id)}>
+                                                <div className={styles.recordField}>
+                                                    <label htmlFor={`record-date-${tracking.id}`}>확인한 날짜</label>
+                                                    <input
+                                                        id={`record-date-${tracking.id}`}
+                                                        type="date"
+                                                        max={today || undefined}
+                                                        value={recordForm.date}
+                                                        onChange={(event) => setRecordForm(prev => ({ ...prev, date: event.target.value }))}
+                                                        required
+                                                    />
+                                                </div>
+                                                <div className={styles.recordField}>
+                                                    <label htmlFor={`record-rank-${tracking.id}`}>순위</label>
+                                                    <input
+                                                        id={`record-rank-${tracking.id}`}
+                                                        type="number"
+                                                        inputMode="numeric"
+                                                        min="1"
+                                                        max="1000"
+                                                        placeholder="예: 12"
+                                                        value={recordForm.rank}
+                                                        disabled={recordForm.outOfRank}
+                                                        onChange={(event) => setRecordForm(prev => ({ ...prev, rank: event.target.value }))}
+                                                    />
+                                                </div>
+                                                <label className={styles.recordCheck}>
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={recordForm.outOfRank}
+                                                        onChange={(event) => setRecordForm(prev => ({ ...prev, outOfRank: event.target.checked, rank: '' }))}
+                                                    />
+                                                    순위권 밖 (찾지 못함)
+                                                </label>
+                                                <button type="submit" className={styles.recordSubmit} disabled={recording}>
+                                                    {recording ? '기록 중...' : '순위 기록'}
+                                                </button>
+                                            </form>
+
                                             <div className={styles.expandChart}>
                                                 {expandData.length >= 2 ? (
                                                     <ResponsiveContainer width="100%" height={200}>
@@ -489,7 +624,7 @@ export default function RankTrackingPage({
                                                     </ResponsiveContainer>
                                                 ) : (
                                                     <div className={styles.expandEmpty}>
-                                                        아직 추이 데이터가 부족합니다. 매일 접속하거나 새로고침하면 순위 기록이 쌓입니다.
+                                                        순위를 2회 이상 기록하면 여기에 추이 그래프가 그려집니다.
                                                     </div>
                                                 )}
                                             </div>
@@ -503,10 +638,33 @@ export default function RankTrackingPage({
                                                     <strong>{bestRank ? `${bestRank}위` : '-'}</strong>
                                                 </div>
                                                 <div>
-                                                    <span>현재 순위</span>
-                                                    <strong>{tracking.currentRank ? `${tracking.currentRank}위` : '-'}</strong>
+                                                    <span>최근 기록</span>
+                                                    <strong>{tracking.recordCount ? rankText(tracking) : '-'}</strong>
                                                 </div>
                                             </div>
+
+                                            {recentRecords.length > 0 && (
+                                                <div className={styles.recordList}>
+                                                    <h4>최근 기록</h4>
+                                                    <ul>
+                                                        {recentRecords.map((record) => (
+                                                            <li key={record.date}>
+                                                                <span>{record.date}</span>
+                                                                <strong>{record.rank ? `${record.rank}위` : '순위권 밖'}</strong>
+                                                                <em>{record.src === 'live' ? '실제 조회' : '직접 기록'}</em>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => handleRemoveRecord(tracking.id, record.date)}
+                                                                    disabled={recording}
+                                                                    aria-label={`${record.date} 기록 삭제`}
+                                                                >
+                                                                    <Trash2 size={14} />
+                                                                </button>
+                                                            </li>
+                                                        ))}
+                                                    </ul>
+                                                </div>
+                                            )}
                                         </div>
                                     )}
                                 </article>
@@ -550,7 +708,7 @@ export default function RankTrackingPage({
                                     onChange={(event) => setFormData(prev => ({ ...prev, name: event.target.value }))}
                                 />
 
-                                <label htmlFor="rank-keyword">추적 키워드</label>
+                                <label htmlFor="rank-keyword">검색 키워드</label>
                                 <input
                                     id="rank-keyword"
                                     type="text"
@@ -565,8 +723,27 @@ export default function RankTrackingPage({
                                 />
                                 {formErrors.keyword && <p className={styles.fieldError}>{formErrors.keyword}</p>}
 
+                                <label htmlFor="rank-first">오늘 확인한 순위 (선택)</label>
+                                <input
+                                    id="rank-first"
+                                    type="number"
+                                    inputMode="numeric"
+                                    min="1"
+                                    max="1000"
+                                    className={formErrors.rank ? styles.inputError : ''}
+                                    placeholder="예: 12 (나중에 기록해도 됩니다)"
+                                    value={formData.rank}
+                                    onChange={(event) => {
+                                        setFormData(prev => ({ ...prev, rank: event.target.value }));
+                                        if (formErrors.rank) setFormErrors(prev => ({ ...prev, rank: '' }));
+                                    }}
+                                />
+                                {formErrors.rank && <p className={styles.fieldError}>{formErrors.rank}</p>}
+
                                 <p className={styles.modalHint}>
-                                    등록 즉시 현재 순위를 1회 조회하고, 이후 매일 접속하거나 새로고침할 때마다 자동으로 추이가 기록됩니다.
+                                    {type === 'place'
+                                        ? "등록한 뒤 '지금 조회'를 누르면 실제 순위를 찾아 기록합니다. 직접 확인한 순위를 적어도 됩니다."
+                                        : '순위는 자동으로 조회되지 않습니다. 검색해서 직접 확인한 순위를 기록하면 날짜별 추이를 그래프로 보여 드립니다.'}
                                 </p>
                             </div>
                             <div className={styles.modalFooter}>

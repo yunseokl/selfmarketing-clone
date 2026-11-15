@@ -164,6 +164,49 @@ export default function AdminDashboard() {
 
             {/* Quick Actions */}
             <div className={styles.section}>
+                {stats.system && (!stats.system.depositAccountConfigured || !stats.system.keywordTrendConfigured
+                    || stats.system.placeLookup?.paused || stats.system.placeLookup?.enabled === false) && (
+                    <div
+                        role="status"
+                        style={{
+                            margin: '0 0 24px', padding: '16px 18px', borderRadius: 12, fontSize: 14, lineHeight: 1.7,
+                            color: '#FDE68A', background: 'rgba(245, 158, 11, 0.1)', border: '1px solid rgba(245, 158, 11, 0.3)',
+                        }}
+                    >
+                        <strong style={{ display: 'block', marginBottom: 4, color: '#fff' }}>운영 설정 확인이 필요합니다</strong>
+                        {!stats.system.depositAccountConfigured && (
+                            <div>
+                                · 무통장입금 계좌가 설정되지 않아 코드에 적혀 있던 기본 값이 회원에게 보입니다.
+                                실제 계좌가 맞는지 확인하고 환경변수 DEPOSIT_BANK, DEPOSIT_ACCOUNT, DEPOSIT_HOLDER 를 등록하세요.
+                            </div>
+                        )}
+                        {!stats.system.keywordTrendConfigured && (
+                            <div>
+                                · 키워드 트렌드 연동 키가 없어 회원 화면에 &lsquo;연동 준비 중&rsquo; 안내가 표시됩니다.
+                                NAVER API HUB에서 검색어 트렌드 키를 발급받아 NAVER_API_HUB_KEY_ID, NAVER_API_HUB_KEY 를 등록하세요.
+                            </div>
+                        )}
+                        {stats.system.placeLookup?.enabled === false && (
+                            <div>
+                                · 플레이스 분석의 실제 조회가 꺼져 있습니다(환경변수 PLACE_LOOKUP=off). 회원 화면에는 &lsquo;기능이 꺼져 있습니다&rsquo; 안내가 표시됩니다.
+                            </div>
+                        )}
+                        {stats.system.placeLookup?.enabled !== false && stats.system.placeLookup?.paused && (
+                            <div>
+                                · 네이버가 플레이스 조회를 제한해{' '}
+                                {new Date(stats.system.placeLookup.pausedUntil).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false })}
+                                까지 조회를 멈췄습니다. 시간이 지나면 자동으로 다시 시작합니다. 자주 반복되면 PLACE_LOOKUP=off 로 끄고 원인을 확인하세요.
+                            </div>
+                        )}
+                    </div>
+                )}
+                {stats.system?.placeLookup?.enabled && (
+                    <p style={{ margin: '0 0 24px', fontSize: 13, color: '#94A3B8' }}>
+                        플레이스 분석 네이버 조회: 오늘 {stats.system.placeLookup.requestsToday.toLocaleString()}회
+                        {' '}/ 하루 상한 {stats.system.placeLookup.dailyMax.toLocaleString()}회
+                    </p>
+                )}
+
                 <h2 className={styles.sectionTitle}>빠른 작업</h2>
                 <div className={styles.actionGrid}>
                     <Link href="/admin/orders/shopping" className={styles.actionCard}>

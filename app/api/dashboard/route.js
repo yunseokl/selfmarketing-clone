@@ -1,36 +1,34 @@
 import { NextResponse } from 'next/server';
-import { createHash } from 'crypto';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import prisma from '@/lib/prisma';
+import { kstDateKey, recordedPoints, summarize } from '@/lib/rank-log';
 
 // 로그인 세션/쿠키를 읽는 API라 빌드 때 정적으로 고정하지 않습니다.
 export const dynamic = 'force-dynamic';
 
 const DAY_NAMES = ['일', '월', '화', '수', '목', '금', '토'];
+const DAY_MS = 24 * 60 * 60 * 1000;
 
-// 문자열 시드를 0~1 사이 값으로 결정론적으로 변환 (Math.random 미사용)
-// 날짜 문자열처럼 마지막 몇 글자만 달라지는 시드도 고르게 분산되도록 MD5로 해시.
-function seededRatio(seed) {
-    const hash = createHash('md5').update(seed).digest('hex');
-    return parseInt(hash.slice(0, 8), 16) / 0xffffffff;
-}
-
-// 광고별 요일 변동 계수 (0.75 ~ 1.25)
-function dailyVisitCoefficient(adId, dateKey) {
-    return 0.75 + seededRatio(`visit-${adId}-${dateKey}`) * 0.5;
-}
-
-// 날짜별 클릭률 계수 (0.55 ~ 0.70)
-function dailyClickRatio(dateKey) {
-    return 0.55 + seededRatio(`click-${dateKey}`) * 0.15;
-}
-
-function toDateKey(date) {
-    const y = date.getFullYear();
-    const m = String(date.getMonth() + 1).padStart(2, '0');
-    const d = String(date.getDate()).padStart(2, '0');
-    return `${y}-${m}-${d}`;
+// 최근 7일(KST)의 날짜별 "주문한 일일 목표 유입" 합계.
+// 실제 유입 실적은 측정하지 않으므로, 그날 진행 중이던 광고의 목표치만 더합니다.
+// (예전에는 목표치에 임의 계수를 곱해 '방문·클릭' 실적처럼 보여 줬는데 사실이 아니어서 제거)
+function buildWeeklyPlan(ads, now = new Date()) {
+    const todayKey = kstDateKey(now);
+    const todayStartUtc = new Date(`${todayKey}T00:00:00+09:00`).getTime();
+    const plan = [];
+    for (let i = 6; i >= 0; i--) {
+        const dayStart = todayStartUtc - i * DAY_MS;
+        const dayEnd = dayStart + DAY_MS;
+        const planned = ads.reduce((sum, ad) => {
+            const started = new Date(ad.startDate).getTime() < dayEnd;
+            const notEnded = new Date(ad.endDate).getTime() > dayStart;
+            return started && notEnded ? sum + ad.dailyGoal : sum;
+        }, 0);
+        const weekday = new Date(dayStart + 9 * 60 * 60 * 1000).getUTCDay();
+        plan.push({ name: DAY_NAMES[weekday], date: kstDateKey(new Date(dayStart)), planned });
+    }
+    return plan;
 }
 
 export async function GET() {
@@ -49,26 +47,26 @@ export async function GET() {
             return NextResponse.json({ error: '사용자를 찾을 수 없습니다.' }, { status: 404 });
         }
 
+        const adSelect = { id: true, dailyGoal: true, startDate: true, endDate: true, status: true };
+        // 환불된 광고는 목표 유입에서 제외합니다.
+        const countedStatuses = ['pending', 'active', 'expired', 'completed'];
+
         const [
-            activePlaceAds,
-            activeShoppingAds,
+            placeAds,
+            shoppingAds,
             totalPlaceAdsCount,
             totalShoppingAdsCount,
-            trackingCount,
-            bestTrackingList,
+            trackings,
             keywordCount,
             recentNotifications,
         ] = await Promise.all([
-            prisma.placeAd.findMany({ where: { userId: user.id, status: 'active' }, select: { id: true, dailyGoal: true } }),
-            prisma.shoppingAd.findMany({ where: { userId: user.id, status: 'active' }, select: { id: true, dailyGoal: true } }),
+            prisma.placeAd.findMany({ where: { userId: user.id, status: { in: countedStatuses } }, select: adSelect }),
+            prisma.shoppingAd.findMany({ where: { userId: user.id, status: { in: countedStatuses } }, select: adSelect }),
             prisma.placeAd.count({ where: { userId: user.id } }),
             prisma.shoppingAd.count({ where: { userId: user.id } }),
-            prisma.rankTracking.count({ where: { userId: user.id } }),
             prisma.rankTracking.findMany({
-                where: { userId: user.id, currentRank: { not: null } },
-                orderBy: { currentRank: 'asc' },
-                take: 1,
-                select: { keyword: true, currentRank: true },
+                where: { userId: user.id },
+                select: { keyword: true, rankHistory: true },
             }),
             prisma.keywordSearch.count({ where: { userId: user.id } }),
             prisma.notification.findMany({
@@ -78,34 +76,26 @@ export async function GET() {
             }),
         ]);
 
+        const now = new Date();
+        const isRunning = (ad) => ad.status === 'active' && new Date(ad.endDate) > now;
+        const activePlaceAds = placeAds.filter(isRunning);
+        const activeShoppingAds = shoppingAds.filter(isRunning);
+
         const activeAds = {
             place: activePlaceAds.length,
             shopping: activeShoppingAds.length,
             total: activePlaceAds.length + activeShoppingAds.length,
         };
 
-        const combinedActiveAds = [...activePlaceAds, ...activeShoppingAds];
-        const todayExpectedVisits = combinedActiveAds.reduce((sum, ad) => sum + ad.dailyGoal, 0);
+        const todayGoal = [...activePlaceAds, ...activeShoppingAds].reduce((sum, ad) => sum + ad.dailyGoal, 0);
+        const weeklyPlan = buildWeeklyPlan([...placeAds, ...shoppingAds], now);
 
-        const today = new Date();
-        const weeklySeries = [];
-        for (let i = 6; i >= 0; i--) {
-            const date = new Date(today.getFullYear(), today.getMonth(), today.getDate() - i);
-            const dateKey = toDateKey(date);
-
-            let visits = 0;
-            for (const ad of combinedActiveAds) {
-                visits += ad.dailyGoal * dailyVisitCoefficient(ad.id, dateKey);
-            }
-            visits = Math.round(visits);
-            const clicks = Math.round(visits * dailyClickRatio(dateKey));
-
-            weeklySeries.push({ name: DAY_NAMES[date.getDay()], visits, clicks });
-        }
-
-        const trackingBest = bestTrackingList[0]
-            ? { keyword: bestTrackingList[0].keyword, currentRank: bestTrackingList[0].currentRank }
-            : null;
+        // 순위 기록장: 회원이 직접 적은 최근 기록 중 가장 높은 순위
+        const trackingCount = trackings.length;
+        const trackingBest = trackings
+            .map((t) => ({ keyword: t.keyword, currentRank: summarize(recordedPoints(t.rankHistory)).currentRank }))
+            .filter((t) => typeof t.currentRank === 'number')
+            .sort((a, b) => a.currentRank - b.currentRank)[0] || null;
 
         const onboarding = {
             hasAd: (totalPlaceAdsCount + totalShoppingAdsCount) > 0,
@@ -116,10 +106,10 @@ export async function GET() {
         return NextResponse.json({
             balance: user.balance,
             activeAds,
-            todayExpectedVisits,
+            todayGoal,
             trackingCount,
             trackingBest,
-            weeklySeries,
+            weeklyPlan,
             onboarding,
             recentNotifications,
         });

@@ -5,6 +5,7 @@ import { requireAdmin } from '@/lib/auth-helpers';
 import prisma from '@/lib/prisma';
 import { createNotification } from '@/lib/notify';
 import { processCashChargeSchema, calculateChargeBonus } from '@/lib/validations/cash';
+import { creditBalance, AlreadyProcessedError } from '@/lib/cash-ledger';
 
 // 로그인 세션/쿠키를 읽는 API라 빌드 때 정적으로 고정하지 않습니다.
 export const dynamic = 'force-dynamic';
@@ -38,6 +39,10 @@ export async function PATCH(request, { params }) {
             return NextResponse.json({ error: '충전 신청을 찾을 수 없습니다.' }, { status: 404 });
         }
 
+        if (transaction.type !== 'charge') {
+            return NextResponse.json({ error: '충전 신청 건만 처리할 수 있습니다.' }, { status: 400 });
+        }
+
         if (transaction.status !== 'pending') {
             return NextResponse.json({ error: '이미 처리된 신청입니다.' }, { status: 400 });
         }
@@ -46,24 +51,38 @@ export async function PATCH(request, { params }) {
             const bonus = calculateChargeBonus(transaction.amount);
             const totalAmount = transaction.amount + bonus;
 
-            const updatedTransaction = await prisma.$transaction(async (tx) => {
-                const updatedUser = await tx.user.update({
-                    where: { id: transaction.userId },
-                    data: { balance: { increment: totalAmount } }
-                });
-
-                return tx.cashTransaction.update({
-                    where: { id: params.id },
-                    data: {
-                        status: 'completed',
-                        amount: totalAmount,
-                        balanceAfter: updatedUser.balance,
-                        description: bonus > 0
-                            ? `캐시 충전 승인 (보너스 ${bonus.toLocaleString()}원 포함)`
-                            : '캐시 충전 승인',
+            // 대기중 → 완료 전환(조건부 UPDATE)에 성공한 요청 하나만 잔액을 올립니다.
+            // 승인 버튼을 연속으로 누르거나 두 관리자가 동시에 처리해도 한 번만 충전됩니다.
+            let updatedTransaction;
+            try {
+                updatedTransaction = await prisma.$transaction(async (tx) => {
+                    const claimed = await tx.cashTransaction.updateMany({
+                        where: { id: params.id, status: 'pending', type: 'charge' },
+                        data: { status: 'completed' },
+                    });
+                    if (claimed.count !== 1) {
+                        throw new AlreadyProcessedError('이미 처리된 신청입니다.');
                     }
+
+                    const balanceAfter = await creditBalance(tx, transaction.userId, totalAmount);
+
+                    return tx.cashTransaction.update({
+                        where: { id: params.id },
+                        data: {
+                            amount: totalAmount,
+                            balanceAfter,
+                            description: bonus > 0
+                                ? `캐시 충전 승인 (보너스 ${bonus.toLocaleString()}원 포함)`
+                                : '캐시 충전 승인',
+                        }
+                    });
                 });
-            });
+            } catch (error) {
+                if (error instanceof AlreadyProcessedError) {
+                    return NextResponse.json({ error: error.message }, { status: 400 });
+                }
+                throw error;
+            }
 
             await createNotification(transaction.userId, {
                 type: 'cash',
@@ -78,11 +97,15 @@ export async function PATCH(request, { params }) {
             });
         }
 
-        // 거절 처리
-        const updatedTransaction = await prisma.cashTransaction.update({
-            where: { id: params.id },
+        // 거절 처리 — 승인과 동시에 들어와도 먼저 선점한 쪽만 반영됩니다.
+        const rejected = await prisma.cashTransaction.updateMany({
+            where: { id: params.id, status: 'pending', type: 'charge' },
             data: { status: 'rejected' }
         });
+        if (rejected.count !== 1) {
+            return NextResponse.json({ error: '이미 처리된 신청입니다.' }, { status: 400 });
+        }
+        const updatedTransaction = await prisma.cashTransaction.findUnique({ where: { id: params.id } });
 
         await createNotification(transaction.userId, {
             type: 'cash',

@@ -1,0 +1,773 @@
+.panel {
+    --g-green: #03C75A;
+    --g-green-ink: #047A3B;
+    --g-amber: #E8980B;
+    --g-amber-ink: #8A5400;
+    --g-ink: #232A31;
+    --g-red: #DE4130;
+    --g-red-ink: #B32C1C;
+    --g-violet: #5B4BDB;
+    --g-gray: #8A939E;
+    --g-paper: #FFFFFF;
+    --g-text: #15191E;
+    --g-text-2: #4A535E;
+    --g-text-3: #5F6873;
+    --g-hair: #E6E9ED;
+    /* 그래프 칸 바탕(가운데가 살짝 밝음)과 라벨 테두리 색 */
+    --g-canvas: #F8F9FB;
+    --g-canvas-edge: #F1F3F6;
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    width: 100%;
+    min-width: 0;
+    min-height: 0;
+}
+
+/* ───────── 머리: 제목 + 범례(누르면 그 묶음만 밝힘) ───────── */
+
+.head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px 16px;
+    padding: 10px 14px 10px 16px;
+    border-bottom: 1px solid var(--g-hair);
+}
+
+.headTitle {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    font-size: 13px;
+    white-space: nowrap;
+}
+
+.headTitle strong {
+    font-weight: 700;
+    color: var(--g-text);
+}
+
+.headTitle span {
+    font-size: 12px;
+    color: var(--g-text-3);
+    font-variant-numeric: tabular-nums;
+}
+
+.legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2px;
+    list-style: none;
+}
+
+.legend button {
+    --c: var(--g-ink);
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 26px;
+    padding: 0 9px;
+    font: inherit;
+    font-size: 12px;
+    font-weight: 600;
+    white-space: nowrap;
+    color: var(--g-text-2);
+    background: transparent;
+    border: 0;
+    border-radius: 13px;
+    cursor: pointer;
+    transition: background-color 0.15s ease, color 0.15s ease, transform 0.1s ease;
+}
+
+.legend button:active {
+    transform: scale(0.95);
+}
+
+/* 범례 점: 그래프 점처럼 같은 색 빛이 옅게 번지고, 올리면 더 밝아집니다 */
+.legend button::before {
+    content: '';
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--c);
+    box-shadow: 0 0 5px 0 var(--cg);
+    transition: transform 0.2s cubic-bezier(0.2, 1.5, 0.4, 1), box-shadow 0.2s ease;
+}
+
+.legend button:hover,
+.legend button[aria-pressed='true'] {
+    color: var(--g-text);
+    background: #EEF0F3;
+}
+
+.legend button:hover::before,
+.legend button[aria-pressed='true']::before {
+    transform: scale(1.35);
+    box-shadow: 0 0 0 2.5px var(--cs), 0 0 8px 1px var(--cg);
+}
+
+.legend button[aria-pressed='true'] {
+    box-shadow: inset 0 0 0 1px var(--c);
+}
+
+/* --c: 점 색 · --cg: 번지는 빛 · --cs: 올렸을 때 점 둘레의 옅은 고리 */
+.legend button {
+    --cg: rgba(35, 42, 49, 0.38);
+    --cs: rgba(35, 42, 49, 0.12);
+}
+
+.legend button[data-group='search'] { --c: var(--g-green); --cg: rgba(3, 199, 90, 0.6); --cs: rgba(3, 199, 90, 0.18); }
+.legend button[data-group='voice'] { --c: var(--g-amber); --cg: rgba(232, 152, 11, 0.6); --cs: rgba(232, 152, 11, 0.2); }
+.legend button[data-group='pay'] { --c: var(--g-ink); }
+.legend button[data-group='todo'] { --c: var(--g-red); --cg: rgba(222, 65, 48, 0.55); --cs: rgba(222, 65, 48, 0.18); }
+.legend button[data-group='ops'] { --c: var(--g-gray); --cg: rgba(138, 147, 158, 0.6); --cs: rgba(138, 147, 158, 0.22); }
+.legend button[data-group='geo'] { --c: var(--g-violet); --cg: rgba(91, 75, 219, 0.55); --cs: rgba(91, 75, 219, 0.18); }
+
+/* ───────── 그래프 칸 ───────── */
+
+.wrap {
+    position: relative;
+    flex: 1;
+    min-height: 0;
+    /* 가운데(매장 자리)가 살짝 밝은 바탕 위에 아주 옅은 모눈을 얹습니다. 점이 떠다니는 자리가 '판'으로 읽힙니다. */
+    background-color: var(--g-canvas-edge);
+    background-image:
+        radial-gradient(circle, rgba(21, 25, 30, 0.075) 1px, transparent 1.3px),
+        radial-gradient(ellipse 74% 80% at 50% 48%, #FDFEFE 0%, var(--g-canvas) 46%, var(--g-canvas-edge) 100%);
+    background-size: 22px 22px, 100% 100%;
+    background-position: 11px 11px, 0 0;
+}
+
+/* 스크롤로 그래프가 화면 위로 빠져나가는 동안 모눈이 점보다 느리게 따라 올라가 깊이감을 줍니다(지원하는 브라우저만) */
+@supports (animation-timeline: view()) {
+    .wrap {
+        animation: gridDrift linear both;
+        animation-timeline: view();
+        animation-range: exit 0% exit 100%;
+    }
+
+    @keyframes gridDrift {
+        to { background-position: 11px 77px, 0 0; }
+    }
+}
+
+.svg {
+    display: block;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+/* 점 자리가 정해지기 전(서버가 그린 화면)에는 숨겨 두고, 등장 애니메이션도 그 뒤에 시작합니다 */
+.svg:not([data-ready='true']) {
+    visibility: hidden;
+}
+
+.orbits ellipse {
+    fill: none;
+    stroke: rgba(21, 25, 30, 0.1);
+    stroke-width: 1;
+    stroke-dasharray: 2 7;
+}
+
+.orbits ellipse:last-child {
+    stroke: rgba(21, 25, 30, 0.07);
+}
+
+/* 매장 둘레에 깔리는 옅은 초록 빛 */
+.aura {
+    pointer-events: none;
+    transition: opacity 0.4s ease;
+}
+
+.auraNear {
+    stop-color: var(--g-green);
+    stop-opacity: 0.13;
+}
+
+.auraFar {
+    stop-color: var(--g-green);
+    stop-opacity: 0;
+}
+
+.panel[data-mode='idle'] .aura { opacity: 0.45; }
+
+/* 불러오는 동안 매장을 중심으로 도는 탐색 부채꼴 */
+.sweep {
+    fill: var(--g-green);
+    opacity: 0.1;
+    transform-origin: 0 0;
+    animation: sweep 2.4s linear infinite;
+}
+
+@keyframes sweep {
+    to { transform: rotate(360deg); }
+}
+
+/* 선: 가운데로 갈수록 진해지는 기본선 + 그 위를 흐르는 점(데이터가 매장 쪽으로 모이는 방향) */
+.link {
+    --c: var(--g-ink);
+    transition: opacity 0.25s ease;
+}
+
+/* 딸린 점이 나타나기 직전에 선이 먼저 번져 나옵니다 */
+.svg[data-ready='true'] .link {
+    animation: fade 0.55s ease backwards;
+    animation-delay: var(--d, 0ms);
+}
+
+.link[data-group='store'],
+.link[data-group='search'] { --c: var(--g-green); }
+.link[data-group='voice'] { --c: var(--g-amber); }
+.link[data-group='pay'] { --c: var(--g-ink); }
+.link[data-group='todo'] { --c: var(--g-red); }
+.link[data-group='ops'] { --c: var(--g-gray); }
+.link[data-group='geo'] { --c: var(--g-violet); }
+.link[data-tone='good'] { --c: var(--g-green); }
+.link[data-tone='warn'] { --c: var(--g-amber); }
+.link[data-tone='bad'] { --c: var(--g-red); }
+.link[data-tone='ink'] { --c: var(--g-ink); }
+.link[data-tone='muted'],
+.link[data-tone='pending'] { --c: var(--g-gray); }
+
+/* 선 색은 스크립트가 선마다 만든 그래디언트(stroke 속성)로 칠합니다. 여기서 stroke 를 정하면 그 속성을 덮어쓰므로 두지 않습니다. */
+.edge {
+    stroke-width: 1.5;
+    stroke-linecap: round;
+    transition: stroke-width 0.2s ease;
+}
+
+/* 그래디언트의 양 끝: Far = 딸린 점 쪽(옅음), Near = 부모·매장 쪽(진함) */
+.stopFar,
+.stopNear {
+    stop-color: var(--c);
+    transition: stop-opacity 0.25s ease;
+}
+
+.stopFar { stop-opacity: 0.26; }
+.stopNear { stop-opacity: 0.66; }
+
+/* 묶음 → 세부 값 선은 가운데에서 한 단계 더 멀어서 전체적으로 더 옅게 둡니다 */
+.link[data-level='2'] .stopFar { stop-opacity: 0.14; }
+.link[data-level='2'] .stopNear { stop-opacity: 0.46; }
+
+.flow {
+    stroke: var(--c);
+    stroke-width: 2.2;
+    stroke-linecap: round;
+    stroke-dasharray: 0.1 14;
+    opacity: 0.5;
+    animation: flow var(--s, 2s) linear infinite;
+    transition: opacity 0.25s ease;
+}
+
+.link[data-level='2'] .flow { opacity: 0.38; }
+
+/* 선 둘레의 빛: 같은 그래디언트를 넓고 옅게 한 겹 더 깝니다. 평소에는 안 보이다가 이어진 점을 가리키면 번집니다.
+   (CSS filter 는 사파리가 SVG 안쪽 요소에 적용하지 않아서 쓰지 않습니다.) */
+.edgeGlow {
+    stroke-width: 8;
+    stroke-linecap: round;
+    opacity: 0;
+    transition: opacity 0.25s ease;
+}
+
+/* 가리킨 점에 이어진 선: 굵어지고 밝아지며 같은 색 빛이 번집니다 */
+.link.hot .edge { stroke-width: 2; }
+.link.hot .edgeGlow { opacity: 0.17; }
+
+.link.hot .stopFar { stop-opacity: 0.6; }
+.link.hot .stopNear { stop-opacity: 1; }
+
+.link.hot .flow {
+    opacity: 1;
+    animation-duration: 0.9s;
+}
+
+@keyframes flow {
+    to { stroke-dashoffset: -14.1; }
+}
+
+/* 점 */
+.node {
+    --c: var(--g-ink);
+    --c-ink: var(--g-text);
+    cursor: pointer;
+    outline: none;
+    transition: opacity 0.25s ease;
+}
+
+.node[data-level='1'],
+.node[data-level='2'] {
+    touch-action: none;
+}
+
+.node[data-group='store'],
+.node[data-group='search'] { --c: var(--g-green); }
+.node[data-group='voice'] { --c: var(--g-amber); }
+.node[data-group='pay'] { --c: var(--g-ink); }
+.node[data-group='todo'] { --c: var(--g-red); }
+.node[data-group='ops'] { --c: var(--g-gray); }
+.node[data-group='geo'] { --c: var(--g-violet); }
+.node[data-tone='good'] { --c: var(--g-green); }
+.node[data-tone='warn'] { --c: var(--g-amber); }
+.node[data-tone='bad'] { --c: var(--g-red); }
+.node[data-tone='ink'] { --c: var(--g-ink); }
+.node[data-tone='muted'] { --c: var(--g-gray); }
+
+.hit {
+    fill: transparent;
+}
+
+/* 점 안쪽의 움직임 층: float(떠 있음) > appear(처음 나타남) > grow(가리키면 커짐).
+   바깥 g 의 자리는 스크립트가 옮기므로 효과는 이 안쪽 층에 걸고, 모두 점 가운데(0,0)를 기준으로 움직입니다. */
+.float,
+.appear,
+.grow {
+    transform-origin: 0 0;
+}
+
+/* 처음 나타날 때: 가운데에서 바깥 차례로(--d) 작게 시작해 제 크기로 */
+.svg[data-ready='true'] .appear {
+    animation: nodeAppear 0.6s cubic-bezier(0.2, 0.9, 0.3, 1) both;
+    animation-delay: var(--d, 0ms);
+}
+
+.grow {
+    transition: transform 0.2s cubic-bezier(0.2, 0.9, 0.3, 1.2);
+}
+
+.node.self .grow { transform: scale(1.15); }
+/* 누르는 동안은 커진 점이 살짝 들어갑니다 */
+.node:active .grow { transform: scale(1.05); }
+
+/* 세부 값 점은 제자리에서 아주 조금 떠 있습니다(점마다 박자를 다르게) */
+.node[data-level='2'] .float {
+    animation: float var(--f, 4s) ease-in-out infinite alternate;
+    animation-delay: calc(var(--i, 0) * -0.41s);
+}
+
+/* 점 뒤에 번지는 같은 색 빛. 흐림은 스크립트가 filter 속성으로 겁니다(스타일 파일의 url(#…)은 브라우저마다 다르게 풀려서). */
+.glow {
+    fill: var(--c);
+    opacity: 0.4;
+    pointer-events: none;
+    transition: opacity 0.2s ease;
+}
+
+.node[data-level='2'] .glow { opacity: 0.34; }
+.node.hot .glow { opacity: 0.62; }
+.node.self .glow { opacity: 0.8; }
+.node[data-ghost='true'] .glow { opacity: 0.16; }
+.node[data-tone='pending'] .glow { opacity: 0; }
+
+/* 매장: 더 넓고 진한 빛이 숨 쉬듯 커졌다 작아집니다 */
+.node[data-level='0'] {
+    --glow-lo: 0.4;
+    --glow-hi: 0.72;
+}
+
+.node[data-level='0'][data-ghost='true'] {
+    --glow-lo: 0.1;
+    --glow-hi: 0.24;
+}
+
+.node[data-level='0'] .glow {
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: glowPulse 3.6s ease-in-out infinite;
+}
+
+/* 고리: 묶음 점은 한 겹, 매장은 두 겹(바깥 고리가 반 박자 늦게 따라옵니다) */
+.ring {
+    fill: none;
+    stroke: var(--c);
+    stroke-width: 1;
+    opacity: 0.3;
+    pointer-events: none;
+    transform-box: fill-box;
+    transform-origin: center;
+    transition: opacity 0.2s ease, transform 0.3s cubic-bezier(0.2, 0.9, 0.3, 1.2);
+}
+
+.node[data-level='1'].hot .ring { opacity: 0.55; }
+
+.node[data-level='1'].self .ring {
+    opacity: 0.7;
+    transform: scale(1.1);
+}
+
+/* 조회 중인 점은 도는 점선이 고리 자리를 씁니다 */
+.node[data-tone='pending'] .ring { display: none; }
+
+.node[data-level='0'] .ring {
+    stroke-width: 1.5;
+    animation: ringPulse 3.6s ease-in-out infinite;
+}
+
+.node[data-level='0'] .ringOuter {
+    stroke-width: 1;
+    animation-name: ringPulseOuter;
+    animation-delay: 0.4s;
+}
+
+/* 매장 점 밑받침: 점이 숨 쉬며 옅어질 때 밑으로 모이는 선이 비치지 않게 가립니다 */
+.base {
+    fill: var(--g-canvas);
+    pointer-events: none;
+}
+
+.dot {
+    fill: var(--c);
+    stroke: var(--g-paper);
+    stroke-width: 2;
+    transform-box: fill-box;
+    transform-origin: center;
+    transition: stroke 0.2s ease;
+}
+
+.core {
+    fill: none;
+    stroke: var(--g-paper);
+    stroke-width: 2.5;
+    opacity: 0.9;
+    pointer-events: none;
+    transform-box: fill-box;
+    transform-origin: center;
+}
+
+/* 매장 점은 부드럽게 숨을 쉽니다 */
+.node[data-level='0'] .dot,
+.node[data-level='0'] .core {
+    animation: pulse 3.6s ease-in-out infinite;
+}
+
+.node[data-tone='pending'] .dot {
+    fill: var(--g-paper);
+    stroke: var(--g-ink);
+    stroke-width: 1.5;
+}
+
+.node[data-ghost='true'] .dot {
+    fill: var(--g-paper);
+    stroke: var(--c);
+    stroke-width: 1.6;
+}
+
+.node[data-ghost='true'] .core {
+    display: none;
+}
+
+.node:focus-visible .dot {
+    stroke: var(--g-text);
+    stroke-width: 3;
+}
+
+/* 라벨: 자리(x·y·정렬)는 스크립트가 정하고, 겹쳐서 숨긴 라벨은 점에 올리면 보입니다 */
+.tag {
+    pointer-events: none;
+    transition: opacity 0.2s ease;
+}
+
+.tag[data-hide='true'] {
+    opacity: 0;
+}
+
+.node.hot .tag[data-hide='true'] {
+    opacity: 1;
+}
+
+.label,
+.sub {
+    paint-order: stroke;
+    stroke: var(--g-canvas);
+    stroke-width: 4px;
+    stroke-linejoin: round;
+}
+
+/* 글자는 점이 나타난 바로 뒤에 따라 나옵니다 */
+.svg[data-ready='true'] .label,
+.svg[data-ready='true'] .sub {
+    animation: fade 0.5s ease backwards;
+    animation-delay: calc(var(--d, 0ms) + 180ms);
+}
+
+.label {
+    font-size: 12.5px;
+    font-weight: 600;
+    fill: var(--g-text);
+    letter-spacing: -0.01em;
+}
+
+.node[data-level='0'] .label {
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+}
+
+.node[data-level='2'] .label {
+    font-size: 11.5px;
+    font-weight: 500;
+    fill: var(--g-text-2);
+    font-variant-numeric: tabular-nums;
+}
+
+.node[data-level='2'].hot .label { fill: var(--g-text); }
+
+.sub {
+    font-size: 11.5px;
+    fill: var(--g-text-2);
+    font-variant-numeric: tabular-nums;
+}
+
+.node[data-level='1'] .sub {
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.sub[data-tone='good'] { fill: var(--g-green-ink); }
+.sub[data-tone='warn'] { fill: var(--g-amber-ink); }
+.sub[data-tone='bad'] { fill: var(--g-red-ink); }
+.sub[data-tone='ink'] { fill: var(--g-text); }
+.sub[data-tone='muted'],
+.sub[data-tone='pending'] { fill: var(--g-text-3); font-weight: 500; }
+
+.wrap[data-compact='true'] .node[data-level='2']:not(.hot) .tag { opacity: 0; }
+
+/* 가리킨 점과 이어지지 않은 점·선은 흐려집니다 */
+.dim { opacity: 0.3; }
+
+/* 점을 눌렀을 때 한 번 퍼지는 고리 */
+.ping {
+    fill: none;
+    stroke: var(--c);
+    stroke-width: 2;
+    transform-box: fill-box;
+    transform-origin: center;
+    pointer-events: none;
+    animation: ping 0.7s cubic-bezier(0.2, 0.7, 0.2, 1) forwards;
+}
+
+.spinner {
+    fill: none;
+    stroke: var(--g-ink);
+    stroke-width: 1.4;
+    stroke-dasharray: 3 3.2;
+    transform-box: fill-box;
+    transform-origin: center;
+    pointer-events: none;
+    animation: spin 1.3s linear infinite;
+}
+
+/* 불러오는 동안: 흐름이 빨라지고 점이 차례로 깜빡입니다 */
+.panel[data-mode='loading'] .flow {
+    animation-duration: 0.6s;
+    opacity: 0.85;
+}
+
+.panel[data-mode='loading'] .node:not([data-level='0']) .dot {
+    animation: blink 1.1s ease-in-out infinite alternate;
+    animation-delay: calc(var(--i, 0) * 90ms);
+}
+
+.panel[data-mode='loading'] .node {
+    cursor: progress;
+}
+
+.panel[data-mode='idle'] .flow { opacity: 0.35; }
+
+/* ───────── 아래 줄: 가리킨 점의 값 ───────── */
+
+.readout {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 38px;
+    padding: 8px 16px;
+    font-size: 13px;
+    line-height: 1.4;
+    color: var(--g-text-2);
+    border-top: 1px solid var(--g-hair);
+    transition: background-color 0.2s ease;
+}
+
+.readout[data-on='true'] {
+    background: #F6F7F9;
+}
+
+.readout strong {
+    flex-shrink: 0;
+    font-weight: 700;
+    color: var(--g-text);
+    white-space: nowrap;
+}
+
+.readoutDot {
+    --c: var(--g-ink);
+    flex-shrink: 0;
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: var(--c);
+    box-shadow: 0 0 6px -1px var(--c);
+}
+
+.readoutDot[data-group='store'],
+.readoutDot[data-group='search'] { --c: var(--g-green); }
+.readoutDot[data-group='voice'] { --c: var(--g-amber); }
+.readoutDot[data-group='todo'] { --c: var(--g-red); }
+.readoutDot[data-group='ops'] { --c: var(--g-gray); }
+.readoutDot[data-group='geo'] { --c: var(--g-violet); }
+.readoutDot[data-tone='good'] { --c: var(--g-green); }
+.readoutDot[data-tone='warn'] { --c: var(--g-amber); }
+.readoutDot[data-tone='bad'] { --c: var(--g-red); }
+.readoutDot[data-tone='ink'] { --c: var(--g-ink); }
+.readoutDot[data-tone='muted'],
+.readoutDot[data-tone='pending'] { --c: var(--g-gray); }
+
+.readoutText {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+}
+
+.readoutGo {
+    flex-shrink: 0;
+    margin-left: auto;
+    padding-left: 12px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--g-text-3);
+    white-space: nowrap;
+}
+
+@keyframes fade {
+    from { opacity: 0; }
+}
+
+@keyframes nodeAppear {
+    from { opacity: 0; transform: scale(0.5); }
+    to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes float {
+    from { transform: translateY(-2px); }
+    to { transform: translateY(2px); }
+}
+
+/* 매장 점의 숨쉬기 */
+@keyframes pulse {
+    0%, 100% { transform: scale(1); opacity: 0.9; }
+    50% { transform: scale(1.06); opacity: 1; }
+}
+
+@keyframes glowPulse {
+    0%, 100% { transform: scale(0.94); opacity: var(--glow-lo, 0.4); }
+    50% { transform: scale(1.12); opacity: var(--glow-hi, 0.72); }
+}
+
+/* 고리는 커지면서 옅어져 빛이 바깥으로 번지는 것처럼 보입니다 */
+@keyframes ringPulse {
+    0%, 100% { transform: scale(0.97); opacity: 0.6; }
+    50% { transform: scale(1.06); opacity: 0.3; }
+}
+
+@keyframes ringPulseOuter {
+    0%, 100% { transform: scale(0.96); opacity: 0.28; }
+    50% { transform: scale(1.09); opacity: 0.1; }
+}
+
+@keyframes ping {
+    0% { transform: scale(1); opacity: 0.9; }
+    100% { transform: scale(3.4); opacity: 0; }
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+@keyframes blink {
+    to { opacity: 0.3; }
+}
+
+/* 손가락으로 누르는 화면: 범례 버튼은 보이는 크기를 그대로 두고 누르는 영역만 위아래로 넓힙니다(높이 44px).
+   줄이 바뀔 때 넓힌 영역끼리 겹치지 않도록 줄 간격도 그만큼 벌립니다. */
+@media (pointer: coarse), (max-width: 768px) {
+    .legend {
+        row-gap: 18px;
+    }
+
+    .legend button {
+        position: relative;
+    }
+
+    .legend button::after {
+        content: '';
+        position: absolute;
+        inset: -9px 0;
+    }
+}
+
+@media (max-width: 720px) {
+    .head {
+        flex-wrap: nowrap;
+        padding: 9px 4px 9px 12px;
+    }
+
+    /* 좁은 화면에서는 범례가 줄을 늘리지 않고 옆으로 넘깁니다.
+       옆으로 넘기는 상자는 위아래도 잘라내므로, 넓힌 누르는 영역이 잘리지 않게 안쪽 여백을 주고 같은 만큼 당깁니다. */
+    .legend {
+        flex-wrap: nowrap;
+        min-width: 0;
+        padding-block: 9px;
+        margin-block: -9px;
+        overflow-x: auto;
+        scrollbar-width: none;
+    }
+
+    .legend::-webkit-scrollbar {
+        display: none;
+    }
+
+    .headTitle span {
+        display: none;
+    }
+
+    .readout {
+        padding: 8px 12px;
+    }
+
+    .readoutGo {
+        display: none;
+    }
+}
+
+/* 움직임 줄이기: 등장·숨쉬기·떠다님·흐름·회전을 모두 끄고(스크립트도 점을 제자리에 고정), 색·밝기 전환만 남깁니다.
+   점 종류마다 따로 건 애니메이션이 많아 하나씩 나열하지 않고 그래프 안 전체를 끕니다. */
+@media (prefers-reduced-motion: reduce) {
+    .svg *,
+    .wrap {
+        animation: none !important;
+    }
+
+    .link .flow,
+    .link[data-level='2'] .flow {
+        opacity: 0.3;
+    }
+
+    /* 눌렀을 때의 고리는 애니메이션이 끝나야 사라지므로 아예 보이지 않게 둡니다 */
+    .ping { opacity: 0; }
+
+    .grow,
+    .ring,
+    .legend button,
+    .legend button::before {
+        transition: none;
+    }
+}

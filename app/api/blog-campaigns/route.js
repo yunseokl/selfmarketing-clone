@@ -4,6 +4,7 @@ import { authOptions } from '@/lib/auth';
 import prisma from '@/lib/prisma';
 import { createBlogCampaignSchema, BLOG_PACKAGE_PRICES } from '@/lib/validations/blog';
 import { createNotification } from '@/lib/notify';
+import { spendBalance, logCash, InsufficientBalanceError } from '@/lib/cash-ledger';
 
 // 로그인 세션/쿠키를 읽는 API라 빌드 때 정적으로 고정하지 않습니다.
 export const dynamic = 'force-dynamic';
@@ -65,41 +66,41 @@ export async function POST(request) {
         const { placeName, placeUrl, keyword, postCount, requirement } = validationResult.data;
         const totalCost = BLOG_PACKAGE_PRICES[postCount];
 
-        if (user.balance < totalCost) {
-            return NextResponse.json({ error: '잔액이 부족합니다.' }, { status: 400 });
-        }
+        // 잔액 확인과 차감을 한 문장으로 처리해 동시 신청에도 잔액이 음수가 되지 않게 합니다.
+        let campaign;
+        try {
+            campaign = await prisma.$transaction(async (tx) => {
+                const balanceAfter = await spendBalance(tx, user.id, totalCost);
 
-        const balanceAfter = user.balance - totalCost;
+                const created = await tx.blogCampaign.create({
+                    data: {
+                        userId: user.id,
+                        placeName,
+                        placeUrl,
+                        keyword,
+                        postCount,
+                        requirement: requirement || null,
+                        totalCost,
+                        status: 'pending',
+                    }
+                });
 
-        const [campaign] = await prisma.$transaction([
-            prisma.blogCampaign.create({
-                data: {
-                    userId: user.id,
-                    placeName,
-                    placeUrl,
-                    keyword,
-                    postCount,
-                    requirement: requirement || null,
-                    totalCost,
-                    status: 'pending',
-                }
-            }),
-            prisma.user.update({
-                where: { id: user.id },
-                data: { balance: { decrement: totalCost } }
-            }),
-            prisma.cashTransaction.create({
-                data: {
+                await logCash(tx, {
                     userId: user.id,
                     type: 'use',
                     amount: -totalCost,
                     balanceAfter,
-                    status: 'completed',
-                    method: 'system',
                     description: `블로그 배포 ${postCount}건 - ${placeName}`,
-                }
-            })
-        ]);
+                });
+
+                return created;
+            });
+        } catch (error) {
+            if (error instanceof InsufficientBalanceError) {
+                return NextResponse.json({ error: '잔액이 부족합니다.' }, { status: 400 });
+            }
+            throw error;
+        }
 
         await createNotification(user.id, {
             type: 'ad',

@@ -18,6 +18,16 @@ const statusOptions = [
 
 const statusLabel = (status) => statusOptions.find(s => s.id === status)?.label || status;
 
+// javascript: 같은 스킴이 href 로 쓰이지 않도록 http/https 일 때만 링크로 사용합니다.
+const safeHref = (value) => {
+    try {
+        const parsed = new URL(value);
+        return parsed.protocol === 'http:' || parsed.protocol === 'https:' ? parsed.href : undefined;
+    } catch {
+        return undefined;
+    }
+};
+
 export default function AdminBlogCampaignsPage() {
     const { status: sessionStatus } = useSession();
     const router = useRouter();
@@ -224,7 +234,7 @@ export default function AdminBlogCampaignsPage() {
                                                 <div className={styles.detailContent}>
                                                     <div className={styles.detailInfo}>
                                                         <a
-                                                            href={campaign.placeUrl}
+                                                            href={safeHref(campaign.placeUrl)}
                                                             target="_blank"
                                                             rel="noopener noreferrer"
                                                             className={styles.urlLink}
@@ -261,7 +271,7 @@ export default function AdminBlogCampaignsPage() {
                                                             <ul className={styles.linkList}>
                                                                 {parseLinks(campaign.publishedLinks).map((link, idx) => (
                                                                     <li key={idx}>
-                                                                        <a href={link} target="_blank" rel="noopener noreferrer">
+                                                                        <a href={safeHref(link)} target="_blank" rel="noopener noreferrer">
                                                                             {link}
                                                                         </a>
                                                                     </li>

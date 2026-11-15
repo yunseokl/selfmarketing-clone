@@ -274,7 +274,7 @@ export default function BlogPage() {
                                         {links.length > 0 && (
                                             <div className={styles.linkList}>
                                                 {links.map((link, idx) => (
-                                                    <a key={idx} href={link} target="_blank" rel="noopener noreferrer">
+                                                    <a key={idx} href={/^https?:\/\//i.test(link) ? link : undefined} target="_blank" rel="noopener noreferrer">
                                                         <ExternalLink size={13} />
                                                         발행글 {idx + 1}
                                                     </a>

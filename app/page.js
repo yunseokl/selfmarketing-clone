@@ -21,6 +21,9 @@ import {
     MessageCircle,
     Info,
     Bell,
+    Calculator,
+    Search,
+    Store,
 } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -50,8 +53,11 @@ const itemVariants = {
 const LANDING_FEATURES = [
     { icon: MapPin, title: '플레이스 트래픽', desc: '네이버 플레이스 방문·저장을 늘려 상위노출을 돕습니다.', color: '#34D399', bg: 'rgba(16, 185, 129, 0.15)' },
     { icon: ShoppingCart, title: '쇼핑 트래픽', desc: '스마트스토어 유입과 클릭을 늘려 순위를 끌어올립니다.', color: '#60A5FA', bg: 'rgba(37, 99, 235, 0.15)' },
-    { icon: Target, title: '키워드 분석', desc: '검색량과 경쟁강도를 분석해 좋은 키워드를 찾아드립니다.', color: '#A3E635', bg: 'rgba(163, 230, 53, 0.15)' },
-    { icon: BarChart3, title: '순위 추적', desc: '내 상품·플레이스의 순위 변화를 매일 자동으로 확인하세요.', color: '#A78BFA', bg: 'rgba(139, 92, 246, 0.15)' },
+    { icon: Calculator, title: '마진·ROAS 계산기', desc: '스마트스토어·쿠팡 수수료와 광고비까지 넣고 실제로 남는 돈을 계산합니다.', color: '#A3E635', bg: 'rgba(163, 230, 53, 0.15)' },
+    { icon: Target, title: '키워드 트렌드', desc: '네이버 검색 추이로 성수기와 키워드별 수요 차이를 확인합니다.', color: '#38BDF8', bg: 'rgba(56, 189, 248, 0.15)' },
+    { icon: BarChart3, title: '순위 기록장', desc: '플레이스는 실제 순위를 조회해 기록하고, 쇼핑은 직접 확인한 순위를 적어 변화를 그래프로 봅니다.', color: '#A78BFA', bg: 'rgba(139, 92, 246, 0.15)' },
+    { icon: Search, title: '상품명 SEO 분석', desc: '상품명을 네이버 쇼핑 가이드 기준으로 점검하고 고칠 점을 알려드립니다.', color: '#FB923C', bg: 'rgba(249, 115, 22, 0.15)' },
+    { icon: Store, title: '플레이스 분석·진단', desc: '숨은 대표키워드와 실제 검색 순위를 조회하고, 정보 빈칸 점검과 리뷰 답글 초안까지 도와드립니다.', color: '#2DD4BF', bg: 'rgba(20, 184, 166, 0.15)' },
     { icon: FileText, title: '블로그 배포', desc: '플레이스 홍보에 최적화된 블로그 포스팅을 대신 배포합니다.', color: '#F472B6', bg: 'rgba(236, 72, 153, 0.15)' },
     { icon: DollarSign, title: '광고비 환급', desc: '이미 집행 중인 광고비의 일부를 돌려받아 보세요.', color: '#FBBF24', bg: 'rgba(245, 158, 11, 0.15)' },
 ];
@@ -63,6 +69,18 @@ const NOTIF_STYLE = {
     inquiry: { icon: MessageCircle, color: '#34D399', bg: 'rgba(16, 185, 129, 0.15)' },
     notice: { icon: Bell, color: '#F472B6', bg: 'rgba(236, 72, 153, 0.15)' },
     system: { icon: Info, color: '#94A3B8', bg: 'rgba(148, 163, 184, 0.15)' },
+};
+
+// 대시보드 정보를 불러오지 못했을 때도 화면이 그려지도록 하는 기본값
+const EMPTY_DASHBOARD = {
+    balance: 0,
+    activeAds: { place: 0, shopping: 0, total: 0 },
+    todayGoal: 0,
+    trackingCount: 0,
+    trackingBest: null,
+    weeklyPlan: [],
+    onboarding: { hasAd: false, hasKeyword: false, hasTracking: false },
+    recentNotifications: [],
 };
 
 function timeAgo(dateStr) {
@@ -106,7 +124,7 @@ function LandingPage() {
                             무료로 시작하기 <ArrowRight size={18} />
                         </Link>
                         <Link href="/login?mode=register" className={styles.ctaSecondary}>
-                            키워드 분석 둘러보기
+                            무료 도구 둘러보기
                         </Link>
                     </div>
                 </div>
@@ -114,18 +132,18 @@ function LandingPage() {
 
             <section className={styles.trustBar}>
                 <div className={styles.trustItem}>
-                    <span className={styles.trustValue}>12,000+</span>
-                    <span className={styles.trustLabel}>누적 캠페인</span>
+                    <span className={styles.trustValue}>6가지</span>
+                    <span className={styles.trustLabel}>무료 분석·계산 도구</span>
                 </div>
                 <div className={styles.trustDivider} />
                 <div className={styles.trustItem}>
-                    <span className={styles.trustValue}>87%</span>
-                    <span className={styles.trustLabel}>재구매율</span>
+                    <span className={styles.trustValue}>10,000원</span>
+                    <span className={styles.trustLabel}>가입 축하 캐시</span>
                 </div>
                 <div className={styles.trustDivider} />
                 <div className={styles.trustItem}>
-                    <span className={styles.trustValue}>23계단</span>
-                    <span className={styles.trustLabel}>평균 순위 상승</span>
+                    <span className={styles.trustValue}>30초</span>
+                    <span className={styles.trustLabel}>이메일 가입</span>
                 </div>
             </section>
 
@@ -197,7 +215,8 @@ function DashboardHomeAuthed() {
     const router = useRouter();
     const [greeting, setGreeting] = useState('');
     const [isChartReady, setIsChartReady] = useState(false);
-    const [data, setData] = useState(null);
+    const [data, setData] = useState(EMPTY_DASHBOARD);
+    const [loadError, setLoadError] = useState(false);
     const [loading, setLoading] = useState(true);
     const [notifications, setNotifications] = useState([]);
     const [markingAll, setMarkingAll] = useState(false);
@@ -215,11 +234,15 @@ function DashboardHomeAuthed() {
             const res = await fetch('/api/dashboard');
             if (res.ok) {
                 const json = await res.json();
-                setData(json);
+                setData({ ...EMPTY_DASHBOARD, ...json });
                 setNotifications(json.recentNotifications || []);
+                setLoadError(false);
+            } else {
+                setLoadError(true);
             }
         } catch (error) {
             console.error('Error fetching dashboard:', error);
+            setLoadError(true);
         } finally {
             setLoading(false);
         }
@@ -265,8 +288,8 @@ function DashboardHomeAuthed() {
 
     const onboardingSteps = data ? [
         { key: 'hasAd', title: '첫 광고 시작', desc: 'URL만 입력하면 끝나요.', href: '/dashboard/shopping', done: data.onboarding.hasAd },
-        { key: 'hasKeyword', title: '키워드 분석해보기', desc: '검색량과 경쟁강도 확인', href: '/dashboard/keyword', done: data.onboarding.hasKeyword },
-        { key: 'hasTracking', title: '순위추적 등록', desc: '매일 자동으로 순위 확인', href: '/dashboard/ranking/shopping', done: data.onboarding.hasTracking },
+        { key: 'hasKeyword', title: '키워드 트렌드 보기', desc: '성수기와 검색 추이 확인', href: '/dashboard/keyword', done: data.onboarding.hasKeyword },
+        { key: 'hasTracking', title: '순위 기록 시작', desc: '확인한 순위를 적어 추이 보기', href: '/dashboard/ranking/shopping', done: data.onboarding.hasTracking },
     ] : [];
     const completedSteps = onboardingSteps.filter(s => s.done).length;
     const allStepsDone = onboardingSteps.length > 0 && completedSteps === onboardingSteps.length;
@@ -331,8 +354,8 @@ function DashboardHomeAuthed() {
                     <motion.div className={styles.onboardingDoneBanner} variants={itemVariants}>
                         <div className={styles.onboardingDoneIcon}><PartyPopper size={22} /></div>
                         <div>
-                            <h3 className={styles.onboardingDoneTitle}>설정 완료! 이제 데이터가 쌓이고 있어요</h3>
-                            <p className={styles.onboardingDoneDesc}>대시보드에서 실시간 성과를 확인해보세요.</p>
+                            <h3 className={styles.onboardingDoneTitle}>설정 완료! 이제 도구를 자유롭게 써 보세요</h3>
+                            <p className={styles.onboardingDoneDesc}>마진 계산과 순위 기록을 꾸준히 쌓아 보세요.</p>
                         </div>
                     </motion.div>
                 ) : (
@@ -387,7 +410,8 @@ function DashboardHomeAuthed() {
                 {/* 2. Main Chart Widget (Span 2) */}
                 <motion.div className={`${styles.card} ${styles.chartCard}`} variants={itemVariants}>
                     <div className={styles.cardHeader}>
-                        <h3 className={styles.cardTitle}>주간 퍼포먼스</h3>
+                        <h3 className={styles.cardTitle}>최근 7일 목표 유입량</h3>
+                        <span style={{ fontSize: 12, color: 'var(--text-dim)' }}>주문한 일일 목표 합계 (실제 유입 실적 아님)</span>
                     </div>
                     <div className={styles.chartContainer}>
                         {loading || !isChartReady ? (
@@ -395,30 +419,27 @@ function DashboardHomeAuthed() {
                         ) : data.activeAds.total === 0 ? (
                             <div className={styles.chartEmptyState}>
                                 <BarChart3 size={40} className={styles.emptyIcon} />
-                                <p>광고를 시작하면 유입 추이가 표시됩니다.</p>
+                                <p>광고를 시작하면 날짜별 목표 유입량이 표시됩니다.</p>
                                 <Link href="/dashboard/shopping" className={styles.emptyCta}>광고 시작하기</Link>
                             </div>
                         ) : (
                             <ResponsiveContainer width="100%" height="100%">
-                                <AreaChart data={data.weeklySeries}>
+                                <AreaChart data={data.weeklyPlan}>
                                     <defs>
-                                        <linearGradient id="colorVisits" x1="0" y1="0" x2="0" y2="1">
-                                            <stop offset="5%" stopColor="#8884d8" stopOpacity={0.8} />
-                                            <stop offset="95%" stopColor="#8884d8" stopOpacity={0} />
-                                        </linearGradient>
-                                        <linearGradient id="colorClicks" x1="0" y1="0" x2="0" y2="1">
-                                            <stop offset="5%" stopColor="#82ca9d" stopOpacity={0.8} />
-                                            <stop offset="95%" stopColor="#82ca9d" stopOpacity={0} />
+                                        <linearGradient id="colorPlanned" x1="0" y1="0" x2="0" y2="1">
+                                            <stop offset="5%" stopColor="#3987e5" stopOpacity={0.5} />
+                                            <stop offset="95%" stopColor="#3987e5" stopOpacity={0} />
                                         </linearGradient>
                                     </defs>
-                                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255,255,255,0.1)" />
+                                    <CartesianGrid vertical={false} stroke="rgba(255,255,255,0.08)" />
                                     <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#94A3B8', fontSize: 12 }} />
                                     <Tooltip
-                                        contentStyle={{ backgroundColor: 'rgba(15, 23, 42, 0.9)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', color: '#fff' }}
+                                        formatter={(value) => [`${Number(value).toLocaleString('ko-KR')}건`, '주문한 목표 유입']}
+                                        contentStyle={{ backgroundColor: 'rgba(15, 23, 42, 0.95)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', color: '#fff' }}
                                         itemStyle={{ color: '#fff' }}
+                                        cursor={{ stroke: 'rgba(255,255,255,0.25)', strokeWidth: 1 }}
                                     />
-                                    <Area type="monotone" dataKey="visits" stroke="#8884d8" fillOpacity={1} fill="url(#colorVisits)" />
-                                    <Area type="monotone" dataKey="clicks" stroke="#82ca9d" fillOpacity={1} fill="url(#colorClicks)" />
+                                    <Area type="monotone" dataKey="planned" stroke="#3987e5" strokeWidth={2} fillOpacity={1} fill="url(#colorPlanned)" isAnimationActive={false} />
                                 </AreaChart>
                             </ResponsiveContainer>
                         )}
@@ -455,7 +476,7 @@ function DashboardHomeAuthed() {
                             <Target size={20} />
                         </div>
                         <div className={styles.miniInfo}>
-                            <span className={styles.miniLabel}>키워드 분석</span>
+                            <span className={styles.miniLabel}>키워드 트렌드</span>
                             <span className={styles.miniAction}>시작하기 <ArrowRight size={12} /></span>
                         </div>
                     </Link>
@@ -482,21 +503,21 @@ function DashboardHomeAuthed() {
                         </div>
                     </Link>
 
-                    {/* Charge */}
-                    <Link href="/dashboard/charge" className={`${styles.miniCard} ${styles.cardCharge}`}>
+                    {/* Margin calculator */}
+                    <Link href="/dashboard/margin" className={`${styles.miniCard} ${styles.cardCharge}`}>
                         <div className={styles.miniIconBox} style={{ background: 'rgba(59, 130, 246, 0.2)', color: '#3B82F6' }}>
-                            <Wallet size={20} />
+                            <Calculator size={20} />
                         </div>
                         <div className={styles.miniInfo}>
-                            <span className={styles.miniLabel}>캐시 충전</span>
-                            <span className={styles.miniAction}>충전하기 <ArrowRight size={12} /></span>
+                            <span className={styles.miniLabel}>마진·ROAS 계산기</span>
+                            <span className={styles.miniAction}>계산하기 <ArrowRight size={12} /></span>
                         </div>
                     </Link>
                 </motion.div>
 
                 {/* 4. Stats Summary (Vertical) */}
                 <motion.div className={`${styles.card} ${styles.statsCard}`} variants={itemVariants}>
-                    <h3 className={styles.cardTitle}>실시간 인사이트</h3>
+                    <h3 className={styles.cardTitle}>한눈에 보기</h3>
                     {loading ? (
                         <div className={styles.insightList}>
                             {[1, 2, 3].map(i => <div key={i} className={styles.insightSkeletonRow} />)}
@@ -507,8 +528,8 @@ function DashboardHomeAuthed() {
                                 <div className={styles.insightItem}>
                                     <div className={styles.insightIcon}><TrendingUp size={16} /></div>
                                     <div className={styles.insightContent}>
-                                        <span className={styles.insightValue}>{data.todayExpectedVisits.toLocaleString()}</span>
-                                        <span className={styles.insightLabel}>오늘 예상 유입</span>
+                                        <span className={styles.insightValue}>{data.todayGoal.toLocaleString()}</span>
+                                        <span className={styles.insightLabel}>오늘 목표 유입</span>
                                     </div>
                                 </div>
                                 <div className={styles.insightItem}>
@@ -522,19 +543,19 @@ function DashboardHomeAuthed() {
                                     <div className={styles.insightIcon}><BarChart3 size={16} /></div>
                                     <div className={styles.insightContent}>
                                         <span className={styles.insightValue}>{data.trackingCount}</span>
-                                        <span className={styles.insightLabel}>추적 키워드</span>
+                                        <span className={styles.insightLabel}>순위 기록 키워드</span>
                                     </div>
                                 </div>
                             </div>
                             {data.trackingBest ? (
                                 <div className={styles.tipBox}>
-                                    <span className={styles.tipTitle}>🏆 베스트 순위</span>
-                                    <p className={styles.tipText}>&apos;{data.trackingBest.keyword}&apos; 현재 {data.trackingBest.currentRank}위</p>
+                                    <span className={styles.tipTitle}>🏆 가장 높은 기록</span>
+                                    <p className={styles.tipText}>&apos;{data.trackingBest.keyword}&apos; 최근 기록 {data.trackingBest.currentRank}위</p>
                                 </div>
                             ) : (
                                 <div className={styles.tipBox}>
                                     <span className={styles.tipTitle}>💡 마케팅 팁</span>
-                                    <p className={styles.tipText}>주말 오전 10시에 쇼핑 검색량이 가장 많습니다.</p>
+                                    <p className={styles.tipText}>광고를 켜기 전에 마진 계산기로 손익분기 ROAS부터 확인해 보세요.</p>
                                 </div>
                             )}
                         </>
@@ -544,9 +565,9 @@ function DashboardHomeAuthed() {
                 {/* 5. Banner/Ad (Span 1) */}
                 <motion.div className={`${styles.card} ${styles.bannerCard}`} variants={itemVariants}>
                     <div className={styles.bannerContent}>
-                        <h3>AI가 분석하는<br />우리 가게 SEO 점수는?</h3>
-                        <Link href="/dashboard/seo" className={styles.bannerBtn}>
-                            무료 분석하기
+                        <h3>한 건 팔면<br />실제로 얼마 남을까?</h3>
+                        <Link href="/dashboard/margin" className={styles.bannerBtn}>
+                            마진 계산하기
                         </Link>
                     </div>
                     <div className={styles.bannerImage}>

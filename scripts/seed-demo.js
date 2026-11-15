@@ -29,7 +29,8 @@ function buildRankHistory(startRank, endRank, days = 21) {
         const base = startRank - (startRank - endRank) * eased;
         const wobble = Math.round(Math.sin(i * 1.7) * 1.5);
         const rank = Math.max(1, Math.round(base + wobble));
-        history.push({ date: date.toISOString().slice(0, 10), rank });
+        // 순위 기록장은 직접 기록한 값(src: 'manual')만 보여 줍니다 — 데모 계정의 샘플 기록입니다.
+        history.push({ date: date.toISOString().slice(0, 10), rank, src: 'manual' });
     }
     history[history.length - 1].rank = endRank;
     return history;

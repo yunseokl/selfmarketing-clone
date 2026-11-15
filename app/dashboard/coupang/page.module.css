@@ -321,3 +321,45 @@
         flex-direction: column;
     }
 }
+
+/* 무료 계산 도구 바로가기 */
+.toolRow {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+    margin-bottom: 24px;
+}
+
+.toolCard {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 18px 20px;
+    background: rgba(163, 230, 53, 0.06);
+    border: 1px solid rgba(163, 230, 53, 0.22);
+    border-radius: 14px;
+    transition: all 0.2s;
+}
+
+.toolCard:hover {
+    background: rgba(163, 230, 53, 0.12);
+    transform: translateY(-1px);
+}
+
+.toolCard strong {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--accent);
+}
+
+.toolCard span {
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--text-gray);
+}
+
+@media (max-width: 640px) {
+    .toolRow {
+        grid-template-columns: 1fr;
+    }
+}

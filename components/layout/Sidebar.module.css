@@ -19,7 +19,7 @@
 
 /* Logo */
 .logo {
-    padding: 24px;
+    padding: 18px 24px;
     border-bottom: 1px solid var(--glass-border);
 }
 
@@ -53,20 +53,34 @@
 .nav {
     flex: 1;
     min-height: 0;
-    padding: 24px 16px;
+    padding: 16px 12px 20px;
     overflow-y: auto;
+    /* 아래에 메뉴가 더 있다는 것을 알 수 있게 끝을 흐리게 처리 */
+    -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 28px), transparent);
+    mask-image: linear-gradient(to bottom, #000 calc(100% - 28px), transparent);
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+}
+
+.nav::-webkit-scrollbar {
+    width: 6px;
+}
+
+.nav::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.18);
+    border-radius: 3px;
 }
 
 .section {
-    margin-bottom: 24px;
+    margin-bottom: 14px;
 }
 
 .sectionHeader {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 0 12px 8px;
-    margin-bottom: 4px;
+    padding: 0 12px 4px;
+    margin-bottom: 2px;
 }
 
 .sectionTitle {
@@ -100,7 +114,7 @@
 .menuList {
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: 2px;
     list-style: none;
     margin: 0;
     padding: 0;
@@ -114,10 +128,10 @@
 .menuItem {
     display: flex;
     align-items: center;
-    gap: 12px;
-    padding: 12px 16px;
+    gap: 10px;
+    padding: 9px 12px;
     color: var(--text-gray);
-    border-radius: 12px;
+    border-radius: 10px;
     transition: all 0.2s ease;
     font-size: 14px;
     font-weight: 500;
@@ -150,7 +164,7 @@
 
 /* User Section */
 .userSection {
-    padding: 20px;
+    padding: 12px 14px 14px;
     border-top: 1px solid var(--glass-border);
     background: rgba(0, 0, 0, 0.2);
 }
@@ -158,16 +172,16 @@
 .userCard {
     background: rgba(255, 255, 255, 0.03);
     border: 1px solid var(--glass-border);
-    border-radius: 16px;
-    padding: 16px;
-    margin-bottom: 16px;
+    border-radius: 14px;
+    padding: 12px;
+    margin-bottom: 10px;
 }
 
 .userInfo {
     display: flex;
     flex-direction: column;
     gap: 2px;
-    margin-bottom: 12px;
+    margin-bottom: 8px;
 }
 
 .userLabel {
@@ -186,9 +200,9 @@
     align-items: center;
     justify-content: space-between;
     background: rgba(0, 0, 0, 0.3);
-    padding: 8px 12px;
+    padding: 7px 10px;
     border-radius: 8px;
-    margin-bottom: 12px;
+    margin-bottom: 8px;
 }
 
 .balanceLabel {
@@ -275,9 +289,9 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 10px;
-    padding: 14px;
-    font-size: 14px;
+    gap: 8px;
+    padding: 10px;
+    font-size: 13px;
     font-weight: 700;
     color: #1A1A1A;
     background: #FEE500;

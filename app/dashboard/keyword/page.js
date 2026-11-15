@@ -1,85 +1,97 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
+import { toast } from 'sonner';
+import {
+    ArrowDownRight, ArrowUpRight, CalendarDays, Clock, ExternalLink, Info, Loader2, Minus, Search, Table2, TrendingUp,
+} from 'lucide-react';
+import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import styles from './page.module.css';
-import { motion, AnimatePresence } from 'framer-motion';
-import {
-    ArrowRight,
-    Clock,
-    ExternalLink,
-    Info,
-    Loader2,
-    Monitor,
-    Package,
-    Search,
-    ShoppingBag,
-    Smartphone,
-    Sparkles,
-    TrendingUp,
-    Zap,
-} from 'lucide-react';
-import { toast } from 'sonner';
-import { Cell, Pie, PieChart, PolarAngleAxis, RadialBar, RadialBarChart } from 'recharts';
 
 const EXAMPLE_KEYWORDS = ['캠핑의자', '단백질쉐이크', '무선청소기'];
+const MAX_COMPARE = 4;
 
-const COMPETITION_COLOR_VAR = {
-    success: 'var(--success)',
-    secondary: 'var(--secondary)',
-    warning: 'var(--warning)',
-    error: 'var(--error)',
-};
+// 어두운 카드 배경(#1A2436) 기준으로 색각 이상 구분·명도 대비를 검증한 고정 순서 색상.
+// 색만으로 구분하지 않도록 선 모양(실선·점선)도 함께 다르게 씁니다.
+const SERIES_STYLES = [
+    { color: '#3987e5', dash: undefined },
+    { color: '#d95926', dash: '7 4' },
+    { color: '#199e70', dash: '2 4' },
+    { color: '#c98500', dash: '10 4 2 4' },
+    { color: '#d55181', dash: '4 2' },
+];
 
-function formatNumber(value) {
-    if (value === null || value === undefined) return '-';
-    return value.toLocaleString('ko-KR');
+function splitCompare(text) {
+    return text.split(/[,\n]/).map((v) => v.trim()).filter(Boolean);
 }
 
-function getValidationMessage(error) {
-    if (!error) return '요청을 처리하지 못했습니다.';
-    if (typeof error === 'string') return error;
-
-    const firstField = Object.values(error).find(messages => Array.isArray(messages) && messages.length > 0);
-    return firstField?.[0] || '입력값을 확인해주세요.';
+function periodLabel(period) {
+    return `${period.slice(2, 4)}.${period.slice(5, 7)}`;
 }
 
-function getOpportunityMessage(score) {
-    if (score >= 70) return '지금 진입하기 좋은 키워드예요.';
-    if (score >= 40) return '경쟁이 있지만 차별화하면 해볼 만해요.';
-    return '경쟁이 치열해요. 세부 키워드로 좁혀보는 걸 추천해요.';
+function formatChange(value) {
+    if (value == null) return { text: '자료 부족', tone: 'flat', Icon: Minus };
+    const rounded = Math.round(value);
+    if (rounded > 0) return { text: `${rounded}% 늘었어요`, tone: 'up', Icon: ArrowUpRight };
+    if (rounded < 0) return { text: `${Math.abs(rounded)}% 줄었어요`, tone: 'down', Icon: ArrowDownRight };
+    return { text: '비슷해요', tone: 'flat', Icon: Minus };
 }
 
-function getOpportunityVisual(score) {
-    if (score >= 70) return { hex: '#10B981', className: styles.oppHigh };
-    if (score >= 40) return { hex: '#F59E0B', className: styles.oppMid };
-    return { hex: '#EF4444', className: styles.oppLow };
+function LineSample({ index }) {
+    const style = SERIES_STYLES[index];
+    return (
+        <svg width="26" height="8" viewBox="0 0 26 8" aria-hidden="true" className={styles.lineSample}>
+            <line x1="1" y1="4" x2="25" y2="4" stroke={style.color} strokeWidth="2.5" strokeDasharray={style.dash} strokeLinecap="round" />
+        </svg>
+    );
 }
 
-export default function KeywordPage() {
+function TrendTooltip({ active, payload, label, keywords }) {
+    if (!active || !payload?.length) return null;
+    return (
+        <div className={styles.tooltip}>
+            <strong>{label.slice(0, 4)}년 {Number(label.slice(5, 7))}월</strong>
+            <ul>
+                {payload.map((item) => {
+                    const index = Number(item.dataKey.slice(1));
+                    return (
+                        <li key={item.dataKey}>
+                            <LineSample index={index} />
+                            <span>{keywords[index]}</span>
+                            <b>{Math.round(item.value * 10) / 10}</b>
+                        </li>
+                    );
+                })}
+            </ul>
+        </div>
+    );
+}
+
+export default function KeywordTrendPage() {
     const { status } = useSession();
     const router = useRouter();
 
-    const [keywordInput, setKeywordInput] = useState('');
-    const [loading, setLoading] = useState(false);
+    const [keyword, setKeyword] = useState('');
+    const [compareText, setCompareText] = useState('');
+    const [recent, setRecent] = useState([]);
+    const [configured, setConfigured] = useState(null);
     const [result, setResult] = useState(null);
-    const [recentSearches, setRecentSearches] = useState([]);
-    const [recentLoading, setRecentLoading] = useState(true);
+    const [loading, setLoading] = useState(false);
+    const [showTable, setShowTable] = useState(false);
 
-    const fetchRecent = useCallback(async () => {
+    const fetchMeta = useCallback(async () => {
         try {
-            setRecentLoading(true);
             const res = await fetch('/api/keyword');
-            if (res.ok) {
-                const data = await res.json();
-                setRecentSearches(data.recent || []);
-            }
+            if (!res.ok) return;
+            const data = await res.json();
+            setRecent(data.recent || []);
+            setConfigured(Boolean(data.configured));
         } catch (error) {
-            console.error('Error fetching recent keyword searches:', error);
-        } finally {
-            setRecentLoading(false);
+            console.error('Error fetching keyword meta:', error);
         }
     }, []);
 
@@ -87,366 +99,332 @@ export default function KeywordPage() {
         if (status === 'unauthenticated') {
             router.push('/login');
         } else if (status === 'authenticated') {
-            fetchRecent();
+            fetchMeta();
         }
-    }, [status, router, fetchRecent]);
+    }, [status, router, fetchMeta]);
 
-    const runAnalysis = useCallback(async (rawKeyword) => {
-        const keyword = rawKeyword.trim();
-        if (keyword.length < 2) {
+    const analyze = async (mainKeyword, compareKeywords) => {
+        const main = mainKeyword.trim();
+        if (main.length < 2) {
             toast.error('키워드는 2자 이상 입력해주세요.');
             return;
         }
+        if (compareKeywords.length > MAX_COMPARE) {
+            toast.error(`비교 키워드는 최대 ${MAX_COMPARE}개까지 입력할 수 있습니다.`);
+            return;
+        }
 
+        setLoading(true);
         try {
-            setLoading(true);
             const res = await fetch('/api/keyword', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ keyword }),
+                body: JSON.stringify({ keyword: main, compare: compareKeywords }),
             });
             const data = await res.json();
 
-            if (res.ok) {
-                setResult(data.result);
-                setKeywordInput(keyword);
-                fetchRecent();
-                window.scrollTo({ top: 0, behavior: 'smooth' });
-            } else {
-                toast.error(getValidationMessage(data.error));
+            if (!res.ok) {
+                if (data.code === 'NOT_CONFIGURED') setConfigured(false);
+                toast.error(typeof data.error === 'string' ? data.error : '요청을 처리하지 못했습니다.');
+                return;
             }
+
+            setResult(data.result);
+            setShowTable(false);
+            fetchMeta();
         } catch (error) {
-            console.error('Error analyzing keyword:', error);
-            toast.error('키워드 분석 중 오류가 발생했습니다.');
+            console.error('Error fetching keyword trend:', error);
+            toast.error('키워드 트렌드 조회 중 오류가 발생했습니다.');
         } finally {
             setLoading(false);
         }
-    }, [fetchRecent]);
+    };
 
     const handleSubmit = (event) => {
         event.preventDefault();
-        runAnalysis(keywordInput);
+        analyze(keyword, splitCompare(compareText));
     };
 
-    if (status === 'loading') {
-        return <DashboardLayout><div className={styles.container}>로딩 중...</div></DashboardLayout>;
-    }
+    const runExample = (value) => {
+        setKeyword(value);
+        setCompareText('');
+        analyze(value, []);
+    };
 
-    const volumeChartData = result
-        ? [{ name: 'PC', value: result.monthlySearchPc }, { name: '모바일', value: result.monthlySearchMobile }]
-        : [];
-    const opportunityChartData = result ? [{ value: result.opportunityScore }] : [];
-    const opportunityVisual = result ? getOpportunityVisual(result.opportunityScore) : null;
+    // 차트·표용: 달마다 한 줄, 키워드별 값은 k0, k1 … 에
+    const chartData = useMemo(() => {
+        if (!result) return [];
+        const rows = new Map();
+        result.series.forEach((series, index) => {
+            for (const point of series.points) {
+                if (!rows.has(point.period)) rows.set(point.period, { period: point.period });
+                rows.get(point.period)[`k${index}`] = point.ratio;
+            }
+        });
+        return [...rows.values()].sort((a, b) => a.period.localeCompare(b.period));
+    }, [result]);
+
+    const hasAnyData = result?.summary.some((s) => s.hasData);
+    const disabled = loading || configured === false;
 
     return (
         <DashboardLayout>
             <div className={styles.container}>
-                {/* Hero */}
-                <div className={styles.hero}>
-                    <h1 className={styles.title}>키워드 분석</h1>
-                    <p className={styles.subtitle}>판매 전에 키워드의 수요와 경쟁을 확인하세요</p>
+                <section className={styles.hero}>
+                    <h1>키워드 트렌드</h1>
+                    <p>네이버 검색 추이로 언제 많이 찾는지, 어떤 키워드를 더 많이 찾는지 확인하세요.</p>
 
-                    <form className={styles.searchForm} onSubmit={handleSubmit}>
-                        <Search size={20} className={styles.searchIcon} />
-                        <input
-                            type="text"
-                            className={styles.searchInput}
-                            placeholder="분석할 키워드를 입력하세요 (예: 캠핑의자)"
-                            value={keywordInput}
-                            onChange={(event) => setKeywordInput(event.target.value)}
-                            maxLength={40}
-                            disabled={loading}
-                        />
-                        <button type="submit" className={styles.searchBtn} disabled={loading}>
-                            {loading ? <Loader2 size={18} className={styles.spin} /> : <Search size={18} />}
-                            {loading ? '분석 중...' : '분석하기'}
+                    <form className={styles.form} onSubmit={handleSubmit}>
+                        <div className={styles.field}>
+                            <label htmlFor="trend-keyword">기준 키워드</label>
+                            <div className={styles.inputWrap}>
+                                <Search size={18} aria-hidden="true" />
+                                <input
+                                    id="trend-keyword"
+                                    type="text"
+                                    maxLength={30}
+                                    value={keyword}
+                                    placeholder="예: 캠핑의자"
+                                    onChange={(e) => setKeyword(e.target.value)}
+                                    disabled={configured === false}
+                                />
+                            </div>
+                        </div>
+                        <div className={styles.field}>
+                            <label htmlFor="trend-compare">비교할 키워드 <span>(선택 · 쉼표로 구분 · 최대 {MAX_COMPARE}개)</span></label>
+                            <div className={styles.inputWrap}>
+                                <input
+                                    id="trend-compare"
+                                    type="text"
+                                    maxLength={140}
+                                    value={compareText}
+                                    placeholder="예: 캠핑테이블, 캠핑체어"
+                                    onChange={(e) => setCompareText(e.target.value)}
+                                    disabled={configured === false}
+                                />
+                            </div>
+                        </div>
+                        <button type="submit" className={styles.submitBtn} disabled={disabled}>
+                            {loading ? <Loader2 size={18} className={styles.spin} /> : <TrendingUp size={18} />}
+                            {loading ? '조회 중...' : '추이 보기'}
                         </button>
                     </form>
-                </div>
 
-                {/* Recent chips */}
-                {!recentLoading && recentSearches.length > 0 && (
-                    <div className={styles.recentRow}>
-                        <span className={styles.recentLabel}><Clock size={14} /> 최근 검색</span>
-                        <div className={styles.chipList}>
-                            {recentSearches.map((item) => (
-                                <button
-                                    key={item.id}
-                                    type="button"
-                                    className={styles.chip}
-                                    onClick={() => runAnalysis(item.keyword)}
-                                    disabled={loading}
-                                >
-                                    {item.keyword}
-                                    {item.summary && (
-                                        <span className={styles.chipScore}>{item.summary.opportunityScore}점</span>
-                                    )}
+                    {configured !== false && (
+                        <div className={styles.chips}>
+                            <span>예시</span>
+                            {EXAMPLE_KEYWORDS.map((example) => (
+                                <button key={example} type="button" onClick={() => runExample(example)} disabled={loading}>
+                                    {example}
                                 </button>
                             ))}
                         </div>
+                    )}
+                </section>
+
+                {configured === false && (
+                    <section className={styles.notice} role="status">
+                        <Info size={20} aria-hidden="true" />
+                        <div>
+                            <strong>검색 트렌드 데이터 연동을 준비하고 있어요</strong>
+                            <p>
+                                연동이 끝나면 이 화면에서 바로 조회할 수 있습니다. 그동안은 네이버가 제공하는 공식 도구에서
+                                같은 자료를 무료로 볼 수 있어요.
+                            </p>
+                            <ul>
+                                <li>
+                                    <a href="https://datalab.naver.com/keyword/trendSearch.naver" target="_blank" rel="noopener noreferrer">
+                                        네이버 데이터랩 검색어 트렌드 <ExternalLink size={13} />
+                                    </a>
+                                    <span>키워드별 검색 추이 비교 (로그인 없이 사용)</span>
+                                </li>
+                                <li>
+                                    <a href="https://datalab.naver.com/shoppingInsight/sCategory.naver" target="_blank" rel="noopener noreferrer">
+                                        네이버 데이터랩 쇼핑인사이트 <ExternalLink size={13} />
+                                    </a>
+                                    <span>분야별 인기 검색어와 성별·연령별 클릭 추이</span>
+                                </li>
+                                <li>
+                                    <a href="https://searchad.naver.com" target="_blank" rel="noopener noreferrer">
+                                        네이버 검색광고 키워드 도구 <ExternalLink size={13} />
+                                    </a>
+                                    <span>내 광고 계정으로 로그인하면 월간 검색수를 볼 수 있어요 (도구 &gt; 키워드 도구)</span>
+                                </li>
+                            </ul>
+                            <p className={styles.noticeLinks}>
+                                지금 바로 쓸 수 있는 도구: <Link href="/dashboard/margin">마진·ROAS 계산기</Link> · <Link href="/dashboard/seo">상품명 SEO 분석</Link>
+                            </p>
+                        </div>
+                    </section>
+                )}
+
+                {recent.length > 0 && configured !== false && (
+                    <div className={styles.recent}>
+                        <Clock size={14} aria-hidden="true" />
+                        <span>최근 조회</span>
+                        {recent.map((item) => (
+                            <button key={item.id} type="button" onClick={() => runExample(item.keyword)} disabled={loading}>
+                                {item.keyword}
+                            </button>
+                        ))}
                     </div>
                 )}
 
-                <AnimatePresence mode="wait">
-                    {loading ? (
-                        <motion.div
-                            key="loading"
-                            initial={{ opacity: 0 }}
-                            animate={{ opacity: 1 }}
-                            exit={{ opacity: 0 }}
-                            transition={{ duration: 0.2 }}
-                            className={styles.metricGrid}
-                        >
-                            {[0, 1, 2, 3].map((i) => (
-                                <div key={i} className={styles.skeletonCard} />
-                            ))}
-                        </motion.div>
-                    ) : result ? (
-                        <motion.div
-                            key={`${result.keyword}-${result.checkedAt}`}
-                            initial={{ opacity: 0, y: 16 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            transition={{ duration: 0.35 }}
-                        >
-                            {/* Result header */}
-                            <div className={styles.resultHeader}>
-                                <h2>{result.keyword}</h2>
-                                {result.source === 'naver' ? (
-                                    <span className={`${styles.sourceBadge} ${styles.sourceReal}`}>네이버 실데이터</span>
-                                ) : (
-                                    <span
-                                        className={`${styles.sourceBadge} ${styles.sourceEstimate}`}
-                                        title="NAVER_CLIENT_ID 등록 시 실데이터로 분석됩니다."
-                                    >
-                                        추정 데이터
-                                    </span>
-                                )}
-                            </div>
-                            {result.source === 'estimate' && (
-                                <p className={styles.sourceCaption}>
-                                    <Info size={13} /> NAVER_CLIENT_ID 등록 시 실데이터로 분석됩니다.
-                                </p>
-                            )}
-
-                            {/* Metric cards */}
-                            <div className={styles.metricGrid}>
-                                <div className={styles.metricCard}>
-                                    <span className={styles.metricLabel}><TrendingUp size={16} /> 월간 검색수</span>
-                                    <strong className={styles.metricValue}>{formatNumber(result.monthlySearchTotal)}</strong>
-                                    <div className={styles.donutRow}>
-                                        <div className={styles.donutChart}>
-                                            <PieChart width={72} height={72}>
-                                                <Pie data={volumeChartData} dataKey="value" innerRadius={22} outerRadius={34} paddingAngle={2} stroke="none">
-                                                    <Cell fill="#3B82F6" />
-                                                    <Cell fill="#A3E635" />
-                                                </Pie>
-                                            </PieChart>
-                                        </div>
-                                        <div className={styles.donutLegend}>
-                                            <span className={styles.legendPc}><Monitor size={12} /> PC {formatNumber(result.monthlySearchPc)}</span>
-                                            <span className={styles.legendMobile}><Smartphone size={12} /> 모바일 {formatNumber(result.monthlySearchMobile)}</span>
-                                        </div>
-                                    </div>
+                {result && (
+                    <div aria-live="polite">
+                        <section className={styles.card}>
+                            <div className={styles.cardHead}>
+                                <div>
+                                    <h2>월별 검색 추이</h2>
+                                    <p>{result.range.startDate.slice(0, 7)} ~ {result.range.endDate.slice(0, 7)} · 네이버 통합검색 기준</p>
                                 </div>
-
-                                <div className={styles.metricCard}>
-                                    <span className={styles.metricLabel}><Package size={16} /> 등록 상품수</span>
-                                    <strong className={styles.metricValue}>{formatNumber(result.productCount)}</strong>
-                                    <p className={styles.metricSub}>평균가 {result.avgPrice ? `${formatNumber(result.avgPrice)}원` : '-'}</p>
-                                </div>
-
-                                <div className={styles.metricCard}>
-                                    <span className={styles.metricLabel}><ShoppingBag size={16} /> 경쟁강도</span>
-                                    <div className={styles.competitionRow}>
-                                        <strong className={styles.metricValue}>{result.competitionRatio}</strong>
-                                        <span
-                                            className={`${styles.levelBadge} ${styles[`level_${result.competitionColor}`]}`}
-                                        >
-                                            {result.competitionLevel}
-                                        </span>
-                                    </div>
-                                    <div className={styles.gaugeTrack}>
-                                        <div
-                                            className={styles.gaugeFill}
-                                            style={{
-                                                width: `${Math.min(100, result.competitionRatio * 5)}%`,
-                                                background: COMPETITION_COLOR_VAR[result.competitionColor],
-                                            }}
-                                        />
-                                    </div>
-                                </div>
-
-                                <div className={`${styles.metricCard} ${styles.opportunityCard}`}>
-                                    <span className={styles.metricLabel}><Zap size={16} /> 기회 점수</span>
-                                    <div className={styles.radialWrap}>
-                                        <RadialBarChart
-                                            width={100}
-                                            height={100}
-                                            innerRadius={34}
-                                            outerRadius={48}
-                                            data={opportunityChartData}
-                                            startAngle={90}
-                                            endAngle={-270}
-                                        >
-                                            <PolarAngleAxis type="number" domain={[0, 100]} tick={false} />
-                                            <RadialBar
-                                                dataKey="value"
-                                                cornerRadius={10}
-                                                fill={opportunityVisual.hex}
-                                                background={{ fill: 'rgba(255,255,255,0.08)' }}
-                                            />
-                                        </RadialBarChart>
-                                        <span className={`${styles.radialValue} ${opportunityVisual.className}`}>
-                                            {result.opportunityScore}
-                                        </span>
-                                    </div>
-                                    <p className={styles.metricSub}>{getOpportunityMessage(result.opportunityScore)}</p>
-                                </div>
+                                <button type="button" className={styles.ghostBtn} onClick={() => setShowTable((v) => !v)} aria-pressed={showTable}>
+                                    <Table2 size={14} /> {showTable ? '그래프로 보기' : '표로 보기'}
+                                </button>
                             </div>
 
-                            {/* Top products / notice */}
-                            {result.source === 'naver' ? (
-                                <div className={styles.section}>
-                                    <h3 className={styles.sectionTitle}>상위 노출 상품 TOP {result.topProducts.length}</h3>
-                                    {result.topProducts.length > 0 ? (
-                                        <div className={styles.tableContainer}>
+                            {!hasAnyData ? (
+                                <p className={styles.empty}>검색량이 너무 적어 추이를 보여 드릴 수 없어요. 더 넓은 키워드로 조회해 보세요.</p>
+                            ) : (
+                                <>
+                                    {result.keywords.length > 1 && (
+                                        <ul className={styles.legend}>
+                                            {result.keywords.map((name, index) => (
+                                                <li key={name}><LineSample index={index} />{name}</li>
+                                            ))}
+                                        </ul>
+                                    )}
+
+                                    {showTable ? (
+                                        <div className={styles.tableWrap}>
                                             <table className={styles.table}>
                                                 <thead>
                                                     <tr>
-                                                        <th>순위</th>
-                                                        <th>썸네일</th>
-                                                        <th>상품명</th>
-                                                        <th>가격</th>
-                                                        <th>몰명</th>
-                                                        <th></th>
+                                                        <th scope="col">월</th>
+                                                        {result.keywords.map((name) => <th key={name} scope="col">{name}</th>)}
                                                     </tr>
                                                 </thead>
                                                 <tbody>
-                                                    {result.topProducts.map((product) => (
-                                                        <tr key={product.rank}>
-                                                            <td>{product.rank}</td>
-                                                            <td>
-                                                                <div className={styles.thumbnail}>
-                                                                    {product.image ? (
-                                                                        // 네이버 API가 반환하는 외부 이미지라 도메인을 미리 고정할 수 없어 기본 img를 씁니다.
-                                                                        // eslint-disable-next-line @next/next/no-img-element
-                                                                        <img src={product.image} alt="" />
-                                                                    ) : (
-                                                                        <Package size={20} />
-                                                                    )}
-                                                                </div>
-                                                            </td>
-                                                            <td className={styles.productTitle}>{product.title}</td>
-                                                            <td>{product.price ? `${formatNumber(product.price)}원` : '-'}</td>
-                                                            <td>{product.mallName}</td>
-                                                            <td>
-                                                                <a
-                                                                    href={product.link}
-                                                                    target="_blank"
-                                                                    rel="noopener noreferrer"
-                                                                    className={styles.linkBtn}
-                                                                    aria-label="상품 페이지 열기"
-                                                                >
-                                                                    <ExternalLink size={14} />
-                                                                </a>
-                                                            </td>
+                                                    {[...chartData].reverse().map((row) => (
+                                                        <tr key={row.period}>
+                                                            <th scope="row">{row.period}</th>
+                                                            {result.keywords.map((name, index) => (
+                                                                <td key={name}>{row[`k${index}`] != null ? Math.round(row[`k${index}`] * 10) / 10 : '-'}</td>
+                                                            ))}
                                                         </tr>
                                                     ))}
                                                 </tbody>
                                             </table>
                                         </div>
                                     ) : (
-                                        <p className={styles.emptyHint}>등록된 상품이 없습니다.</p>
+                                        <div className={styles.chart}>
+                                            <ResponsiveContainer width="100%" height={300}>
+                                                <LineChart data={chartData} margin={{ top: 8, right: 12, bottom: 0, left: -18 }}>
+                                                    <CartesianGrid stroke="rgba(255,255,255,0.06)" vertical={false} />
+                                                    <XAxis
+                                                        dataKey="period"
+                                                        tickFormatter={periodLabel}
+                                                        interval={5}
+                                                        tick={{ fontSize: 11, fill: '#94A3B8' }}
+                                                        axisLine={false}
+                                                        tickLine={false}
+                                                    />
+                                                    <YAxis
+                                                        domain={[0, 100]}
+                                                        ticks={[0, 25, 50, 75, 100]}
+                                                        tick={{ fontSize: 11, fill: '#94A3B8' }}
+                                                        axisLine={false}
+                                                        tickLine={false}
+                                                        width={48}
+                                                    />
+                                                    <Tooltip
+                                                        content={<TrendTooltip keywords={result.keywords} />}
+                                                        cursor={{ stroke: 'rgba(255,255,255,0.25)', strokeWidth: 1 }}
+                                                    />
+                                                    {result.keywords.map((name, index) => (
+                                                        <Line
+                                                            key={name}
+                                                            type="monotone"
+                                                            dataKey={`k${index}`}
+                                                            name={name}
+                                                            stroke={SERIES_STYLES[index].color}
+                                                            strokeWidth={2}
+                                                            strokeDasharray={SERIES_STYLES[index].dash}
+                                                            dot={false}
+                                                            activeDot={{ r: 5, stroke: '#1A2436', strokeWidth: 2 }}
+                                                            connectNulls
+                                                            isAnimationActive={false}
+                                                        />
+                                                    ))}
+                                                </LineChart>
+                                            </ResponsiveContainer>
+                                        </div>
                                     )}
-                                </div>
-                            ) : (
-                                <div className={styles.noticeCard}>
-                                    <Info size={20} />
-                                    <div>
-                                        <strong>네이버 API 키를 등록하면 실제 상위 노출 상품을 보여드려요</strong>
-                                        <p>.env 파일에 NAVER_CLIENT_ID, NAVER_CLIENT_SECRET을 등록하면 실제 순위와 상품 데이터를 확인할 수 있습니다.</p>
-                                    </div>
-                                </div>
+                                </>
                             )}
 
-                            {/* Related keywords */}
-                            {result.relatedKeywords.length > 0 && (
-                                <div className={styles.section}>
-                                    <h3 className={styles.sectionTitle}>연관 키워드</h3>
-                                    <div className={styles.tableContainer}>
-                                        <table className={styles.table}>
-                                            <thead>
-                                                <tr>
-                                                    <th>키워드</th>
-                                                    <th>월간 검색수</th>
-                                                    <th>상품수</th>
-                                                    <th>경쟁강도</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody>
-                                                {result.relatedKeywords.map((rk) => (
-                                                    <tr
-                                                        key={rk.keyword}
-                                                        className={styles.clickableRow}
-                                                        onClick={() => runAnalysis(rk.keyword)}
-                                                    >
-                                                        <td className={styles.relatedKeyword}>{rk.keyword}</td>
-                                                        <td>{formatNumber(rk.monthlySearchTotal)}</td>
-                                                        <td>{formatNumber(rk.productCount)}</td>
-                                                        <td><span className={styles.competitionTag}>{rk.competition}</span></td>
-                                                    </tr>
-                                                ))}
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                </div>
-                            )}
-                        </motion.div>
-                    ) : (
-                        <motion.div
-                            key="empty"
-                            initial={{ opacity: 0 }}
-                            animate={{ opacity: 1 }}
-                            transition={{ duration: 0.3 }}
-                        >
-                            <div className={styles.guideGrid}>
-                                <div className={styles.guideCard}>
-                                    <span className={styles.guideNum}>1</span>
-                                    <h4>키워드 입력</h4>
-                                    <p>판매하려는 상품의 대표 키워드를 검색창에 입력하세요.</p>
-                                </div>
-                                <div className={styles.guideCard}>
-                                    <span className={styles.guideNum}>2</span>
-                                    <h4>수요와 경쟁 확인</h4>
-                                    <p>월간 검색수, 등록 상품수, 경쟁강도를 한눈에 확인하세요.</p>
-                                </div>
-                                <div className={styles.guideCard}>
-                                    <span className={styles.guideNum}>3</span>
-                                    <h4>기회 점수로 판단</h4>
-                                    <p>기회 점수와 연관 키워드로 진입 여부를 결정하세요.</p>
-                                </div>
-                            </div>
+                            <p className={styles.basis}>
+                                <Info size={13} aria-hidden="true" />
+                                숫자는 실제 검색 횟수가 아니라, 조회한 기간과 키워드 중 가장 많이 검색된 달을 100으로 둔 상대값입니다.
+                                출처: 네이버 데이터랩 검색어 트렌드.
+                            </p>
+                        </section>
 
-                            <div className={styles.exampleRow}>
-                                <span className={styles.exampleLabel}><Sparkles size={14} /> 인기 예시 키워드</span>
-                                <div className={styles.chipList}>
-                                    {EXAMPLE_KEYWORDS.map((kw) => (
-                                        <button
-                                            key={kw}
-                                            type="button"
-                                            className={styles.exampleChip}
-                                            onClick={() => runAnalysis(kw)}
-                                            disabled={loading}
-                                        >
-                                            {kw}
-                                            <ArrowRight size={13} />
-                                        </button>
-                                    ))}
-                                </div>
-                            </div>
-                        </motion.div>
-                    )}
-                </AnimatePresence>
+                        <section className={styles.summaryGrid} aria-label="키워드별 요약">
+                            {result.summary.map((item, index) => {
+                                const recentChange = formatChange(item.recentChange);
+                                const yearChange = formatChange(item.yearChange);
+                                return (
+                                    <article key={item.keyword} className={styles.summaryCard}>
+                                        <h3><LineSample index={index} />{item.keyword}</h3>
+                                        {!item.hasData ? (
+                                            <p className={styles.muted}>검색량이 너무 적어 추이를 볼 수 없어요.</p>
+                                        ) : (
+                                            <dl>
+                                                {result.keywords.length > 1 && (
+                                                    <div>
+                                                        <dt>검색 수요 (기준 키워드 = 100)</dt>
+                                                        <dd className={styles.big}>
+                                                            {index === 0 ? '기준' : item.relativeIndex != null ? item.relativeIndex.toLocaleString('ko-KR') : '-'}
+                                                        </dd>
+                                                    </div>
+                                                )}
+                                                <div>
+                                                    <dt><CalendarDays size={13} /> 많이 찾는 달</dt>
+                                                    <dd>
+                                                        {item.peakMonths.length > 0
+                                                            ? item.peakMonths.map((m) => `${m.month}월`).join(', ')
+                                                            : '뚜렷한 성수기 없음'}
+                                                    </dd>
+                                                </div>
+                                                <div>
+                                                    <dt>최근 3개월 (직전 3개월 대비)</dt>
+                                                    <dd className={styles[recentChange.tone]}>
+                                                        <recentChange.Icon size={15} /> {recentChange.text}
+                                                    </dd>
+                                                </div>
+                                                <div>
+                                                    <dt>작년 같은 기간 대비</dt>
+                                                    <dd className={styles[yearChange.tone]}>
+                                                        <yearChange.Icon size={15} /> {yearChange.text}
+                                                    </dd>
+                                                </div>
+                                            </dl>
+                                        )}
+                                    </article>
+                                );
+                            })}
+                        </section>
+                    </div>
+                )}
+
+                {!result && configured !== false && (
+                    <section className={styles.guide}>
+                        <div><b>1</b><h3>키워드 입력</h3><p>팔려는 상품이나 우리 가게를 찾을 때 쓰는 단어를 넣으세요.</p></div>
+                        <div><b>2</b><h3>성수기 확인</h3><p>최근 3년 동안 어느 달에 검색이 몰리는지 보고 준비 시점을 잡으세요.</p></div>
+                        <div><b>3</b><h3>키워드 비교</h3><p>후보 키워드를 함께 넣으면 어느 쪽을 더 많이 찾는지 비교할 수 있어요.</p></div>
+                    </section>
+                )}
             </div>
         </DashboardLayout>
     );

@@ -2,13 +2,32 @@ import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import prisma from '@/lib/prisma';
-import { analyzeKeyword } from '@/lib/naver';
-import { analyzeKeywordSchema } from '@/lib/validations/keyword';
+import { fetchTrend, trendConfig } from '@/lib/naver-trend';
+import { keywordTrendSchema, uniqueKeywords } from '@/lib/validations/keyword';
 
 // 로그인 세션/쿠키를 읽는 API라 빌드 때 정적으로 고정하지 않습니다.
 export const dynamic = 'force-dynamic';
 
-const CACHE_WINDOW_MS = 10 * 60 * 1000;
+// 키워드 트렌드 — 네이버 데이터랩 검색어 트렌드(상대값)만 보여 줍니다.
+// 검색량·상품수를 만들어 내던 예전 "추정" 분석은 제거했습니다(lib/naver-trend.js 주석 참고).
+
+// 같은 조회는 10분간 메모리에서 재사용합니다(외부 호출 한도 보호). DB에는 조회 결과를 저장하지 않습니다.
+const CACHE_TTL_MS = 10 * 60 * 1000;
+const CACHE_MAX = 200;
+const cache = new Map();
+
+// 회원당 10분에 30회까지
+const RATE_WINDOW_MS = 10 * 60 * 1000;
+const RATE_MAX = 30;
+const hits = new Map();
+
+const ERROR_RESPONSES = {
+    NOT_CONFIGURED: { status: 503, error: '검색 트렌드 데이터 연동이 아직 설정되지 않았습니다.' },
+    KEY_REJECTED: { status: 502, error: '검색 트렌드 연동 키를 확인해야 합니다. 관리자에게 문의해주세요.' },
+    RATE_LIMITED: { status: 429, error: '오늘 조회 한도를 모두 사용했습니다. 잠시 후 다시 시도해주세요.' },
+    TIMEOUT: { status: 504, error: '네이버 응답이 늦어지고 있습니다. 잠시 후 다시 시도해주세요.' },
+    UPSTREAM_ERROR: { status: 502, error: '검색 트렌드를 불러오지 못했습니다. 잠시 후 다시 시도해주세요.' },
+};
 
 async function getCurrentUser() {
     const session = await getServerSession(authOptions);
@@ -18,7 +37,8 @@ async function getCurrentUser() {
     }
 
     const user = await prisma.user.findUnique({
-        where: { email: session.user.email }
+        where: { email: session.user.email },
+        select: { id: true },
     });
 
     if (!user) {
@@ -28,21 +48,19 @@ async function getCurrentUser() {
     return { user };
 }
 
-function summarizeResult(resultJson) {
-    try {
-        const parsed = JSON.parse(resultJson);
-        return {
-            monthlySearchTotal: parsed.monthlySearchTotal,
-            productCount: parsed.productCount,
-            competitionLevel: parsed.competitionLevel,
-            opportunityScore: parsed.opportunityScore,
-        };
-    } catch {
-        return null;
+function allowRequest(userId, now = Date.now()) {
+    const recent = (hits.get(userId) || []).filter((t) => now - t < RATE_WINDOW_MS);
+    if (recent.length >= RATE_MAX) {
+        hits.set(userId, recent);
+        return false;
     }
+    recent.push(now);
+    hits.set(userId, recent);
+    if (hits.size > 5000) hits.clear();
+    return true;
 }
 
-// GET - 내 최근 키워드 검색 기록 조회
+// GET - 최근 조회한 키워드와 연동 설정 여부
 export async function GET() {
     try {
         const userCheck = await getCurrentUser();
@@ -51,26 +69,31 @@ export async function GET() {
         }
 
         const searches = await prisma.keywordSearch.findMany({
-            where: { userId: userCheck.user.id, type: 'shopping' },
+            where: { userId: userCheck.user.id },
             orderBy: { createdAt: 'desc' },
-            take: 12,
+            take: 40,
+            select: { id: true, keyword: true, createdAt: true },
         });
 
-        const recent = searches.map((item) => ({
-            id: item.id,
-            keyword: item.keyword,
-            createdAt: item.createdAt,
-            summary: summarizeResult(item.result),
-        }));
+        const seen = new Set();
+        const recent = [];
+        for (const item of searches) {
+            // 예전 기록 중 지금 규칙으로는 조회할 수 없는 키워드는 목록에서 뺍니다.
+            if (!keywordTrendSchema.shape.keyword.safeParse(item.keyword).success) continue;
+            if (seen.has(item.keyword)) continue;
+            seen.add(item.keyword);
+            recent.push(item);
+            if (recent.length >= 10) break;
+        }
 
-        return NextResponse.json({ recent });
+        return NextResponse.json({ recent, configured: Boolean(trendConfig()) });
     } catch (error) {
         console.error('Error fetching keyword searches:', error);
-        return NextResponse.json({ error: '최근 검색 조회 중 오류가 발생했습니다.' }, { status: 500 });
+        return NextResponse.json({ error: '최근 조회 기록을 불러오는 중 오류가 발생했습니다.' }, { status: 500 });
     }
 }
 
-// POST - 키워드 분석 (수요/경쟁/기회점수/연관키워드)
+// POST - 키워드 검색 추이 조회 (기준 키워드 + 비교 키워드 최대 4개)
 export async function POST(request) {
     try {
         const userCheck = await getCurrentUser();
@@ -78,47 +101,70 @@ export async function POST(request) {
             return NextResponse.json({ error: userCheck.error }, { status: userCheck.status });
         }
 
-        const body = await request.json();
-        const validation = analyzeKeywordSchema.safeParse(body);
+        let body;
+        try {
+            body = await request.json();
+        } catch {
+            return NextResponse.json({ error: '요청 형식이 올바르지 않습니다.' }, { status: 400 });
+        }
+
+        const validation = keywordTrendSchema.safeParse(body);
         if (!validation.success) {
-            return NextResponse.json({ error: validation.error.flatten().fieldErrors }, { status: 400 });
+            const message = validation.error.errors[0]?.message || '입력값을 확인해주세요.';
+            return NextResponse.json({ error: message }, { status: 400 });
         }
 
-        const { keyword } = validation.data;
+        const keywords = uniqueKeywords(validation.data.keyword, validation.data.compare);
 
-        // 동일 키워드를 10분 내 재검색하면 새로 조회하지 않고 저장된 결과를 그대로 반환합니다.
-        const cached = await prisma.keywordSearch.findFirst({
-            where: {
-                userId: userCheck.user.id,
-                type: 'shopping',
-                keyword,
-                createdAt: { gte: new Date(Date.now() - CACHE_WINDOW_MS) },
-            },
-            orderBy: { createdAt: 'desc' },
-        });
-
-        if (cached) {
-            try {
-                return NextResponse.json({ result: JSON.parse(cached.result) });
-            } catch {
-                // 캐시된 결과 파싱에 실패하면 아래로 이어져 새로 분석합니다.
-            }
+        if (!trendConfig()) {
+            const { status, error } = ERROR_RESPONSES.NOT_CONFIGURED;
+            return NextResponse.json({ error, code: 'NOT_CONFIGURED' }, { status });
         }
 
-        const result = await analyzeKeyword(keyword);
+        const cacheKey = keywords.join('|').toLowerCase();
+        const cached = cache.get(cacheKey);
+        if (cached && Date.now() - cached.at < CACHE_TTL_MS) {
+            return NextResponse.json({ result: cached.result });
+        }
 
+        if (!allowRequest(userCheck.user.id)) {
+            return NextResponse.json(
+                { error: '조회가 너무 잦습니다. 10분 뒤에 다시 시도해주세요.', code: 'TOO_MANY_REQUESTS' },
+                { status: 429 }
+            );
+        }
+
+        const trend = await fetchTrend(keywords);
+        if (!trend.ok) {
+            const { status, error } = ERROR_RESPONSES[trend.code] || ERROR_RESPONSES.UPSTREAM_ERROR;
+            console.error('Keyword trend fetch failed:', trend.code, trend.status || '');
+            return NextResponse.json({ error, code: trend.code }, { status });
+        }
+
+        const result = {
+            keywords,
+            range: trend.range,
+            series: trend.series,
+            summary: trend.summary,
+            checkedAt: new Date().toISOString(),
+        };
+
+        if (cache.size >= CACHE_MAX) cache.delete(cache.keys().next().value);
+        cache.set(cacheKey, { at: Date.now(), result });
+
+        // 최근 조회 목록용으로 키워드만 남깁니다(조회 결과 수치는 저장하지 않음).
         await prisma.keywordSearch.create({
             data: {
                 userId: userCheck.user.id,
-                keyword,
-                type: 'shopping',
-                result: JSON.stringify(result),
+                keyword: keywords[0],
+                type: 'trend',
+                result: JSON.stringify({ compare: keywords.slice(1) }),
             },
         });
 
         return NextResponse.json({ result });
     } catch (error) {
-        console.error('Error analyzing keyword:', error);
-        return NextResponse.json({ error: '키워드 분석 중 오류가 발생했습니다.' }, { status: 500 });
+        console.error('Error fetching keyword trend:', error);
+        return NextResponse.json({ error: '키워드 트렌드 조회 중 오류가 발생했습니다.' }, { status: 500 });
     }
 }

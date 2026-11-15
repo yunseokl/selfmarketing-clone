@@ -7,6 +7,7 @@
     "build": "prisma generate && next build",
     "start": "prisma db push && next start",
     "lint": "next lint",
+    "test": "node --no-warnings --test \"tests/*.test.mjs\"",
     "postinstall": "prisma generate",
     "db:push": "dotenv -- prisma db push",
     "db:generate": "dotenv -- prisma generate",

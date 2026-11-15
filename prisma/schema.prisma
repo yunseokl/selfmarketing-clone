@@ -34,6 +34,8 @@ model User {
   refundRequests   RefundRequest[]
   notifications    Notification[]
   keywordSearches  KeywordSearch[]
+  marginScenarios  MarginScenario[]
+  savedPlaces      SavedPlace[]
 }
 
 model Account {
@@ -251,4 +253,37 @@ model RankTracking {
   updatedAt     DateTime  @updatedAt
 
   user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// 마진·ROAS 계산기 저장 항목 — 입력값만 저장하고 결과는 화면에서 다시 계산합니다.
+model MarginScenario {
+  id        String   @id @default(cuid())
+  userId    String
+  channel   String   // "smartstore" | "coupang"
+  name      String
+  input     String   // JSON 직렬화된 계산 입력값
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, updatedAt])
+}
+
+// 플레이스 분석 — 회원이 "내 매장"으로 저장한 플레이스와, 조회할 때마다 쌓는 공개 지표 이력.
+// metrics: JSON 문자열 [{ date, visitorReviews, blogReviews, score }] (날짜별 1건, 최대 120건)
+model SavedPlace {
+  id         String   @id @default(cuid())
+  userId     String
+  placeId    String
+  name       String
+  category   String?
+  metrics    String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, placeId])
+  @@index([userId, updatedAt])
 }

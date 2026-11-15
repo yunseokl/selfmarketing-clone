@@ -24,6 +24,10 @@ import {
     LifeBuoy,
     Wallet,
     ShieldCheck,
+    Calculator,
+    ClipboardCheck,
+    MessageSquareText,
+    ScanSearch,
 } from 'lucide-react';
 import styles from './Sidebar.module.css';
 
@@ -37,32 +41,37 @@ const menuItems = [
         ]
     },
     {
+        category: '수익 계산',
+        badge: '무료 사용',
+        items: [
+            { name: '마진·ROAS 계산기', href: '/dashboard/margin', icon: Calculator, badge: 'NEW' },
+        ]
+    },
+    {
         category: '분석 도구',
         badge: '무료 사용',
         items: [
-            { name: '키워드 분석', href: '/dashboard/keyword', icon: Target, badge: 'NEW' },
-            { name: '플레이스 순위추적', href: '/dashboard/ranking/place', icon: TrendingUp },
-            { name: '쇼핑 순위추적', href: '/dashboard/ranking/shopping', icon: BarChart3 },
+            { name: '키워드 트렌드', href: '/dashboard/keyword', icon: Target },
             { name: '쇼핑 SEO 분석', href: '/dashboard/seo', icon: Search },
+            { name: '쇼핑 순위 기록장', href: '/dashboard/ranking/shopping', icon: BarChart3 },
+            { name: '플레이스 순위 기록장', href: '/dashboard/ranking/place', icon: TrendingUp },
         ]
     },
     {
-        category: '광고 대행',
-        badge: '광고비 10% 환급',
+        category: '매장 운영',
+        badge: '무료 사용',
+        items: [
+            { name: '플레이스 분석', href: '/dashboard/place-insight', icon: ScanSearch, badge: 'NEW' },
+            { name: '플레이스 진단', href: '/dashboard/place-check', icon: ClipboardCheck, badge: 'NEW' },
+            { name: '리뷰 답글 도우미', href: '/dashboard/review-reply', icon: MessageSquareText, badge: 'NEW' },
+        ]
+    },
+    {
+        category: '부가 서비스',
         items: [
             { name: '매체별 광고비 환급', href: '/dashboard/refund', icon: DollarSign },
-        ]
-    },
-    {
-        category: '블로그 관리',
-        items: [
             { name: '플레이스 블로그 배포', href: '/dashboard/blog', icon: FileText },
-        ]
-    },
-    {
-        category: 'AI 부가서비스',
-        items: [
-            { name: 'AI 콘텐츠 스튜디오', href: '/dashboard/ai', icon: Image },
+            { name: '콘텐츠 스튜디오', href: '/dashboard/ai', icon: Image },
         ]
     },
     {
@@ -113,7 +122,7 @@ export default function Sidebar() {
     return (
         <>
             {/* Mobile Menu Button */}
-            <button className={styles.mobileToggle} onClick={toggleMobile}>
+            <button className={styles.mobileToggle} onClick={toggleMobile} aria-label={isMobileOpen ? '메뉴 닫기' : '메뉴 열기'} aria-expanded={isMobileOpen}>
                 {isMobileOpen ? <X size={24} /> : <Menu size={24} />}
             </button>
 
@@ -138,7 +147,7 @@ export default function Sidebar() {
                 </div>
 
                 {/* Navigation */}
-                <nav className={styles.nav}>
+                <nav className={styles.nav} aria-label="주요 메뉴">
                     {menuItems.map((section, idx) => (
                         <div key={idx} className={styles.section}>
                             <div className={styles.sectionHeader}>
@@ -159,6 +168,7 @@ export default function Sidebar() {
                                             <Link
                                                 href={item.href}
                                                 className={`${styles.menuItem} ${isActive ? styles.active : ''}`}
+                                                aria-current={isActive ? 'page' : undefined}
                                                 onClick={() => setIsMobileOpen(false)}
                                             >
                                                 <Icon size={18} />
@@ -181,7 +191,6 @@ export default function Sidebar() {
                         <>
                             <div className={styles.userCard}>
                                 <div className={styles.userInfo}>
-                                    <span className={styles.userLabel}>사용자</span>
                                     <span className={styles.userName}>{userInfo?.name || session.user?.name || '사용자'}님</span>
                                 </div>
                                 <div className={styles.userBalance}>
@@ -220,7 +229,7 @@ export default function Sidebar() {
 
                     {/* 1:1 문의 바로가기 */}
                     <Link href="/dashboard/support" className={styles.kakaoBtn}>
-                        <MessageCircle size={20} />
+                        <MessageCircle size={17} />
                         1:1 문의하기
                     </Link>
                 </div>

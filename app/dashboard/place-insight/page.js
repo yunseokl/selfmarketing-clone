@@ -1,0 +1,1989 @@
+'use client';
+
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { useSession } from 'next-auth/react';
+import { useRouter } from 'next/navigation';
+import Link from 'next/link';
+import { toast } from 'sonner';
+import {
+    AlertCircle, ArrowUpRight, ArrowUpToLine, BadgeCheck, BookmarkCheck, BookmarkPlus, CalendarCheck, Check, CheckCircle2,
+    ChevronDown, ChevronRight, Copy, CreditCard, Info, KeyRound, Link2, Loader2, Minus, Search, ShoppingBag, Store, Ticket,
+    TrendingDown, TrendingUp, Utensils, Waypoints, X,
+} from 'lucide-react';
+import DashboardLayout from '@/components/layout/DashboardLayout';
+import { keywordFrequency, diagnoseRank, parseCount, buildActionItems, daysAgo } from '@/lib/naver-place';
+import styles from './page.module.css';
+import PlaceGraph from './PlaceGraph';
+import GeoAeoPanel from './GeoAeoPanel';
+
+const MAX_KEYWORDS = 5;
+
+/* ───────── 표시 도우미 ───────── */
+
+function formatNumber(value) {
+    return value === null || value === undefined ? '-' : Number(value).toLocaleString('ko-KR');
+}
+
+function agoLabel(isoDate) {
+    const days = daysAgo(isoDate);
+    if (days === null) return '-';
+    if (days <= 0) return '오늘';
+    if (days === 1) return '어제';
+    return `${formatNumber(days)}일 전`;
+}
+
+function won(value) {
+    return value ? `${formatNumber(value)}원` : '-';
+}
+
+function timeLabel(ms) {
+    if (!ms) return '';
+    return new Date(ms).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false });
+}
+
+function shorten(text, max) {
+    const value = String(text || '').trim();
+    return value.length > max ? `${value.slice(0, max - 1)}…` : value;
+}
+
+function splitKeywords(text) {
+    const seen = new Set();
+    const list = [];
+    for (const raw of text.split(/[,\n]/)) {
+        const word = raw.trim();
+        const key = word.replace(/\s+/g, '').toLowerCase();
+        if (!word || seen.has(key)) continue;
+        seen.add(key);
+        list.push(word);
+    }
+    return list;
+}
+
+function errorText(data, fallback) {
+    if (typeof data?.error === 'string') return data.error;
+    if (data?.error && typeof data.error === 'object') {
+        const first = Object.values(data.error).flat()[0];
+        if (first) return first;
+    }
+    return fallback;
+}
+
+function rankLabel(result) {
+    if (result.status === 'found') return `${result.rank}위`;
+    if (result.status === 'not_listed') return '목록에 없음';
+    return `${formatNumber(result.scanned)}위 밖`;
+}
+
+// 10위 안은 초록, 50위 안은 검정, 그 밖은 주황, 못 찾으면 빨강
+function rankTone(result) {
+    if (result.status !== 'found') return 'bad';
+    if (result.rank <= 10) return 'good';
+    return result.rank <= 50 ? 'ink' : 'warn';
+}
+
+function recordNote(recorded) {
+    if (!recorded) return null;
+    if (recorded.saved) {
+        return recorded.created
+            ? '순위 기록장에 새 항목으로 등록하고 오늘 순위를 저장했습니다.'
+            : '순위 기록장에 오늘 순위를 저장했습니다.';
+    }
+    if (recorded.reason === 'NOT_IN_RANGE') return '300위 안에 없어 기록하지 않았습니다. 1,000위까지 조회하면 기록됩니다.';
+    if (recorded.reason === 'LIMIT') return '순위 기록장이 가득 차(10개) 기록하지 못했습니다.';
+    if (recorded.reason === 'NO_RESULTS') return '검색된 매장이 없어 기록하지 않았습니다.';
+    return null;
+}
+
+// 최근 표본을 꽉 채웠고 전체가 더 많으면 "n개 이상"으로 보여 줍니다.
+function sampleSuffix(count, sampled, total) {
+    return count > 0 && count === sampled && total > sampled ? '개 이상' : '개';
+}
+
+// 전체 대비 비율(%). 값이 없거나 전체보다 크면(집계 기준이 다른 경우) 보여 주지 않습니다.
+function shareOf(part, whole) {
+    if (part === null || part === undefined || !whole || part > whole) return null;
+    return Math.round((part / whole) * 100);
+}
+
+function reducedMotion() {
+    return typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true;
+}
+
+function scrollToId(id) {
+    document.getElementById(id)?.scrollIntoView({ behavior: reducedMotion() ? 'auto' : 'smooth', block: 'start' });
+}
+
+/* ───────── 움직임: 화면에 들어오면 펼치기, 숫자 올리기 ───────── */
+
+const InView = createContext(true);
+
+function useInView() {
+    const ref = useRef(null);
+    const [inView, setInView] = useState(false);
+    useEffect(() => {
+        const el = ref.current;
+        if (!el || inView) return undefined;
+        if (typeof IntersectionObserver === 'undefined') {
+            setInView(true);
+            return undefined;
+        }
+        const observer = new IntersectionObserver((entries) => {
+            if (entries.some((entry) => entry.isIntersecting)) {
+                setInView(true);
+                observer.disconnect();
+            }
+        }, { rootMargin: '0px 0px -8% 0px', threshold: 0.02 });
+        observer.observe(el);
+        return () => observer.disconnect();
+    }, [inView]);
+    return [ref, inView];
+}
+
+function Reveal({ as: Tag = 'section', className, children, ...rest }) {
+    const [ref, inView] = useInView();
+    return (
+        <InView.Provider value={inView}>
+            <Tag ref={ref} className={className} data-in={inView ? 'true' : 'false'} {...rest}>
+                {children}
+            </Tag>
+        </InView.Provider>
+    );
+}
+
+// 값이 바뀌면 처음부터가 아니라 지금 보이는 숫자에서 이어서 움직입니다.
+function CountUp({ value, decimals = 0, from = 0, duration = 1100 }) {
+    const run = useContext(InView);
+    const [shown, setShown] = useState(from);
+    const last = useRef(from);
+    useEffect(() => {
+        if (!run || value === null || value === undefined) return undefined;
+        if (reducedMotion()) {
+            last.current = value;
+            setShown(value);
+            return undefined;
+        }
+        let raf = 0;
+        const origin = last.current;
+        const start = performance.now();
+        const tick = (now) => {
+            const t = Math.min(1, (now - start) / duration);
+            const eased = 1 - Math.pow(1 - t, 4);
+            last.current = origin + (value - origin) * eased;
+            setShown(last.current);
+            if (t < 1) raf = requestAnimationFrame(tick);
+        };
+        raf = requestAnimationFrame(tick);
+        return () => cancelAnimationFrame(raf);
+    }, [run, value, duration]);
+    if (value === null || value === undefined) return '-';
+    return decimals
+        ? Number(shown).toLocaleString('ko-KR', { minimumFractionDigits: decimals, maximumFractionDigits: decimals })
+        : formatNumber(Math.round(shown));
+}
+
+// 증감은 색과 함께 ▲/▼ 와 +/- 기호로도 구분합니다.
+function Delta({ value }) {
+    if (value === null || value === undefined || value === 0) return null;
+    const up = value > 0;
+    return (
+        <span className={styles.delta} data-dir={up ? 'up' : 'down'}>
+            <span className={styles.arrow} aria-hidden="true">{up ? '▲' : '▼'}</span>
+            {up ? '+' : '-'}{formatNumber(Math.abs(value))}
+        </span>
+    );
+}
+
+function Meter({ ratio, tone }) {
+    const w = Math.max(0, Math.min(1, ratio || 0));
+    return (
+        <span className={styles.meter} data-tone={tone} aria-hidden="true">
+            <span className={styles.fill} style={{ '--w': w }} />
+        </span>
+    );
+}
+
+/* ───────── 그래프 데이터 ───────── */
+
+const ACTION_TONE = { high: 'bad', mid: 'warn', low: 'ink' };
+
+// 키워드 점 아래에 순위를 함께 적습니다(순위마다 점을 따로 두면 라벨이 겹쳐서 한 점으로 합침).
+function rankBadge(row) {
+    if (!row) return { detail: '아직 순위를 조회하지 않았습니다' };
+    if (row.state === 'loading') return { sub: '조회 중', subTone: 'pending', tone: 'pending', detail: '순위를 조회하고 있습니다' };
+    if (row.state === 'error') return { sub: '조회 실패', subTone: 'muted', tone: 'muted', detail: row.error || '순위를 조회하지 못했습니다' };
+    const tone = rankTone(row.result);
+    return {
+        sub: rankLabel(row.result),
+        subTone: tone,
+        tone,
+        detail: [rankLabel(row.result), row.result.total ? `검색된 매장 ${formatNumber(row.result.total)}곳` : null].filter(Boolean).join(' · '),
+    };
+}
+
+// 점의 id 는 본문 카드의 data-node 와 같습니다. 같은 id 끼리 서로 밝혀 그래프와 카드를 잇습니다.
+function buildGraph(place, activity, ranks, actions) {
+    const nodes = [];
+    const links = [];
+    const add = (node, parent) => {
+        nodes.push({ go: '눌러서 이동', ...node, parent: parent || null });
+        if (parent) links.push({ id: `${node.id}>${parent}`, source: node.id, target: parent });
+    };
+    add({
+        id: 'store', level: 0, group: 'store', label: shorten(place.name, 16), full: place.name, sub: shorten(place.category, 18),
+        detail: [place.category, `방문자 리뷰 ${formatNumber(place.visitorReviews)}`, `블로그·카페 리뷰 ${formatNumber(place.blogReviews)}`].filter(Boolean).join(' · '),
+        go: null, target: 'sec-summary', aria: `${place.name} 요약으로 이동`,
+    });
+
+    const rankByKeyword = new Map(ranks.map((row) => [row.keyword, row]));
+    const words = ranks.length ? ranks.map((row) => row.keyword) : (place.keywords || []).slice(0, MAX_KEYWORDS);
+    if (words.length === 0) {
+        add({ id: 'kw:none', level: 1, group: 'search', tone: 'bad', label: '대표키워드 없음', detail: '스마트플레이스에서 5개까지 등록할 수 있습니다', target: 'sec-rank', aria: '키워드 순위로 이동' }, 'store');
+    }
+    words.forEach((word, index) => {
+        const target = ranks.length ? `rank-row-${index}` : 'sec-rank';
+        add({
+            id: `kw:${word}`, level: 1, group: 'search', label: shorten(word, 10), full: word, ...rankBadge(rankByKeyword.get(word)),
+            go: '눌러서 순위 표 보기', target, keyword: word, aria: `${word} 순위로 이동`,
+        }, 'store');
+    });
+
+    add({
+        id: 'hub:voice', level: 1, group: 'voice', label: '리뷰', target: 'sec-reviews', aria: '리뷰로 이동',
+        detail: `방문자 ${formatNumber(place.visitorReviews)} · 블로그·카페 ${formatNumber(place.blogReviews)}`,
+    }, 'store');
+    add({ id: 'rv:visitor', level: 2, group: 'voice', label: `방문자 ${formatNumber(place.visitorReviews)}`, full: '방문자 리뷰', detail: `${formatNumber(place.visitorReviews)}개${place.reviewAuthors ? ` · ${formatNumber(place.reviewAuthors)}명이 작성` : ''}`, target: 'sec-reviews' }, 'hub:voice');
+    add({ id: 'rv:blog', level: 2, group: 'voice', label: `블로그 ${formatNumber(place.blogReviews)}`, full: '블로그·카페 리뷰', detail: `${formatNumber(place.blogReviews)}개`, target: 'sec-reviews' }, 'hub:voice');
+    if (place.visitorScore) add({ id: 'rv:score', level: 2, group: 'voice', label: `평점 ${place.visitorScore.toFixed(2)}`, full: '평점', detail: `${place.visitorScore.toFixed(2)}점`, target: 'sec-reviews' }, 'hub:voice');
+    const vote = place.reviewVotes?.[0];
+    if (vote) add({ id: 'rv:vote', level: 2, group: 'voice', label: shorten(vote.label, 9), full: vote.label, detail: `손님 ${formatNumber(vote.count)}명이 고른 좋은 점`, target: 'sec-reviews' }, 'hub:voice');
+
+    const { visitor, feeds, coupons } = activity || {};
+    add({
+        id: 'hub:activity', level: 1, group: 'voice', tone: activity ? undefined : 'muted', label: activity ? '활동' : '활동 확인 불가',
+        full: '리뷰·소식 활동', detail: activity ? '최근 리뷰·답글·소식·쿠폰' : '활동 정보를 불러오지 못했습니다', target: 'sec-activity', aria: '리뷰·소식 활동으로 이동',
+    }, 'store');
+    if (visitor && visitor.replyRate !== null) {
+        const tone = visitor.replyRate < 10 ? 'bad' : visitor.replyRate < 50 ? 'warn' : 'good';
+        add({ id: 'ac:reply', level: 2, group: 'voice', tone, label: `답글률 ${visitor.replyRate}%`, full: '사장님 답글률', detail: `${visitor.replyRate}% · 최근 ${formatNumber(visitor.sampled)}개 중 ${formatNumber(visitor.replied)}개 답글`, target: 'sec-activity' }, 'hub:activity');
+    }
+    if (visitor) add({ id: 'ac:week', level: 2, group: 'voice', label: `7일 리뷰 ${formatNumber(visitor.last7)}`, full: '최근 7일 방문자 리뷰', detail: `${formatNumber(visitor.last7)}${sampleSuffix(visitor.last7, visitor.sampled, visitor.total)}`, target: 'sec-activity' }, 'hub:activity');
+    if (feeds) {
+        const stale = !feeds.latest || (feeds.daysSinceLatest !== null && feeds.daysSinceLatest > 30);
+        add({ id: 'ac:feed', level: 2, group: 'voice', tone: stale ? 'warn' : undefined, label: feeds.latest ? `소식 ${agoLabel(feeds.latest)}` : '소식 없음', full: '마지막 소식', detail: feeds.latest ? `${agoLabel(feeds.latest)}${feeds.latestTitle ? ` · ${feeds.latestTitle}` : ''}` : '소식 탭에 올린 글이 없습니다', target: 'sec-activity' }, 'hub:activity');
+    }
+    if (coupons) add({ id: 'ac:coupon', level: 2, group: 'voice', tone: coupons.total === 0 ? 'warn' : undefined, label: `쿠폰 ${formatNumber(coupons.total)}개`, full: '쿠폰', detail: coupons.total ? `${formatNumber(coupons.total)}개 등록` : '등록된 쿠폰이 없습니다', target: 'sec-activity' }, 'hub:activity');
+
+    const pos = place.detail?.pos;
+    if (pos) {
+        add({ id: 'hub:pos', level: 1, group: 'pay', label: '결제 데이터', detail: '네이버페이 결제 단말(POS) 최근 1주 집계', target: 'sec-pos', aria: '결제 데이터로 이동' }, 'store');
+        if (pos.weeklySales !== null) add({ id: 'pos:sales', level: 2, group: 'pay', label: `주간 ${formatNumber(pos.weeklySales)}건`, full: '주간 결제 건수', detail: `${formatNumber(pos.weeklySales)}건`, target: 'sec-pos' }, 'hub:pos');
+        if (pos.averagePrice.total) add({ id: 'pos:price', level: 2, group: 'pay', label: `평균 ${won(pos.averagePrice.total)}`, full: '1회 평균 결제', detail: won(pos.averagePrice.total), target: 'sec-pos' }, 'hub:pos');
+        if (pos.busiestDay) add({ id: 'pos:day', level: 2, group: 'pay', label: `${pos.busiestDay}요일 최다`, full: '가장 붐비는 요일', detail: `${pos.busiestDay}요일`, target: 'sec-pos' }, 'hub:pos');
+        if (pos.popularMenus[0]) add({ id: 'pos:menu', level: 2, group: 'pay', label: shorten(pos.popularMenus[0].name, 9), full: pos.popularMenus[0].name, detail: `주간 인기 메뉴 1위${pos.popularMenus[0].share !== null ? ` · 주문의 ${pos.popularMenus[0].share}%` : ''}`, target: 'sec-pos' }, 'hub:pos');
+    }
+
+    const high = actions.filter((item) => item.level === 'high').length;
+    add({
+        id: 'hub:todo', level: 1, group: 'todo', tone: actions.length ? undefined : 'good', label: actions.length ? `할 일 ${actions.length}` : '할 일 없음',
+        full: '지금 할 일', detail: actions.length ? `${actions.length}개${high ? ` · 먼저 할 일 ${high}개` : ''}` : '지금 확인된 빈 항목이 없습니다', target: 'sec-todo', aria: '지금 할 일로 이동',
+    }, 'store');
+    actions.slice(0, 5).forEach((item) => {
+        add({ id: `todo:${item.key}`, level: 2, group: 'todo', tone: ACTION_TONE[item.level] || 'ink', label: shorten(item.title, 10), full: item.title, detail: shorten(item.detail, 60), target: 'sec-todo' }, 'hub:todo');
+    });
+
+    const detail = place.detail;
+    if (detail) {
+        add({ id: 'hub:ops', level: 1, group: 'ops', label: '운영', full: '운영 정보', detail: '영업시간·사진·네이버 도구', target: 'sec-ops', aria: '운영 정보로 이동' }, 'store');
+        if (detail.hours) {
+            add({ id: 'ops:hours', level: 2, group: 'ops', tone: detail.hours.registered ? 'good' : 'bad', label: detail.hours.registered ? '영업시간 등록' : '영업시간 없음', full: '영업시간', detail: detail.hours.registered ? [detail.hours.status, detail.hours.statusText].filter(Boolean).join(' · ') || '등록됨' : '등록되지 않았습니다', target: 'sec-ops' }, 'hub:ops');
+        }
+        if (detail.photos?.business !== null && detail.photos?.business !== undefined) {
+            add({ id: 'ops:photos', level: 2, group: 'ops', label: `업체 사진 ${formatNumber(detail.photos.business)}`, full: '업체 사진', detail: `${formatNumber(detail.photos.business)}장`, target: 'sec-ops' }, 'hub:ops');
+        }
+        if (detail.hasBooking !== null) {
+            add({ id: 'ops:booking', level: 2, group: 'ops', tone: detail.hasBooking ? 'good' : 'warn', label: detail.hasBooking ? '예약 연결' : '예약 없음', full: '네이버 예약', detail: detail.hasBooking ? '연결됨' : '연결되지 않았습니다', target: 'sec-ops' }, 'hub:ops');
+        }
+    }
+
+    add({ id: 'hub:geo', level: 1, group: 'geo', label: 'AI 검색', full: 'AI 검색(GEO·AEO) 진단', detail: 'AI가 내 매장을 추천할 재료가 있는지 점수로 봅니다', target: 'sec-geo', aria: 'AI 검색 진단으로 이동' }, 'store');
+    return { nodes, links };
+}
+
+const IDLE_HUBS = [
+    ['search', '숨은 대표키워드'], ['search', '검색 순위'], ['search', '상위 매장 비교'],
+    ['voice', '리뷰·소식 활동'], ['pay', '결제 데이터'], ['todo', '지금 할 일'], ['geo', 'AI 검색 진단'],
+];
+
+function buildIdleGraph(loading) {
+    const nodes = [{
+        id: 'store', level: 0, group: 'store', ghost: !loading, label: loading ? '조회 중' : '내 매장',
+        detail: loading ? '네이버 플레이스에서 매장 정보를 읽고 있습니다' : '주소를 넣고 분석하면 내 매장 데이터로 채워집니다',
+        aria: '플레이스 주소 입력으로 이동', parent: null,
+    }];
+    const links = [];
+    IDLE_HUBS.forEach(([group, label], index) => {
+        const id = `idle:${index}`;
+        nodes.push({ id, level: 1, group, label, ghost: true, detail: loading ? '불러오는 중' : '주소를 넣으면 채워집니다', aria: `${label}: 주소를 넣으면 채워집니다`, parent: 'store' });
+        links.push({ id: `${id}>store`, source: id, target: 'store' });
+        for (let j = 0; j < 2; j += 1) {
+            const leaf = `${id}:${j}`;
+            nodes.push({ id: leaf, level: 2, group, ghost: true, parent: id });
+            links.push({ id: `${leaf}>${id}`, source: leaf, target: id });
+        }
+    });
+    return { nodes, links };
+}
+
+const IDLE_GRAPH = buildIdleGraph(false);
+const LOADING_GRAPH = buildIdleGraph(true);
+
+const LEGEND = [
+    { group: 'search', label: '검색 순위' },
+    { group: 'voice', label: '리뷰·활동' },
+    { group: 'pay', label: '결제' },
+    { group: 'todo', label: '할 일' },
+    { group: 'ops', label: '운영' },
+    { group: 'geo', label: 'AI 검색' },
+];
+
+// 구역 머리의 '그래프' 버튼과 카드 강조가 함께 쓰는 연결 통로
+const GraphLink = createContext({ showInGraph: () => {} });
+
+/* ───────── 요약 패널 ───────── */
+
+// 요약 칸의 숫자 한 칸. 같은 id 의 그래프 점과 서로 밝혀지고, 누르면 본문의 해당 카드로 갑니다.
+function Kpi({ node, label, tone, note, onJump, children }) {
+    return (
+        <button type="button" className={styles.kpi} data-node={node} data-tone={tone} onClick={() => onJump(node)}>
+            <span className={styles.kpiLabel}>{label}</span>
+            <span className={styles.kpiValue}>{children}</span>
+            {note && <span className={styles.kpiNote}>{note}</span>}
+        </button>
+    );
+}
+
+// 순위가 높을수록 긴 막대(로그 눈금): 1위는 가득, 살펴본 범위 끝이면 비어 보입니다.
+function rankReach(result) {
+    if (result.status !== 'found') return 0;
+    const span = Math.max(100, result.scanned || 0, result.rank);
+    return Math.max(0.03, 1 - Math.log10(Math.max(1, result.rank)) / Math.log10(span));
+}
+
+function SummaryRail({ place, placeInfo, activity, ranks, actions, saving, onSave, onPickRank, onJump }) {
+    const change = placeInfo?.change;
+    const visitor = activity?.visitor;
+    const blog = activity?.blog;
+    const hours = place.detail?.hours;
+    const settled = ranks.length > 0 && ranks.every((row) => row.state !== 'loading');
+    const top10 = ranks.filter((row) => row.state === 'done' && row.result.status === 'found' && row.result.rank <= 10).length;
+    const high = actions.filter((item) => item.level === 'high');
+    const replyTone = !visitor || visitor.replyRate === null ? undefined : visitor.replyRate < 10 ? 'bad' : visitor.replyRate < 50 ? 'warn' : 'good';
+    return (
+        <div className={`${styles.rail} ${styles.railIn}`}>
+            <div className={styles.railHead} style={{ '--d': 0 }}>
+                <h2 className={styles.storeName}>{place.name}</h2>
+                <p className={styles.storeMeta}>
+                    {hours?.registered && hours.status && (
+                        <span className={styles.storeState} data-open={hours.status === '영업 중' ? 'true' : undefined}>{hours.status}</span>
+                    )}
+                    {[place.category, place.address].filter(Boolean).join(' · ')}
+                </p>
+            </div>
+            <div className={styles.kpiGrid} style={{ '--d': 1 }}>
+                <Kpi node="rv:visitor" label="방문자 리뷰" onJump={onJump} note={place.reviewAuthors ? `${formatNumber(place.reviewAuthors)}명이 작성` : null}>
+                    <CountUp value={place.visitorReviews} /><Delta value={change?.visitorReviews} />
+                </Kpi>
+                <Kpi node="rv:blog" label="블로그·카페 리뷰" onJump={onJump} note={blog ? `최근 30일 ${formatNumber(blog.last30)}${sampleSuffix(blog.last30, blog.sampled, blog.total)}` : null}>
+                    <CountUp value={place.blogReviews} /><Delta value={change?.blogReviews} />
+                </Kpi>
+                <Kpi node="rv:score" label="평점" onJump={onJump} note={place.visitorScore ? '5점 만점' : null}>
+                    {place.visitorScore ? <CountUp value={place.visitorScore} decimals={2} /> : <span className={styles.quiet}>표시 안 함</span>}
+                </Kpi>
+                <Kpi node="rv:photo" label="사진 리뷰" onJump={onJump} note={place.textReviews !== null && place.textReviews !== undefined ? `글 리뷰 ${formatNumber(place.textReviews)}개` : null}>
+                    <CountUp value={place.photoReviews} />
+                </Kpi>
+                <Kpi node="ac:reply" label="사장님 답글률" tone={replyTone} onJump={onJump} note={visitor ? `최근 ${formatNumber(visitor.sampled)}개 중 ${formatNumber(visitor.replied)}개` : '확인 불가'}>
+                    {visitor && visitor.replyRate !== null ? <><CountUp value={visitor.replyRate} /><small>%</small></> : '-'}
+                </Kpi>
+                <Kpi node="ac:week" label="최근 7일 리뷰" onJump={onJump} note={visitor && visitor.perDay !== null ? `하루 약 ${visitor.perDay}개` : visitor ? null : '확인 불가'}>
+                    {visitor ? <><CountUp value={visitor.last7} /><small>{sampleSuffix(visitor.last7, visitor.sampled, visitor.total)}</small></> : '-'}
+                </Kpi>
+            </div>
+            {ranks.length > 0 && (
+                <div className={styles.ticker} style={{ '--d': 2 }}>
+                    <h3>
+                        대표키워드 순위
+                        {settled && <span className={styles.tickerSum} data-tone={top10 > 0 ? 'good' : undefined}>10위 안 {top10}/{ranks.length}</span>}
+                    </h3>
+                    <ul>
+                        {ranks.map((row) => (
+                            <li key={row.keyword}>
+                                <button type="button" data-node={`kw:${row.keyword}`} onClick={() => onPickRank(row.keyword)}>
+                                    <span className={styles.tickerWord}>{row.keyword}</span>
+                                    <span className={styles.tickerTrack} data-state={row.state} aria-hidden="true">
+                                        {row.state === 'done' && <span className={styles.fill} data-tone={rankTone(row.result)} style={{ '--w': rankReach(row.result) }} />}
+                                    </span>
+                                    {row.state === 'loading' && <span className={styles.tickerPending}><Loader2 size={14} className={styles.spin} aria-hidden="true" />조회 중</span>}
+                                    {row.state === 'error' && <span className={styles.tickerValue} data-tone="muted">실패</span>}
+                                    {row.state === 'done' && <span className={styles.tickerValue} data-tone={rankTone(row.result)}>{rankLabel(row.result)}</span>}
+                                </button>
+                            </li>
+                        ))}
+                    </ul>
+                </div>
+            )}
+            {actions.length > 0 && (
+                <button type="button" className={styles.railTodo} data-node="hub:todo" data-level={high.length ? 'high' : 'mid'} style={{ '--d': 3 }} onClick={() => onJump('hub:todo')}>
+                    <span className={styles.railTodoCount}>{actions.length}</span>
+                    <span className={styles.railTodoText}>
+                        <strong>{high.length ? `먼저 할 일 ${high.length}개` : `지금 할 일 ${actions.length}개`}</strong>
+                        <span>{(high[0] || actions[0]).title}</span>
+                    </span>
+                    <ChevronRight size={16} aria-hidden="true" />
+                </button>
+            )}
+            <div className={styles.railFoot} style={{ '--d': 4 }}>
+                <button type="button" className={styles.secondaryBtn} onClick={onSave} disabled={saving || placeInfo?.saved}>
+                    {placeInfo?.saved ? <BookmarkCheck size={16} aria-hidden="true" /> : <BookmarkPlus size={16} aria-hidden="true" />}
+                    {placeInfo?.saved ? '내 매장으로 저장됨' : '내 매장으로 저장'}
+                </button>
+                <p className={styles.basis}>
+                    {timeLabel(placeInfo?.fetchedAt)} 조회{placeInfo?.cached ? ' (같은 조회는 30분 동안 저장된 결과를 보여 줍니다)' : ''}.
+                    {change
+                        ? ` 숫자 옆 증감은 ${change.since} 조회와 비교한 값입니다.`
+                        : placeInfo?.saved
+                            ? ' 다음에 다시 조회하면 오늘과 비교한 증감이 표시됩니다.'
+                            : ' 내 매장으로 저장하면 다음 조회 때 리뷰 수 증감을 보여 드립니다.'}
+                </p>
+            </div>
+        </div>
+    );
+}
+
+const IDLE_FEATURES = [
+    ['숨은 대표키워드', '스마트플레이스에 등록했지만 매장 화면에는 안 보이는 키워드를 보여 줍니다. 경쟁 매장 것도 볼 수 있습니다.'],
+    ['실제 검색 순위', '키워드를 검색했을 때 내 매장이 몇 번째인지 네이버 목록에서 광고를 빼고 셉니다.'],
+    ['상위 매장 비교', '상위 10곳의 방문자 리뷰·블로그 리뷰·저장 수를 내 매장과 나란히 놓습니다.'],
+    ['지금 할 일', '답글률·소식·영업시간·쿠폰처럼 비어 있거나 오래된 항목을 먼저 할 순서로 정리합니다.'],
+    ['AI 검색(GEO·AEO) 진단', 'ChatGPT·Gemini·Claude·네이버 AI가 내 매장을 추천하고 질문에 답할 재료가 있는지 점수와 개선 제안, 답변 초안으로 보여 줍니다.'],
+];
+
+function IdleRail() {
+    return (
+        <div className={`${styles.rail} ${styles.railIn}`}>
+            <h2 className={styles.idleTitle} style={{ '--d': 0 }}>주소 하나로 펼쳐지는 것</h2>
+            <dl className={styles.idleList}>
+                {IDLE_FEATURES.map(([title, text], index) => (
+                    <div key={title} style={{ '--d': index + 1 }}>
+                        <dt>{title}</dt>
+                        <dd>{text}</dd>
+                    </div>
+                ))}
+            </dl>
+        </div>
+    );
+}
+
+function Skel({ w = '100%', h = 14, d = 0 }) {
+    return <span className={styles.skel} style={{ '--w': w, '--h': `${h}px`, '--d': d }} />;
+}
+
+// 불러오는 동안의 요약 칸: 실제 요약 칸과 같은 자리(이름 → 숫자 6칸 → 키워드 순위)에 뼈대를 둡니다.
+function RailSkeleton() {
+    return (
+        <div className={styles.rail} aria-hidden="true">
+            <div className={styles.skelStack}>
+                <Skel w="62%" h={26} />
+                <Skel w="88%" h={13} d={1} />
+            </div>
+            <div className={styles.skelKpis}>
+                {[0, 1, 2, 3, 4, 5].map((cell) => (
+                    <div key={cell}>
+                        <Skel w="56%" h={12} d={cell + 2} />
+                        <Skel w="44%" h={24} d={cell + 2} />
+                    </div>
+                ))}
+            </div>
+            <div className={styles.skelStack}>
+                <Skel w="38%" h={13} d={8} />
+                {[0, 1, 2, 3, 4].map((row) => <Skel key={row} h={32} d={9 + row} />)}
+            </div>
+        </div>
+    );
+}
+
+function SectionsSkeleton() {
+    return (
+        <div className={styles.skelSections} aria-hidden="true">
+            {[0, 1].map((block) => (
+                <div key={block} className={styles.skelBlock}>
+                    <Skel w="18%" h={20} d={block * 2} />
+                    <div className={styles.skelGrid}>
+                        <Skel h={72} d={block * 2 + 1} />
+                        <Skel h={72} d={block * 2 + 2} />
+                        <Skel h={72} d={block * 2 + 3} />
+                    </div>
+                </div>
+            ))}
+        </div>
+    );
+}
+
+const LOADING_PARTS = ['매장 화면', '리뷰 집계', '소식·쿠폰', '결제 데이터', '운영 정보'];
+
+// 그래프 위에 띄우는 불러오는 중 안내. 한 번의 조회로 읽는 항목과 지난 시간을 보여 줍니다.
+function LoadingStatus() {
+    const [seconds, setSeconds] = useState(0);
+    useEffect(() => {
+        const timer = setInterval(() => setSeconds((prev) => prev + 1), 1000);
+        return () => clearInterval(timer);
+    }, []);
+    return (
+        <div className={styles.loading} role="status">
+            <Loader2 size={20} className={styles.spin} aria-hidden="true" />
+            <div className={styles.loadingText}>
+                <strong>매장 정보를 불러오는 중입니다</strong>
+                <p>네이버 플레이스에서 아래 항목을 한 번에 읽습니다. 이어서 대표키워드 순위를 조회합니다.</p>
+                <ul aria-hidden="true">
+                    {LOADING_PARTS.map((part, index) => <li key={part} style={{ '--d': index }}>{part}</li>)}
+                </ul>
+            </div>
+            <span className={styles.loadingTime} aria-hidden="true">{seconds}초</span>
+        </div>
+    );
+}
+
+// 구역 머리: 묶음 색 막대 + 제목 + 한 줄 설명 + 연결 그래프에서 같은 점을 찾아 주는 버튼
+function SectionHead({ title, count, hub, children }) {
+    const { showInGraph } = useContext(GraphLink);
+    return (
+        <header className={`${styles.sectionHead} ${styles.rise}`}>
+            <h2>{title}{count > 0 && <span className={styles.headCount}>{count}</span>}</h2>
+            <p>{children}</p>
+            {hub && (
+                <button type="button" className={styles.graphBtn} onClick={(event) => showInGraph(hub, event)} aria-label={`${title}: 연결 그래프에서 보기`}>
+                    <Waypoints size={14} aria-hidden="true" />
+                    그래프
+                </button>
+            )}
+        </header>
+    );
+}
+
+/* ───────── 지금 할 일 ───────── */
+
+const ACTION_LEVEL = { high: '먼저', mid: '권장', low: '참고' };
+
+function FillStatus({ place }) {
+    const rows = [];
+    if (place.missing) {
+        rows.push(['영업시간', !place.missing.hours, place.missing.hours ? '비어 있음' : '등록됨']);
+        rows.push(['소개글', !place.missing.description, place.missing.description ? '비어 있음' : '등록됨']);
+        rows.push(['메뉴·가격 사진', !place.missing.menuImage, place.missing.menuImage ? '비어 있음' : '등록됨']);
+        rows.push(['편의시설', !place.missing.conveniences, place.missing.conveniences ? '비어 있음' : `${place.conveniences.length}개 등록`]);
+    }
+    rows.push(['톡톡 상담', place.hasTalktalk, place.hasTalktalk ? '연결됨' : '연결 안 됨']);
+    rows.push(['블로그', place.hasBlog, place.hasBlog ? '연결됨' : '연결 안 됨']);
+    const done = rows.filter((row) => row[1]).length;
+    return (
+        <aside className={`${styles.fillPanel} ${styles.rise}`} style={{ '--d': 2 }}>
+            <div className={styles.fillHead}>
+                <h3>정보 채움 상태</h3>
+                <p className={styles.fillScore}><CountUp value={done} /><span> / {rows.length}</span></p>
+            </div>
+            <Meter ratio={done / rows.length} tone={done === rows.length ? 'good' : 'warn'} />
+            {!place.missing && <p className={styles.note}>네이버가 표시하는 정보 부족 항목을 읽지 못했습니다.</p>}
+            <ul className={styles.checks}>
+                {rows.map(([label, ok, detail]) => (
+                    <li key={label} data-ok={ok ? 'true' : 'false'}>
+                        {ok ? <Check size={16} aria-hidden="true" /> : <AlertCircle size={16} aria-hidden="true" />}
+                        <span>{label}</span>
+                        <em>{detail}</em>
+                    </li>
+                ))}
+            </ul>
+            {place.menuCount > 0 && (
+                <p className={styles.note}>
+                    등록된 메뉴 {place.menuCount}개 중 사진 {place.menuImageCount}개
+                    {place.menuPricedCount !== null && place.menuPricedCount !== undefined && ` · 가격 ${place.menuPricedCount}개`}
+                    {place.menuDescribedCount !== null && place.menuDescribedCount !== undefined && ` · 설명 ${place.menuDescribedCount}개`}
+                    {place.menuCategoryCount ? ` · 분류 ${place.menuCategoryCount}개` : ''}.
+                </p>
+            )}
+            <Link href="/dashboard/place-check" className={styles.textLink}>
+                플레이스 진단에서 항목별로 점검하기 <ArrowUpRight size={14} aria-hidden="true" />
+            </Link>
+        </aside>
+    );
+}
+
+function TodoSection({ place, actions }) {
+    const high = actions.filter((item) => item.level === 'high').length;
+    return (
+        <Reveal id="sec-todo" className={styles.section} data-group="todo" data-node="hub:todo">
+            <SectionHead title="지금 할 일" count={actions.length} hub="hub:todo">
+                매장 화면·리뷰·소식에서 비어 있거나 오래된 항목입니다. 위에서부터 하면 됩니다.
+                {high > 0 && ` 먼저 할 일이 ${high}개 있습니다.`}
+            </SectionHead>
+            <div className={styles.todoGrid}>
+                {actions.length === 0 ? (
+                    <p className={`${styles.emptyPanel} ${styles.rise}`} style={{ '--d': 1 }}>
+                        지금 확인된 빈 항목이 없습니다. 리뷰 답글과 소식 올리기를 꾸준히 이어가세요.
+                    </p>
+                ) : (
+                    <ol className={styles.actions}>
+                        {actions.map((item, index) => (
+                            <li key={item.key} className={`${styles.action} ${styles.rise}`} data-level={item.level} data-node={`todo:${item.key}`} style={{ '--d': index + 1 }}>
+                                <span className={styles.actionLevel}>{ACTION_LEVEL[item.level] || '참고'}</span>
+                                <div>
+                                    <strong>{item.title}</strong>
+                                    <p>{item.detail}</p>
+                                </div>
+                            </li>
+                        ))}
+                    </ol>
+                )}
+                <FillStatus place={place} />
+            </div>
+        </Reveal>
+    );
+}
+
+/* ───────── 키워드 순위 ───────── */
+
+function KeywordSlots({ keywords, onCopy }) {
+    const list = keywords || [];
+    const slots = Array.from({ length: Math.max(MAX_KEYWORDS, list.length) }, (_, index) => list[index] || null);
+    return (
+        <div className={`${styles.slots} ${styles.rise}`} style={{ '--d': 1 }}>
+            <div className={styles.slotsHead}>
+                <h3>숨은 대표키워드 <span className={styles.slotCount}>{list.length}/{MAX_KEYWORDS}</span></h3>
+                <p>스마트플레이스에 등록됐지만 매장 화면에는 보이지 않는 키워드입니다.</p>
+                {list.length > 0 && (
+                    <button type="button" className={styles.secondaryBtn} onClick={onCopy}>
+                        <Copy size={16} aria-hidden="true" />
+                        복사
+                    </button>
+                )}
+            </div>
+            {keywords === null ? (
+                <p className={styles.note}>대표키워드를 읽지 못했습니다. 잠시 후 다시 조회해주세요.</p>
+            ) : (
+                <ol className={styles.slotRow}>
+                    {slots.map((word, index) => (
+                        <li key={word || `empty-${index}`} data-empty={word ? undefined : 'true'} style={{ '--d': index }}>
+                            {word || '빈 칸'}
+                        </li>
+                    ))}
+                </ol>
+            )}
+            {keywords !== null && list.length === 0 && (
+                <p className={styles.note}>
+                    등록된 대표키워드가 없습니다. 스마트플레이스 &gt; 업체정보에서 5개까지 등록할 수 있습니다.{' '}
+                    <Link href="/dashboard/place-check" className={styles.inlineLink}>대표키워드 고르는 법 보기</Link>
+                </p>
+            )}
+        </div>
+    );
+}
+
+// 1위~살펴본 범위를 로그 눈금으로 펼쳐 상위권 차이가 잘 보이게 합니다.
+function RankTrack({ result }) {
+    const found = result.status === 'found';
+    const span = Math.max(100, result.scanned || 0, found ? result.rank : 0);
+    const pos = (rank) => Math.log10(Math.max(1, rank)) / Math.log10(span);
+    const ticks = [1, 10, 100, 1000].filter((tick) => tick < span);
+    ticks.push(span);
+    return (
+        <span className={styles.track} aria-hidden="true">
+            <span className={styles.trackBase} />
+            <span className={styles.trackZone} style={{ '--w': pos(10) }} />
+            {ticks.map((tick, index) => (
+                <span
+                    key={tick}
+                    className={styles.tick}
+                    data-edge={index === 0 ? 'start' : index === ticks.length - 1 ? 'end' : undefined}
+                    style={{ '--x': pos(tick) }}
+                >
+                    {formatNumber(tick)}
+                </span>
+            ))}
+            <span className={styles.trackMark} data-tone={rankTone(result)} style={{ '--x': found ? pos(result.rank) : 1 }} />
+        </span>
+    );
+}
+
+function CellBar({ value, max }) {
+    return (
+        <span className={styles.cellBar}>
+            <span>{formatNumber(value)}</span>
+            <span className={styles.cellTrack} aria-hidden="true">
+                <span className={styles.fill} style={{ '--w': value ? value / max : 0 }} />
+            </span>
+        </span>
+    );
+}
+
+function RankTable({ result }) {
+    const rows = [...result.top];
+    if (result.target && !rows.some((row) => row.isTarget)) rows.push(result.target);
+    const maxVisitor = Math.max(1, ...rows.map((row) => row.visitorReviews || 0));
+    const maxBlog = Math.max(1, ...rows.map((row) => row.blogReviews || 0));
+    return (
+        <div className={styles.tableWrap}>
+            <table className={`${styles.table} ${styles.rankTable}`}>
+                <caption className={styles.srOnly}>{result.keyword} 검색 상위 매장과 내 매장</caption>
+                <thead>
+                    <tr>
+                        <th scope="col">순위</th>
+                        <th scope="col">매장</th>
+                        <th scope="col">방문자 리뷰</th>
+                        <th scope="col">블로그 리뷰</th>
+                        <th scope="col">저장</th>
+                        <th scope="col">평점</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {rows.map((row, index) => (
+                        <tr key={row.placeId} className={row.isTarget ? styles.myRow : undefined} style={{ '--d': index }}>
+                            <td className={styles.numCell}>{row.rank}</td>
+                            <th scope="row">
+                                <span className={styles.shopName}>{row.name}</span>
+                                {row.isTarget && <span className={styles.tag}>내 매장</span>}
+                                {row.isNew && <span className={styles.tagMuted}>새로 오픈</span>}
+                                {row.category && <small>{row.category}</small>}
+                            </th>
+                            <td><CellBar value={row.visitorReviews} max={maxVisitor} /></td>
+                            <td><CellBar value={row.blogReviews} max={maxBlog} /></td>
+                            <td className={styles.numCell}>{row.saveText || '-'}</td>
+                            <td className={styles.numCell}>{row.score ? row.score.toFixed(2) : '-'}</td>
+                        </tr>
+                    ))}
+                </tbody>
+            </table>
+        </div>
+    );
+}
+
+// 내 매장 신호를 진단용으로 모읍니다. 상위 100위 밖이면 매장 화면(place)에 없는 값은 '확인 불가'(null).
+function buildMine(place, result) {
+    const t = result.target;
+    const pick = (value) => (value === null || value === undefined ? null : value);
+    return {
+        visitorReviews: place.visitorReviews,
+        blogReviews: place.blogReviews,
+        score: place.visitorScore,
+        imageCount: t ? pick(t.imageCount) : null,
+        saveCount: t ? parseCount(t.saveText) : null,
+        hasBooking: t ? pick(t.hasBooking) : null,
+        hasOrder: t ? pick(t.hasOrder) : null,
+        hasCoupon: t && t.couponCount !== null && t.couponCount !== undefined ? t.couponCount > 0 : null,
+        hasMembership: t ? pick(t.hasMembership) : null,
+        hasNPay: t ? pick(t.hasNPay) : null,
+        hasPos: t ? pick(t.hasPos) : null,
+    };
+}
+
+const VERDICT = {
+    behind: { label: '뒤처짐', tone: 'bad', Icon: TrendingDown },
+    near: { label: '비슷', tone: 'warn', Icon: Minus },
+    ahead: { label: '앞섬', tone: 'good', Icon: TrendingUp },
+};
+
+const FEATURE_ICON = {
+    booking: CalendarCheck, order: ShoppingBag, coupon: Ticket,
+    membership: BadgeCheck, npay: CreditCard, pos: Utensils,
+};
+
+function signalText(signal, value) {
+    if (value === null || value === undefined) return '확인 불가';
+    const num = signal.key === 'score' ? value.toFixed(2) : formatNumber(value);
+    return `${num}${signal.unit}`;
+}
+
+// 상위 100곳(내 매장 제외)의 공개 신호와 내 매장을 막대(내 매장)와 눈금(상위 중간값)으로 비교합니다.
+function RankDiagnosis({ diagnosis }) {
+    if (!diagnosis) return null;
+    const { signals, features, behind, count } = diagnosis;
+    if (signals.length === 0 && features.length === 0) return null;
+    return (
+        <div className={styles.diag}>
+            <div className={styles.diagHead}>
+                <h4>상위 {count}곳과 비교</h4>
+                <p>
+                    {behind > 0
+                        ? `상위권이 앞서는 항목이 ${behind}개 있습니다. 리뷰·사진·저장처럼 꾸준히 쌓이는 신호부터 채우면 순위에 도움이 됩니다.`
+                        : '숫자 신호는 상위권과 비슷하거나 앞섭니다.'}
+                </p>
+                <p className={styles.diagKey}>
+                    <span className={styles.keyBar} aria-hidden="true" /> 내 매장
+                    <span className={styles.keyTick} aria-hidden="true" /> 상위 중간값
+                </p>
+            </div>
+            {signals.length > 0 && (
+                <ul className={styles.bullets}>
+                    {signals.map((signal, index) => {
+                        const verdict = VERDICT[signal.verdict];
+                        const scale = Math.max(signal.best || 0, signal.mine || 0, signal.median || 0) || 1;
+                        return (
+                            <li key={signal.key} style={{ '--d': index }}>
+                                <span className={styles.bulletLabel}>{signal.label}</span>
+                                <span className={styles.bulletTrack} aria-hidden="true">
+                                    <span className={styles.fill} data-tone={verdict?.tone} style={{ '--w': signal.mine !== null ? signal.mine / scale : 0 }} />
+                                    <span className={styles.medianTick} style={{ '--x': (signal.median || 0) / scale }} />
+                                </span>
+                                <span className={styles.bulletText}>
+                                    내 매장 <b>{signalText(signal, signal.mine)}</b>
+                                    <span> · 중간 {signalText(signal, signal.median)} · 최고 {signalText(signal, signal.best)}</span>
+                                </span>
+                                {verdict ? (
+                                    <span className={styles.verdict} data-tone={verdict.tone}>
+                                        <verdict.Icon size={14} aria-hidden="true" />{verdict.label}
+                                    </span>
+                                ) : (
+                                    <span className={styles.verdict} data-tone="muted">확인 불가</span>
+                                )}
+                            </li>
+                        );
+                    })}
+                </ul>
+            )}
+            {features.length > 0 && (
+                <ul className={styles.adoption}>
+                    {features.map((feature, index) => {
+                        const Icon = FEATURE_ICON[feature.key] || CheckCircle2;
+                        const mineState = feature.mine === true ? 'yes' : feature.mine === false ? 'no' : 'unknown';
+                        const mineLabel = feature.mine === true ? '내 매장 운영' : feature.mine === false ? '내 매장 미운영' : '확인 불가';
+                        return (
+                            <li key={feature.key} style={{ '--d': index }}>
+                                <span className={styles.adoptLabel}><Icon size={14} aria-hidden="true" /> {feature.label}</span>
+                                <span className={styles.adoptTrack} aria-hidden="true">
+                                    <span className={styles.fill} style={{ '--w': feature.known ? feature.have / feature.known : 0 }} />
+                                </span>
+                                <span className={styles.adoptText}>상위 {feature.known}곳 중 <b>{feature.have}곳</b> 운영</span>
+                                <span className={styles.mineState} data-state={mineState}>{mineLabel}</span>
+                            </li>
+                        );
+                    })}
+                </ul>
+            )}
+            <p className={styles.note}>저장 수는 네이버가 구간(예: ~100)으로만 공개해 대략값입니다. 순위는 광고를 뺀 기본 목록 순서입니다.</p>
+        </div>
+    );
+}
+
+// 상위 매장 두 곳 이상이 함께 등록한 대표키워드
+function CommonKeywords({ mine, items }) {
+    const common = keywordFrequency(mine || [], items).filter((entry) => entry.count >= 2);
+    if (common.length === 0) return null;
+    return (
+        <div className={styles.common}>
+            <h5>두 곳 이상이 함께 쓰는 키워드</h5>
+            <p>
+                {common.map((entry) => (
+                    <span key={entry.keyword} className={entry.mine ? styles.wordMine : styles.word}>
+                        {entry.keyword} · {entry.count}곳{entry.mine && <small> 내 매장도 사용</small>}
+                    </span>
+                ))}
+            </p>
+        </div>
+    );
+}
+
+/* ───────── 리뷰 · 활동 ───────── */
+
+function CountList({ title, items, unit = '회', d = 0, node }) {
+    if (!items?.length) return null;
+    const max = Math.max(...items.map((item) => item.count));
+    return (
+        <div className={`${styles.countList} ${styles.rise}`} data-node={node} style={{ '--d': d }}>
+            <h3>{title}</h3>
+            <ul>
+                {items.slice(0, 6).map((item, index) => (
+                    <li key={item.label} style={{ '--d': d + index * 0.6 }}>
+                        <span className={styles.countLabel}>{item.label}</span>
+                        <span className={styles.countTrack} aria-hidden="true">
+                            <span className={styles.fill} style={{ '--w': item.count / max }} />
+                        </span>
+                        <span className={styles.countValue}>{formatNumber(item.count)}{unit}</span>
+                    </li>
+                ))}
+            </ul>
+        </div>
+    );
+}
+
+function ReviewSection({ place, briefing }) {
+    const hasCounts = place.reviewVotes.length + place.reviewThemes.length + place.reviewMenus.length > 0;
+    return (
+        <Reveal id="sec-reviews" className={styles.section} data-group="voice" data-node="hub:voice">
+            <SectionHead title="리뷰" hub="hub:voice">
+                네이버가 방문자 리뷰를 집계한 값입니다. 소개글과 답글에 쓸 표현을 고를 때 참고하세요.
+            </SectionHead>
+            <div className={styles.reviewGrid}>
+                <dl className={`${styles.figures} ${styles.rise}`} style={{ '--d': 1 }}>
+                    <div data-node="rv:visitor">
+                        <dt>방문자 리뷰</dt>
+                        <dd><CountUp value={place.visitorReviews} /></dd>
+                        {place.reviewAuthors ? <dd className={styles.figureNote}>{formatNumber(place.reviewAuthors)}명이 작성</dd> : null}
+                    </div>
+                    {place.textReviews !== null && place.textReviews !== undefined && (
+                        <div>
+                            <dt>글 리뷰</dt>
+                            <dd><CountUp value={place.textReviews} /></dd>
+                            {shareOf(place.textReviews, place.visitorReviews) !== null && <dd className={styles.figureNote}>방문자 리뷰 대비 {shareOf(place.textReviews, place.visitorReviews)}%</dd>}
+                        </div>
+                    )}
+                    <div data-node="rv:photo">
+                        <dt>사진 리뷰</dt>
+                        <dd><CountUp value={place.photoReviews} /></dd>
+                        {shareOf(place.photoReviews, place.visitorReviews) !== null && <dd className={styles.figureNote}>방문자 리뷰 대비 {shareOf(place.photoReviews, place.visitorReviews)}%</dd>}
+                    </div>
+                    <div data-node="rv:blog">
+                        <dt>블로그·카페 리뷰</dt>
+                        <dd><CountUp value={place.blogReviews} /></dd>
+                    </div>
+                    <div data-node="rv:score">
+                        <dt>평점</dt>
+                        <dd>{place.visitorScore ? <CountUp value={place.visitorScore} decimals={2} /> : <span className={styles.quiet}>표시 안 함</span>}</dd>
+                        {place.visitorScore ? <dd className={styles.figureMeter}><Meter ratio={place.visitorScore / 5} tone="warn" /></dd> : null}
+                    </div>
+                </dl>
+                <div className={styles.countLists}>
+                    {hasCounts ? (
+                        <>
+                            <CountList title="손님이 고른 좋은 점" items={place.reviewVotes} unit="명" d={2} node="rv:vote" />
+                            <CountList title="많이 언급된 주제" items={place.reviewThemes} d={3} />
+                            <CountList title="많이 언급된 메뉴·시술" items={place.reviewMenus} d={4} />
+                        </>
+                    ) : (
+                        <p className={`${styles.emptyPanel} ${styles.rise}`} style={{ '--d': 2 }}>아직 집계된 리뷰가 없습니다.</p>
+                    )}
+                </div>
+            </div>
+            {briefing && (
+                <figure className={`${styles.briefing} ${styles.rise}`} style={{ '--d': 5 }}>
+                    <figcaption>
+                        <strong>네이버 AI 브리핑</strong>
+                        리뷰를 바탕으로 매장 화면에 보여 주는 요약입니다. 손님이 내 매장을 어떻게 기억하는지 확인하세요.
+                    </figcaption>
+                    <blockquote>
+                        {briefing.map((sentence) => <p key={sentence}>{sentence}</p>)}
+                    </blockquote>
+                </figure>
+            )}
+        </Reveal>
+    );
+}
+
+const TILE_NODE = { last7: 'ac:week', reply: 'ac:reply', feed: 'ac:feed', coupon: 'ac:coupon' };
+
+function ActivitySection({ activity, error }) {
+    const { visitor, blog, feeds, coupons } = activity || {};
+    const tiles = [];
+    if (visitor) {
+        tiles.push({
+            key: 'last7', label: '최근 7일 방문자 리뷰', value: visitor.last7, suffix: sampleSuffix(visitor.last7, visitor.sampled, visitor.total),
+            note: visitor.perDay !== null ? `최근 ${formatNumber(visitor.sampled)}개 기준 하루 약 ${visitor.perDay}개` : null,
+        });
+        const replyTone = visitor.replyRate === null ? undefined : visitor.replyRate < 10 ? 'bad' : visitor.replyRate < 50 ? 'warn' : 'good';
+        tiles.push({
+            key: 'reply', label: '사장님 답글률', value: visitor.replyRate, suffix: '%', tone: replyTone,
+            meter: visitor.replyRate === null ? undefined : visitor.replyRate / 100,
+            note: `최근 ${formatNumber(visitor.sampled)}개 중 ${formatNumber(visitor.replied)}개 답글`,
+        });
+        tiles.push({
+            key: 'revisit', label: '재방문 리뷰', value: visitor.revisitRate, suffix: '%',
+            meter: visitor.revisitRate === null ? undefined : visitor.revisitRate / 100,
+            note: '2번 이상 방문한 손님이 쓴 리뷰 비율',
+        });
+    }
+    if (blog) {
+        tiles.push({
+            key: 'blog', label: '최근 30일 블로그 리뷰', value: blog.last30, suffix: sampleSuffix(blog.last30, blog.sampled, blog.total),
+            tone: blog.total !== null && blog.last30 === 0 ? 'warn' : undefined,
+            note: blog.latest ? `마지막 글 ${agoLabel(blog.latest)}` : '최근 글 없음',
+        });
+    }
+    if (feeds) {
+        const stale = !feeds.latest || (feeds.daysSinceLatest !== null && feeds.daysSinceLatest > 30);
+        tiles.push({
+            key: 'feed', label: '마지막 소식', text: feeds.latest ? agoLabel(feeds.latest) : '없음', tone: stale ? 'warn' : undefined,
+            note: feeds.latestTitle ? `${feeds.latestCategory ? `[${feeds.latestCategory}] ` : ''}${feeds.latestTitle}` : '소식 탭에 올린 글이 없습니다.',
+        });
+    }
+    if (coupons) {
+        tiles.push({
+            key: 'coupon', label: '쿠폰', value: coupons.total, suffix: '개', tone: coupons.total === 0 ? 'warn' : undefined,
+            note: coupons.titles.length ? coupons.titles.join(' · ') : coupons.memberships.length ? `멤버십: ${coupons.memberships.join(', ')}` : '등록된 쿠폰이 없습니다.',
+        });
+    }
+    return (
+        <Reveal id="sec-activity" className={styles.section} data-group="voice" data-node="hub:activity">
+            <SectionHead title="리뷰·소식 활동" hub="hub:activity">
+                최근 방문자 리뷰 50개와 블로그 리뷰 30개의 날짜·답글 여부로 매장이 얼마나 활발한지 봅니다. 리뷰 내용과 작성자는 가져오지 않습니다.
+            </SectionHead>
+            {!activity ? (
+                <p className={`${styles.emptyPanel} ${styles.rise}`} style={{ '--d': 1 }}>
+                    {error || '리뷰·소식 활동을 불러오지 못했습니다. 잠시 후 다시 분석해주세요.'}
+                </p>
+            ) : (
+                <dl className={styles.tiles}>
+                    {tiles.map((tile, index) => (
+                        <div key={tile.key} className={`${styles.tile} ${styles.rise}`} data-tone={tile.tone} data-node={TILE_NODE[tile.key]} style={{ '--d': index + 1 }}>
+                            <dt>{tile.label}</dt>
+                            <dd className={styles.tileValue}>
+                                {tile.text !== undefined ? tile.text : tile.value === null || tile.value === undefined ? '-' : <><CountUp value={tile.value} />{tile.suffix}</>}
+                            </dd>
+                            {tile.meter !== undefined && <dd><Meter ratio={tile.meter} tone={tile.tone} /></dd>}
+                            {tile.note && <dd className={styles.tileNote}>{tile.note}</dd>}
+                        </div>
+                    ))}
+                </dl>
+            )}
+        </Reveal>
+    );
+}
+
+/* ───────── 결제 데이터(POS) ───────── */
+
+const CHANGE_MARK = { UP: '▲', DOWN: '▼', NEW: 'NEW' };
+const PRICE_SLOTS = [['morning', '아침'], ['lunch', '점심'], ['dinner', '저녁'], ['night', '밤']];
+
+// 네이버페이 결제 단말(POS) 매장만 공개되는 결제 집계
+function PosSection({ pos }) {
+    const active = pos.weekly.flatMap((day) => day.hours.map((value, hour) => (value > 0 ? hour : null))).filter((hour) => hour !== null);
+    const from = active.length ? Math.min(...active) : 0;
+    const to = active.length ? Math.max(...active) : 23;
+    const hours = Array.from({ length: to - from + 1 }, (_, i) => from + i);
+    const max = Math.max(1, ...pos.weekly.flatMap((day) => day.hours));
+    const maxShare = Math.max(1, ...pos.popularMenus.map((menu) => menu.share || 0));
+    const price = pos.averagePrice;
+    const prices = PRICE_SLOTS.filter(([key]) => price[key]);
+    const maxPrice = Math.max(1, ...prices.map(([key]) => price[key]));
+    return (
+        <Reveal id="sec-pos" className={`${styles.section} ${styles.band}`} data-group="pay" data-node="hub:pos">
+            <SectionHead title="결제 데이터" hub="hub:pos">
+                네이버페이 결제 단말(POS)을 쓰는 매장에만 네이버가 공개하는 최근 1주 결제 집계입니다. 메뉴 구성과 영업 시간대를 정할 때 참고하세요.
+            </SectionHead>
+            <dl className={styles.kpis}>
+                <div className={styles.rise} data-node="pos:sales" style={{ '--d': 1 }}>
+                    <dt>주간 결제 건수</dt>
+                    <dd>{pos.weeklySales !== null ? <><CountUp value={pos.weeklySales} /><small>건</small></> : '-'}</dd>
+                </div>
+                <div className={styles.rise} data-node="pos:price" style={{ '--d': 2 }}>
+                    <dt>1회 평균 결제</dt>
+                    <dd>{price.total ? <><CountUp value={price.total} /><small>원</small></> : '-'}</dd>
+                </div>
+                <div className={styles.rise} data-node="pos:day" style={{ '--d': 3 }}>
+                    <dt>가장 붐비는 요일</dt>
+                    <dd>{pos.busiestDay ? <>{pos.busiestDay}<small>요일</small></> : '-'}</dd>
+                </div>
+                <div className={styles.rise} style={{ '--d': 4 }}>
+                    <dt>평균 체류 시간</dt>
+                    <dd>{pos.stayMinutes ? <><CountUp value={pos.stayMinutes} /><small>분</small></> : '-'}</dd>
+                </div>
+            </dl>
+            <div className={styles.posGrid}>
+                {pos.popularMenus.length > 0 && (
+                    <div className={`${styles.countList} ${styles.rise}`} data-node="pos:menu" style={{ '--d': 5 }}>
+                        <h3>주간 인기 메뉴 (주문 점유율)</h3>
+                        <ul>
+                            {pos.popularMenus.map((menu, index) => (
+                                <li key={menu.name} style={{ '--d': 5 + index * 0.6 }}>
+                                    <span className={styles.countLabel}>{menu.name}</span>
+                                    <span className={styles.countTrack} aria-hidden="true">
+                                        <span className={styles.fill} style={{ '--w': Math.max(0.04, (menu.share || 0) / maxShare) }} />
+                                    </span>
+                                    <span className={styles.countValue}>
+                                        {menu.share !== null ? `${menu.share}%` : '-'}
+                                        {CHANGE_MARK[menu.change] && (
+                                            <span className={styles.menuChange} data-dir={menu.change === 'DOWN' ? 'down' : menu.change === 'UP' ? 'up' : 'new'}>
+                                                <span className={styles.arrow}>{CHANGE_MARK[menu.change]}</span>
+                                            </span>
+                                        )}
+                                    </span>
+                                </li>
+                            ))}
+                        </ul>
+                    </div>
+                )}
+                {prices.length > 0 && (
+                    <div className={`${styles.countList} ${styles.rise}`} style={{ '--d': 6 }}>
+                        <h3>시간대별 1회 평균 결제</h3>
+                        <ul>
+                            {prices.map(([key, label], index) => (
+                                <li key={key} style={{ '--d': 6 + index * 0.6 }}>
+                                    <span className={styles.countLabel}>{label}</span>
+                                    <span className={styles.countTrack} aria-hidden="true">
+                                        <span className={styles.fill} style={{ '--w': price[key] / maxPrice }} />
+                                    </span>
+                                    <span className={styles.countValue}>{won(price[key])}</span>
+                                </li>
+                            ))}
+                        </ul>
+                    </div>
+                )}
+            </div>
+            {pos.weekly.length > 0 && (
+                <div className={`${styles.heat} ${styles.rise}`} style={{ '--d': 7 }}>
+                    <h3>요일·시간대별 붐빔 <span>진할수록 손님이 많고, 흰 테두리가 그날 가장 붐비는 시간입니다.</span></h3>
+                    <div className={styles.heatScroll}>
+                        <table className={styles.heatTable}>
+                            <caption className={styles.srOnly}>요일별 시간대 붐빔 정도. 각 요일의 가장 붐비는 시간은 행 제목에 적었습니다.</caption>
+                            <thead>
+                                <tr>
+                                    <th scope="col"><span className={styles.srOnly}>요일</span></th>
+                                    {hours.map((hour) => <th key={hour} scope="col">{hour + 1}</th>)}
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {pos.weekly.map((day, row) => (
+                                    <tr key={day.key}>
+                                        <th scope="row" title={day.peakHour !== null ? `${day.day}요일 가장 붐비는 시간 ${day.peakHour}시` : undefined}>{day.day}</th>
+                                        {hours.map((hour, col) => {
+                                            const value = day.hours[hour] || 0;
+                                            return (
+                                                <td key={hour} aria-label={`${day.day} ${hour + 1}시 ${value}`} title={`${day.day}요일 ${hour + 1}시 · 가장 붐빌 때의 ${Math.round((value / max) * 100)}%`}>
+                                                    <span
+                                                        className={styles.heatCell}
+                                                        data-zero={value > 0 ? undefined : 'true'}
+                                                        data-peak={day.peakHour === hour + 1 ? 'true' : undefined}
+                                                        style={{ '--v': value / max, '--col': col, '--row': row }}
+                                                    />
+                                                </td>
+                                            );
+                                        })}
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                    <p className={styles.note}>
+                        가장 붐비는 시간: {pos.weekly.filter((day) => day.peakHour !== null).map((day) => `${day.day} ${day.peakHour}시`).join(' · ')}
+                    </p>
+                </div>
+            )}
+        </Reveal>
+    );
+}
+
+/* ───────── 운영 정보 ───────── */
+
+function Fact({ label, node, children }) {
+    return (
+        <div data-node={node}>
+            <dt>{label}</dt>
+            <dd>{children}</dd>
+        </div>
+    );
+}
+
+function OpsSection({ place }) {
+    const detail = place.detail;
+    const { hours, photos, tools, parking } = detail;
+    return (
+        <Reveal id="sec-ops" className={styles.section} data-group="ops" data-node="hub:ops">
+            <SectionHead title="운영 정보" hub="hub:ops">
+                매장 화면에 실린 영업시간·사진·네이버 도구 사용 현황입니다. 비어 있는 항목은 스마트플레이스에서 채울 수 있습니다.
+            </SectionHead>
+            <div className={styles.opsGrid}>
+                <dl className={`${styles.facts} ${styles.rise}`} style={{ '--d': 1 }}>
+                    <Fact label="영업 상태" node="ops:hours">
+                        {hours?.registered
+                            ? <>{hours.status || '등록됨'}{hours.statusText ? ` · ${hours.statusText}` : ''}{hours.regularClosed ? ` · 정기휴무 ${hours.regularClosed}` : ''}</>
+                            : <span className={styles.warnText}>영업시간 미등록</span>}
+                    </Fact>
+                    <Fact label="사진" node="ops:photos">
+                        업체 사진 {formatNumber(photos.business)}장 · 전체 사진 {formatNumber(photos.top)}장 · 방문자 사진·영상 {formatNumber(photos.visitorMedia)}개
+                    </Fact>
+                    {tools.length > 0 && (
+                        <Fact label="네이버 도구">
+                            <span className={styles.chipRow}>
+                                {tools.map((tool) => (
+                                    <span key={tool.type} className={tool.using ? styles.chipOn : styles.chipOff}>
+                                        {tool.title} {tool.using ? '사용 중' : '미사용'}
+                                    </span>
+                                ))}
+                            </span>
+                        </Fact>
+                    )}
+                    <Fact label="예약·쿠폰" node="ops:booking">
+                        {detail.hasBooking === null ? '예약 확인 불가' : detail.hasBooking ? '네이버 예약 연결됨' : '네이버 예약 없음'}
+                        {detail.couponCount !== null ? ` · 쿠폰 ${formatNumber(detail.couponCount)}개` : ''}
+                        {detail.hasFeed !== null ? ` · 소식 ${detail.hasFeed ? '있음' : '없음'}` : ''}
+                    </Fact>
+                    {parking && (
+                        <Fact label="주차">
+                            {parking.available ? `가능${parking.free === true ? ' (무료)' : parking.free === false ? ' (유료)' : ''}${parking.valet ? ' · 발레파킹' : ''}` : '정보 없음'}
+                        </Fact>
+                    )}
+                    {detail.facilities.length > 0 && <Fact label="편의시설">{detail.facilities.join(', ')}{detail.pet === true ? ' · 반려동물 동반' : ''}</Fact>}
+                    {detail.links.length > 0 && <Fact label="연결 채널">{detail.links.join(', ')}</Fact>}
+                    {detail.subway && (
+                        <Fact label="가까운 역">
+                            {detail.subway.station}{detail.subway.exit ? ` ${detail.subway.exit}번 출구` : ''}{detail.subway.walkMinutes ? ` · 걸어서 ${detail.subway.walkMinutes}분` : ''}
+                        </Fact>
+                    )}
+                    {(detail.badges.length > 0 || detail.benefits.length > 0 || detail.newOpening) && (
+                        <Fact label="표시 배지·혜택">
+                            {[detail.newOpening ? '새로 오픈' : null, ...detail.badges, ...detail.benefits].filter(Boolean).join(' · ')}
+                        </Fact>
+                    )}
+                    {detail.menuUpdatedAt && <Fact label="메뉴 수정일">{detail.menuUpdatedAt}</Fact>}
+                </dl>
+                {hours?.registered && hours.days.length > 0 && (
+                    <div className={`${styles.week} ${styles.rise}`} style={{ '--d': 2 }}>
+                        <h3>영업시간</h3>
+                        <table>
+                            <caption className={styles.srOnly}>요일별 영업시간과 브레이크 타임</caption>
+                            <tbody>
+                                {hours.days.map((day) => (
+                                    <tr key={day.day} data-closed={day.start && day.end ? undefined : 'true'}>
+                                        <th scope="row">{day.day}</th>
+                                        <td>{day.start && day.end ? `${day.start}~${day.end}` : '휴무'}</td>
+                                        <td>{day.breaks.length > 0 ? `브레이크 ${day.breaks.join(', ')}` : ''}</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
+            </div>
+        </Reveal>
+    );
+}
+
+/* ───────── 페이지 ───────── */
+
+export default function PlaceInsightPage() {
+    const { status } = useSession();
+    const router = useRouter();
+
+    const [meta, setMeta] = useState({ enabled: true, pausedUntil: null, saved: [] });
+    const [url, setUrl] = useState('');
+    const [loadingPlace, setLoadingPlace] = useState(false);
+    const [place, setPlace] = useState(null);
+    const [placeInfo, setPlaceInfo] = useState(null);
+    const [activity, setActivity] = useState(null);
+    const [activityError, setActivityError] = useState(null);
+    const [saving, setSaving] = useState(false);
+    // 입력을 고쳐야 하는 오류(빈 값·틀린 주소·없는 매장). 입력 칸에 빨간 테두리로 표시하고 다시 입력하면 지웁니다.
+    const [urlError, setUrlError] = useState(false);
+    const [keywordError, setKeywordError] = useState(false);
+    // 다른 매장을 새로 분석하면 진행 중이던 순위 조회를 멈추기 위한 번호
+    const rankRun = useRef(0);
+    const urlInput = useRef(null);
+    const keywordInput = useRef(null);
+
+    const [keywordText, setKeywordText] = useState('');
+    const [deep, setDeep] = useState(false);
+    const [record, setRecord] = useState(false);
+    const [ranking, setRanking] = useState(false);
+    const [ranks, setRanks] = useState([]);
+    const [openKeyword, setOpenKeyword] = useState(null);
+    const [rivals, setRivals] = useState({});
+    const [activeSection, setActiveSection] = useState(null);
+    const sheetRef = useRef(null);
+    const graphRef = useRef(null);
+    const indexRef = useRef(null);
+    // 그래프 ↔ 카드 연결 상태(렌더와 무관해 ref 로 둠): 지금 가리킨 카드, '그래프' 버튼을 누른 자리, 강조 해제 타이머
+    const linkState = useRef({ card: null, pin: null, pinTimer: 0, flashTimer: 0 });
+
+    const fetchMeta = useCallback(async () => {
+        try {
+            const res = await fetch('/api/place-insight');
+            if (!res.ok) return;
+            const data = await res.json();
+            setMeta({ enabled: data.enabled !== false, pausedUntil: data.pausedUntil || null, saved: data.saved || [] });
+        } catch (error) {
+            console.error('Error fetching place insight meta:', error);
+        }
+    }, []);
+
+    useEffect(() => {
+        if (status === 'unauthenticated') {
+            router.push('/login');
+        } else if (status === 'authenticated') {
+            fetchMeta();
+        }
+    }, [status, router, fetchMeta]);
+
+    // 조회하는 동안 입력 칸이 잠겨 초점을 잃으므로, 입력을 고쳐야 하는 오류로 끝나면 초점을 돌려줍니다.
+    useEffect(() => {
+        if (urlError && !loadingPlace) urlInput.current?.focus();
+    }, [urlError, loadingPlace]);
+
+    const analyze = async (value) => {
+        const target = String(value || '').trim();
+        if (!target) {
+            setUrlError(true);
+            urlInput.current?.focus();
+            toast.error('플레이스 주소 또는 ID를 입력해주세요.');
+            return;
+        }
+        setUrlError(false);
+        setLoadingPlace(true);
+        setPlace(null);
+        setPlaceInfo(null);
+        setActivity(null);
+        setActivityError(null);
+        setRanks([]);
+        setRivals({});
+        setOpenKeyword(null);
+        rankRun.current += 1;
+        setRanking(false);
+        try {
+            const res = await fetch('/api/place-insight', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ url: target }),
+            });
+            const data = await res.json();
+            if (!res.ok) {
+                toast.error(errorText(data, '플레이스를 조회하지 못했습니다.'));
+                // 조회 제한·서버 오류는 입력 탓이 아니므로, 주소가 틀렸거나 매장이 없을 때만 입력 칸에 표시합니다.
+                if (res.status === 400 || res.status === 404) setUrlError(true);
+                if (data.retryAt || data.disabled) fetchMeta();
+                return;
+            }
+            setPlace(data.place);
+            setPlaceInfo({ fetchedAt: data.fetchedAt, cached: data.cached, saved: data.saved, change: data.change });
+            setActivity(data.activity || null);
+            setActivityError(data.activityError || null);
+            const keywords = (data.place.keywords || []).slice(0, MAX_KEYWORDS);
+            setKeywordText(keywords.join(', '));
+            if (data.saved) fetchMeta();
+            // 매장 코드 하나로 전체 분석이 끝나도록 대표키워드 순위까지 이어서 조회합니다.
+            if (keywords.length > 0) checkRanks(data.place.placeId, keywords);
+        } catch (error) {
+            console.error('Error analyzing place:', error);
+            toast.error('플레이스 조회 중 오류가 발생했습니다.');
+        } finally {
+            setLoadingPlace(false);
+        }
+    };
+
+    const handleSubmit = (event) => {
+        event.preventDefault();
+        analyze(url);
+    };
+
+    const savePlace = async () => {
+        if (!place) return;
+        setSaving(true);
+        try {
+            const res = await fetch('/api/place-insight/saved', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ placeId: place.placeId }),
+            });
+            const data = await res.json();
+            if (!res.ok) {
+                toast.error(errorText(data, '매장을 저장하지 못했습니다.'));
+                return;
+            }
+            toast.success(data.message);
+            setPlaceInfo((prev) => ({ ...prev, saved: true }));
+            fetchMeta();
+        } catch (error) {
+            console.error('Error saving place:', error);
+            toast.error('매장 저장 중 오류가 발생했습니다.');
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const removeSaved = async (saved) => {
+        if (!window.confirm(`'${saved.name}'을(를) 내 매장에서 삭제할까요? 쌓아 둔 리뷰 수 기록도 함께 지워집니다.`)) return;
+        try {
+            const res = await fetch(`/api/place-insight/saved?placeId=${saved.placeId}`, { method: 'DELETE' });
+            const data = await res.json();
+            if (!res.ok) {
+                toast.error(errorText(data, '삭제하지 못했습니다.'));
+                return;
+            }
+            toast.success(data.message);
+            if (place?.placeId === saved.placeId) setPlaceInfo((prev) => ({ ...prev, saved: false, change: null }));
+            fetchMeta();
+        } catch (error) {
+            console.error('Error removing saved place:', error);
+            toast.error('삭제 중 오류가 발생했습니다.');
+        }
+    };
+
+    const copyKeywords = async () => {
+        try {
+            await navigator.clipboard.writeText(place.keywords.join(', '));
+            toast.success('대표키워드를 복사했습니다.');
+        } catch {
+            toast.error('복사하지 못했습니다. 직접 선택해 복사해주세요.');
+        }
+    };
+
+    // 키워드를 하나씩 차례로 조회합니다(네이버에 한꺼번에 몰리지 않게).
+    const checkRanks = async (placeId, keywords) => {
+        const run = rankRun.current + 1;
+        rankRun.current = run;
+        setRanking(true);
+        setRivals({});
+        setOpenKeyword(keywords[0]);
+        setRanks(keywords.map((keyword) => ({ keyword, state: 'loading' })));
+        let stopped = false;
+
+        for (const keyword of keywords) {
+            // 그사이 다른 매장을 분석했으면 이 조회는 버립니다.
+            if (rankRun.current !== run) return;
+            if (stopped) {
+                setRanks((prev) => prev.map((row) => (row.keyword === keyword ? { keyword, state: 'error', error: '조회를 멈췄습니다.' } : row)));
+                continue;
+            }
+            try {
+                const res = await fetch('/api/place-insight/rank', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ placeId, keyword, deep, record }),
+                });
+                if (rankRun.current !== run) return;
+                const data = await res.json();
+                if (!res.ok) {
+                    const message = errorText(data, '순위를 조회하지 못했습니다.');
+                    setRanks((prev) => prev.map((row) => (row.keyword === keyword ? { keyword, state: 'error', error: message } : row)));
+                    // 조회 제한·횟수 초과면 남은 키워드도 실패하므로 여기서 멈춥니다.
+                    if (res.status === 429 || res.status === 503) {
+                        stopped = true;
+                        toast.error(message);
+                        fetchMeta();
+                    }
+                    continue;
+                }
+                setRanks((prev) => prev.map((row) => (row.keyword === keyword
+                    ? { keyword, state: 'done', result: data.result, recorded: data.recorded }
+                    : row)));
+            } catch (error) {
+                console.error('Error fetching rank:', error);
+                setRanks((prev) => prev.map((row) => (row.keyword === keyword ? { keyword, state: 'error', error: '순위 조회 중 오류가 발생했습니다.' } : row)));
+            }
+        }
+        setRanking(false);
+    };
+
+    const runRanks = (event) => {
+        event.preventDefault();
+        if (!place) return;
+        const keywords = splitKeywords(keywordText);
+        const problem = keywords.length === 0
+            ? '순위를 볼 키워드를 입력해주세요.'
+            : keywords.length > MAX_KEYWORDS
+                ? `키워드는 한 번에 ${MAX_KEYWORDS}개까지 조회할 수 있습니다.`
+                : keywords.some((word) => word.length > 40)
+                    ? '키워드는 40자 이하로 입력해주세요.'
+                    : null;
+        if (problem) {
+            setKeywordError(true);
+            keywordInput.current?.focus();
+            toast.error(problem);
+            return;
+        }
+        setKeywordError(false);
+        checkRanks(place.placeId, keywords);
+    };
+
+    const loadRivals = async (result) => {
+        const placeIds = result.top.filter((row) => !row.isTarget).slice(0, 5).map((row) => row.placeId);
+        if (placeIds.length === 0) return;
+        setRivals((prev) => ({ ...prev, [result.keyword]: { loading: true } }));
+        try {
+            const res = await fetch('/api/place-insight/keywords', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ placeIds }),
+            });
+            const data = await res.json();
+            if (!res.ok) {
+                toast.error(errorText(data, '대표키워드를 조회하지 못했습니다.'));
+                setRivals((prev) => ({ ...prev, [result.keyword]: undefined }));
+                return;
+            }
+            setRivals((prev) => ({ ...prev, [result.keyword]: { loading: false, items: data.items, failed: data.failed } }));
+        } catch (error) {
+            console.error('Error fetching rival keywords:', error);
+            toast.error('대표키워드 조회 중 오류가 발생했습니다.');
+            setRivals((prev) => ({ ...prev, [result.keyword]: undefined }));
+        }
+    };
+
+    const paused = meta.pausedUntil && meta.pausedUntil > Date.now();
+    const unavailable = !meta.enabled || paused;
+    const myKeywordKeys = new Set((place?.keywords || []).map((word) => word.replace(/\s+/g, '').toLowerCase()));
+    const actions = useMemo(() => (place ? buildActionItems(place, activity) : []), [place, activity]);
+    const graph = useMemo(() => {
+        if (loadingPlace) return LOADING_GRAPH;
+        return place ? buildGraph(place, activity, ranks, actions) : IDLE_GRAPH;
+    }, [loadingPlace, place, activity, ranks, actions]);
+    const showResult = place && !loadingPlace;
+
+    const sections = useMemo(() => {
+        if (!place) return [];
+        return [
+            { id: 'sec-todo', group: 'todo', label: '지금 할 일', count: actions.length || null },
+            { id: 'sec-rank', group: 'search', label: '키워드 순위' },
+            { id: 'sec-reviews', group: 'voice', label: '리뷰' },
+            { id: 'sec-activity', group: 'voice', label: '활동' },
+            { id: 'sec-geo', group: 'geo', label: 'AI 검색' },
+            place.detail?.pos ? { id: 'sec-pos', group: 'pay', label: '결제 데이터' } : null,
+            place.detail ? { id: 'sec-ops', group: 'ops', label: '운영 정보' } : null,
+        ].filter(Boolean);
+    }, [place, actions]);
+
+    // 스크롤에 맞춰 목차 아래 진행 막대를 채우고, 목차가 위에 붙으면 매장 이름을 꺼내고,
+    // 지금 보고 있는 구역(목차 바로 아래를 지난 마지막 구역)을 목차에 표시합니다.
+    useEffect(() => {
+        const nav = indexRef.current;
+        if (!showResult || !nav) return undefined;
+        let raf = 0;
+        const update = () => {
+            raf = 0;
+            const stage = document.getElementById('sec-summary');
+            const start = stage ? stage.getBoundingClientRect().bottom + window.scrollY : 0;
+            const end = document.documentElement.scrollHeight - window.innerHeight;
+            const progress = end > start ? Math.min(1, Math.max(0, (window.scrollY - start) / (end - start))) : 0;
+            nav.style.setProperty('--p', progress.toFixed(4));
+            nav.dataset.stuck = nav.getBoundingClientRect().top <= 0.5 ? 'true' : 'false';
+            const line = nav.getBoundingClientRect().bottom + 72;
+            let current = null;
+            for (const section of sections) {
+                const el = document.getElementById(section.id);
+                if (el && el.getBoundingClientRect().top <= line) current = section.id;
+            }
+            // 맨 아래까지 내리면 마지막 구역이 목차 줄에 닿지 못해도 그 구역을 보고 있는 것으로 칩니다.
+            if (sections.length && window.scrollY >= end - 2 && end > start) current = sections[sections.length - 1].id;
+            setActiveSection(current);
+        };
+        const onScroll = () => {
+            if (!raf) raf = requestAnimationFrame(update);
+        };
+        update();
+        window.addEventListener('scroll', onScroll, { passive: true });
+        window.addEventListener('resize', onScroll);
+        return () => {
+            cancelAnimationFrame(raf);
+            window.removeEventListener('scroll', onScroll);
+            window.removeEventListener('resize', onScroll);
+        };
+    }, [showResult, sections]);
+
+    // 좁은 화면에서는 목차가 옆으로 넘칩니다. 보고 있는 구역의 칸이 가려져 있으면 목차만 옆으로 밀어 보이게 합니다.
+    // (scrollIntoView 는 목차가 화면 밖에 있을 때 페이지까지 움직이므로 쓰지 않습니다.)
+    useEffect(() => {
+        const nav = indexRef.current;
+        const link = nav?.querySelector('a[aria-current="true"]');
+        if (!nav || !link) return;
+        const navBox = nav.getBoundingClientRect();
+        const box = link.getBoundingClientRect();
+        const left = navBox.left + (parseFloat(getComputedStyle(nav).paddingLeft) || 0);
+        const right = navBox.right - 16;
+        const delta = box.right > right ? box.right - right : box.left < left ? box.left - left : 0;
+        if (delta) nav.scrollBy({ left: delta, behavior: reducedMotion() ? 'auto' : 'smooth' });
+    }, [activeSection]);
+
+    const scrollTo = scrollToId;
+
+    // 그래프 점과 같은 id(data-node)를 가진 카드들
+    const cardsOf = (id) => {
+        const root = sheetRef.current;
+        if (!root || !id) return [];
+        return [...root.querySelectorAll(`[data-node="${CSS.escape(id)}"]`)];
+    };
+
+    // 그래프 → 카드: 그래프에서 가리킨 점과 같은 카드를 밝힙니다.
+    const markLinked = useCallback((node) => {
+        const root = sheetRef.current;
+        if (!root) return;
+        root.querySelectorAll('[data-linked]').forEach((el) => el.removeAttribute('data-linked'));
+        if (!node) return;
+        root.querySelectorAll(`[data-node="${CSS.escape(node.id)}"]`).forEach((el) => el.setAttribute('data-linked', 'true'));
+    }, []);
+
+    // 카드 → 그래프: 카드마다 핸들러를 달지 않고 시트에서 한 번에 받아, 같은 id 의 점을 밝힙니다.
+    const onSheetOver = (event) => {
+        const id = event.target.closest?.('[data-node]')?.dataset.node || null;
+        const state = linkState.current;
+        if (state.pin) {
+            // '그래프' 버튼으로 올라온 직후에는, 스크롤 때문에 포인터 밑 카드가 바뀐 것만으로 강조를 바꾸지 않습니다.
+            if (Math.hypot(event.clientX - state.pin.x, event.clientY - state.pin.y) < 8) return;
+            state.pin = null;
+        }
+        if (id === state.card) return;
+        state.card = id;
+        graphRef.current?.focus(id);
+    };
+
+    const onSheetLeave = () => {
+        const state = linkState.current;
+        if (state.pin) return;
+        state.card = null;
+        graphRef.current?.focus(null);
+    };
+
+    // 이동한 자리의 카드를 잠깐 강조해 그래프에서 고른 항목이 어디인지 알려 줍니다.
+    const flash = (id) => {
+        const state = linkState.current;
+        const cards = cardsOf(id);
+        clearTimeout(state.flashTimer);
+        sheetRef.current?.querySelectorAll('[data-flash]').forEach((el) => el.removeAttribute('data-flash'));
+        requestAnimationFrame(() => cards.forEach((el) => el.setAttribute('data-flash', 'true')));
+        state.flashTimer = setTimeout(() => cards.forEach((el) => el.removeAttribute('data-flash')), 2200);
+    };
+
+    // 그래프 점·요약 숫자 → 본문: 같은 id 의 카드(없으면 구역)로 이동합니다.
+    const jumpTo = (id, fallback) => {
+        const card = cardsOf(id).find((el) => !el.closest('#sec-summary'));
+        if (card) {
+            card.scrollIntoView({ behavior: reducedMotion() ? 'auto' : 'smooth', block: card.id.startsWith('sec-') ? 'start' : 'center' });
+        } else if (fallback) {
+            scrollTo(fallback);
+        }
+        flash(id);
+    };
+
+    // 본문 → 그래프: 구역 머리의 '그래프' 버튼. 위로 올라가 같은 점을 밝히고 고리를 한 번 퍼뜨립니다.
+    const graphLink = useMemo(() => ({
+        showInGraph(id, event) {
+            const state = linkState.current;
+            state.pin = { x: event?.clientX ?? 0, y: event?.clientY ?? 0 };
+            state.card = null;
+            scrollToId('sec-summary');
+            graphRef.current?.focus(id);
+            setTimeout(() => graphRef.current?.ping(id), reducedMotion() ? 0 : 520);
+            clearTimeout(state.pinTimer);
+            state.pinTimer = setTimeout(() => {
+                state.pin = null;
+                if (!state.card) graphRef.current?.focus(null);
+            }, 6000);
+        },
+    }), []);
+
+    const openRank = (keyword) => {
+        const index = ranks.findIndex((row) => row.keyword === keyword);
+        if (index < 0) return;
+        if (ranks[index].state === 'done') setOpenKeyword(keyword);
+        scrollTo(`rank-row-${index}`);
+        flash(`kw:${keyword}`);
+    };
+
+    const selectNode = (node) => {
+        if (!place || loadingPlace) {
+            urlInput.current?.focus();
+            return;
+        }
+        if (node.id === 'store') return;
+        if (node.keyword && ranks.some((row) => row.keyword === node.keyword)) {
+            openRank(node.keyword);
+            return;
+        }
+        jumpTo(node.id, node.target || 'sec-summary');
+    };
+
+    return (
+        <DashboardLayout>
+            <GraphLink.Provider value={graphLink}>
+            <div ref={sheetRef} className={styles.sheet} onPointerOver={onSheetOver} onPointerLeave={onSheetLeave}>
+                <header className={styles.top}>
+                    <div className={styles.title}>
+                        <h1>플레이스 분석</h1>
+                        <p>매장 주소나 코드 하나로 숨은 대표키워드, 검색 순위, 리뷰·소식 활동, 결제 데이터, AI 검색(GEO·AEO) 진단과 지금 할 일을 한 화면에 모읍니다.</p>
+                    </div>
+                    <form className={styles.search} onSubmit={handleSubmit}>
+                        <label htmlFor="place-url">플레이스 주소 또는 ID</label>
+                        <div className={styles.inputWrap}>
+                            <Link2 size={18} aria-hidden="true" />
+                            <input
+                                ref={urlInput}
+                                id="place-url"
+                                type="text"
+                                inputMode="url"
+                                autoComplete="off"
+                                placeholder="예: https://m.place.naver.com/restaurant/1234567890/home"
+                                value={url}
+                                onChange={(event) => { setUrl(event.target.value); setUrlError(false); }}
+                                disabled={loadingPlace || unavailable}
+                                maxLength={500}
+                                aria-invalid={urlError || undefined}
+                                aria-describedby="place-url-help"
+                            />
+                        </div>
+                        <button type="submit" className={styles.primaryBtn} disabled={loadingPlace || unavailable}>
+                            {loadingPlace ? <Loader2 size={18} className={styles.spin} aria-hidden="true" /> : <Search size={18} aria-hidden="true" />}
+                            {loadingPlace ? '분석 중' : '분석하기'}
+                        </button>
+                        <p id="place-url-help" className={styles.help}>
+                            네이버 지도·플레이스 앱에서 &lsquo;공유&rsquo;로 복사한 주소(naver.me)나 주소 속 숫자만 넣어도 됩니다.
+                        </p>
+                    </form>
+                </header>
+
+                {meta.saved.length > 0 && (
+                    <div className={styles.saved}>
+                        <span className={styles.savedLabel}>내 매장</span>
+                        {meta.saved.map((saved) => (
+                            <span key={saved.placeId} className={styles.savedChip} data-current={place?.placeId === saved.placeId ? 'true' : undefined}>
+                                <button type="button" onClick={() => { setUrl(saved.placeId); analyze(saved.placeId); }} disabled={loadingPlace || unavailable}>
+                                    <Store size={14} aria-hidden="true" />
+                                    {saved.name}
+                                </button>
+                                <button type="button" className={styles.savedRemove} onClick={() => removeSaved(saved)} aria-label={`${saved.name} 내 매장에서 삭제`}>
+                                    <X size={14} aria-hidden="true" />
+                                </button>
+                            </span>
+                        ))}
+                    </div>
+                )}
+
+                {unavailable && (
+                    <section className={styles.notice} role="status">
+                        <Info size={20} aria-hidden="true" />
+                        <div>
+                            <strong>{meta.enabled ? '네이버 조회를 잠시 쉬는 중입니다' : '플레이스 조회 기능이 꺼져 있습니다'}</strong>
+                            <p>
+                                {meta.enabled
+                                    ? `네이버가 조회를 제한해 ${timeLabel(meta.pausedUntil)}까지 쉬었다가 다시 시작합니다. 그 사이에는 플레이스 진단과 순위 기록장을 이용해주세요.`
+                                    : '운영자가 기능을 다시 켜면 이용할 수 있습니다. 그동안 플레이스 진단과 순위 기록장을 이용해주세요.'}
+                            </p>
+                            <p className={styles.noticeLinks}>
+                                <Link href="/dashboard/place-check">플레이스 진단</Link>
+                                <Link href="/dashboard/ranking/place">플레이스 순위 기록장</Link>
+                            </p>
+                        </div>
+                    </section>
+                )}
+
+                <section id="sec-summary" className={styles.stage} aria-busy={loadingPlace} aria-label="매장 연결 그래프와 요약">
+                    <div className={styles.graphPane}>
+                        <PlaceGraph
+                            ref={graphRef}
+                            nodes={graph.nodes}
+                            links={graph.links}
+                            mode={loadingPlace ? 'loading' : place ? 'live' : 'idle'}
+                            label={place && !loadingPlace
+                                ? `${place.name}과 대표키워드·순위·리뷰·결제 데이터의 연결 그래프. 점을 누르면 해당 항목으로 이동합니다.`
+                                : '플레이스 분석으로 채워질 항목의 연결 그래프'}
+                            legend={LEGEND}
+                            hint={loadingPlace
+                                ? '불러오는 대로 내 매장 데이터로 채웁니다.'
+                                : place
+                                    ? <>점을 누르면 그 항목으로 이동합니다. <span className={styles.hintWide}>끌어서 옮길 수 있고, 요약 숫자에 올리면 같은 점이 밝아집니다.</span></>
+                                    : '주소를 넣고 분석하면 내 매장 데이터로 채워집니다.'}
+                            onSelect={selectNode}
+                            onHover={markLinked}
+                        >
+                            {loadingPlace && <LoadingStatus />}
+                        </PlaceGraph>
+                    </div>
+                    {loadingPlace ? (
+                        <RailSkeleton />
+                    ) : place ? (
+                        <SummaryRail
+                            key={place.placeId}
+                            place={place}
+                            placeInfo={placeInfo}
+                            activity={activity}
+                            ranks={ranks}
+                            actions={actions}
+                            saving={saving}
+                            onSave={savePlace}
+                            onPickRank={openRank}
+                            onJump={jumpTo}
+                        />
+                    ) : (
+                        <IdleRail />
+                    )}
+                </section>
+
+                {loadingPlace && <SectionsSkeleton />}
+
+                {showResult && (
+                    <>
+                        <nav ref={indexRef} className={styles.index} aria-label="분석 항목">
+                            <button type="button" className={styles.indexHome} onClick={() => scrollTo('sec-summary')} aria-label={`${place.name} 연결 그래프로 올라가기`}>
+                                <ArrowUpToLine size={14} aria-hidden="true" />
+                                <span>{place.name}</span>
+                            </button>
+                            {sections.map((section) => (
+                                <a
+                                    key={section.id}
+                                    href={`#${section.id}`}
+                                    data-group={section.group}
+                                    aria-current={activeSection === section.id ? 'true' : undefined}
+                                    onClick={(event) => {
+                                        event.preventDefault();
+                                        scrollTo(section.id);
+                                    }}
+                                >
+                                    {section.label}
+                                    {section.count && <span className={styles.indexCount}>{section.count}</span>}
+                                </a>
+                            ))}
+                        </nav>
+
+                        <TodoSection place={place} actions={actions} />
+
+                        <Reveal id="sec-rank" className={styles.section} data-group="search" data-node="group:search">
+                            <SectionHead title="키워드 순위" hub="group:search">
+                                키워드를 검색했을 때 내 매장이 몇 번째에 나오는지 네이버 목록에서 광고를 빼고 셉니다. 한 번에 {MAX_KEYWORDS}개까지, 쉼표로 구분해 입력하세요.
+                            </SectionHead>
+
+                            <KeywordSlots keywords={place.keywords} onCopy={copyKeywords} />
+
+                            <form className={`${styles.rankForm} ${styles.rise}`} style={{ '--d': 2 }} onSubmit={runRanks}>
+                                <div className={styles.inputWrap}>
+                                    <label htmlFor="rank-keywords" className={styles.srOnly}>순위를 볼 키워드</label>
+                                    <Search size={18} aria-hidden="true" />
+                                    <input
+                                        ref={keywordInput}
+                                        id="rank-keywords"
+                                        type="text"
+                                        placeholder="예: 강남역 맛집, 강남 회식"
+                                        value={keywordText}
+                                        onChange={(event) => { setKeywordText(event.target.value); setKeywordError(false); }}
+                                        disabled={ranking || unavailable}
+                                        maxLength={250}
+                                        aria-invalid={keywordError || undefined}
+                                    />
+                                </div>
+                                <button type="submit" className={styles.inkBtn} disabled={ranking || unavailable}>
+                                    {ranking && <Loader2 size={18} className={styles.spin} aria-hidden="true" />}
+                                    {ranking ? '조회 중' : '순위 조회'}
+                                </button>
+                                <div className={styles.rankOptions}>
+                                    <label>
+                                        <input type="checkbox" checked={deep} onChange={(event) => setDeep(event.target.checked)} disabled={ranking} />
+                                        1,000위까지 찾기 <span>(기본 300위, 더 오래 걸려요)</span>
+                                    </label>
+                                    <label>
+                                        <input type="checkbox" checked={record} onChange={(event) => setRecord(event.target.checked)} disabled={ranking} />
+                                        오늘 순위를 순위 기록장에 저장
+                                    </label>
+                                </div>
+                            </form>
+
+                            {ranks.length > 0 && (
+                                <ul className={styles.board}>
+                                    {ranks.map((row, index) => {
+                                        const open = openKeyword === row.keyword && row.state === 'done';
+                                        const rival = rivals[row.keyword];
+                                        const note = row.state === 'done' ? recordNote(row.recorded) : null;
+                                        const result = row.result;
+                                        return (
+                                            <li key={row.keyword} id={`rank-row-${index}`} className={styles.rankRow} data-state={row.state} data-open={open ? 'true' : undefined} data-node={`kw:${row.keyword}`} style={{ '--d': index }}>
+                                                <div className={styles.rankLine}>
+                                                    <strong className={styles.rankKeyword}>{row.keyword}</strong>
+                                                    {row.state === 'loading' && (
+                                                        <span className={styles.rankPending}><Loader2 size={16} className={styles.spin} aria-hidden="true" /> 조회 중</span>
+                                                    )}
+                                                    {row.state === 'error' && <span className={styles.rankError}>{row.error}</span>}
+                                                    {row.state === 'done' && (
+                                                        <>
+                                                            <span className={styles.rankFigure} data-tone={rankTone(result)}>
+                                                                {result.status === 'found'
+                                                                    ? <><CountUp value={result.rank} from={Math.max(result.scanned || 0, result.rank)} duration={900} /><small>위</small></>
+                                                                    : <span className={styles.rankOut}>{rankLabel(result)}</span>}
+                                                            </span>
+                                                            <RankTrack result={result} />
+                                                            <span className={styles.rankMeta}>
+                                                                {result.total ? `검색된 매장 ${formatNumber(result.total)}곳` : ''}
+                                                                {result.fetchedAt ? ` · ${timeLabel(result.fetchedAt)} 조회` : ''}
+                                                            </span>
+                                                            <button
+                                                                type="button"
+                                                                className={styles.toggleBtn}
+                                                                onClick={() => setOpenKeyword(open ? null : row.keyword)}
+                                                                aria-expanded={open}
+                                                            >
+                                                                <ChevronDown size={16} aria-hidden="true" />
+                                                                상위 매장 {open ? '접기' : '보기'}
+                                                            </button>
+                                                        </>
+                                                    )}
+                                                </div>
+                                                {note && <p className={styles.rankNote}>{note}</p>}
+
+                                                {open && (
+                                                    <div className={styles.rankBody}>
+                                                        {result.top.length === 0 ? (
+                                                            <p className={styles.note}>이 키워드로 검색된 매장이 없습니다.</p>
+                                                        ) : (
+                                                            <>
+                                                                <RankTable result={result} />
+                                                                <RankDiagnosis diagnosis={diagnoseRank(buildMine(place, result), result.topSignals)} />
+
+                                                                {!rival && (
+                                                                    <button type="button" className={styles.secondaryBtn} onClick={() => loadRivals(result)} disabled={unavailable}>
+                                                                        <KeyRound size={16} aria-hidden="true" />
+                                                                        상위 5곳의 대표키워드 보기
+                                                                    </button>
+                                                                )}
+                                                                {rival?.loading && (
+                                                                    <p className={styles.rankPending}><Loader2 size={16} className={styles.spin} aria-hidden="true" /> 상위 매장 대표키워드 조회 중</p>
+                                                                )}
+                                                                {rival?.items && (
+                                                                    <div className={styles.rivals}>
+                                                                        <h4>상위 매장이 등록한 대표키워드</h4>
+                                                                        <ul>
+                                                                            {rival.items.map((item, itemIndex) => (
+                                                                                <li key={item.placeId} style={{ '--d': itemIndex }}>
+                                                                                    <span className={styles.rivalName}>{item.name}</span>
+                                                                                    <span className={styles.rivalWords}>
+                                                                                        {item.keywords.length === 0 && <em>등록 안 함</em>}
+                                                                                        {item.keywords.map((word) => {
+                                                                                            const mine = myKeywordKeys.has(word.replace(/\s+/g, '').toLowerCase());
+                                                                                            return (
+                                                                                                <span key={word} className={mine ? styles.wordMine : styles.word}>
+                                                                                                    {word}{mine && <small> 내 매장도 사용</small>}
+                                                                                                </span>
+                                                                                            );
+                                                                                        })}
+                                                                                    </span>
+                                                                                </li>
+                                                                            ))}
+                                                                        </ul>
+                                                                        <CommonKeywords mine={place.keywords} items={rival.items} />
+                                                                        {rival.failed > 0 && <p className={styles.note}>{rival.failed}곳은 읽지 못했습니다.</p>}
+                                                                    </div>
+                                                                )}
+                                                            </>
+                                                        )}
+                                                    </div>
+                                                )}
+                                            </li>
+                                        );
+                                    })}
+                                </ul>
+                            )}
+                        </Reveal>
+
+                        <ReviewSection place={place} briefing={activity?.briefing} />
+                        <ActivitySection activity={activity} error={activityError} />
+
+                        <div id="sec-geo" className={styles.geo} data-node="hub:geo">
+                            <GeoAeoPanel key={place.placeId} place={place} activity={activity} ranks={ranks} unavailable={unavailable} />
+                        </div>
+
+                        {place.detail?.pos && <PosSection pos={place.detail.pos} />}
+                        {place.detail && <OpsSection place={place} />}
+                    </>
+                )}
+
+                <p className={styles.source}>
+                    <Info size={14} aria-hidden="true" />
+                    <span>
+                        네이버 플레이스 화면에 공개된 정보를 조회한 결과이며, 네이버 공식 제휴 데이터가 아니어서 네이버 사정에 따라 조회가 중단될 수 있습니다.
+                        순위는 광고를 뺀 기본 목록 순서이고 하루에도 여러 번 바뀝니다. 지역명이 없는 키워드는 검색하는 사람의 위치에 따라 순위가 달라 정확하지 않습니다.
+                        네이버에 부담을 주지 않도록 같은 조회는 10~30분 동안 저장된 결과를 보여 줍니다.
+                    </span>
+                </p>
+            </div>
+            </GraphLink.Provider>
+        </DashboardLayout>
+    );
+}

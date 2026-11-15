@@ -73,17 +73,39 @@ export async function PUT(request, { params }) {
             return NextResponse.json({ error: errors }, { status: 400 });
         }
 
-        const user = await prisma.user.update({
-            where: { id: params.id },
-            data: validationResult.data,
-            select: {
-                id: true,
-                email: true,
-                name: true,
-                balance: true,
-                role: true,
+        const select = { id: true, email: true, name: true, balance: true, role: true };
+
+        // 잔액을 바꿀 때는 변경 전후 차액을 원장(이용 내역)에 남겨 추적할 수 있게 합니다.
+        const user = await prisma.$transaction(async (tx) => {
+            const before = await tx.user.findUnique({ where: { id: params.id }, select: { balance: true } });
+            if (!before) return null;
+
+            const updated = await tx.user.update({
+                where: { id: params.id },
+                data: validationResult.data,
+                select,
+            });
+
+            const delta = updated.balance - before.balance;
+            if (validationResult.data.balance !== undefined && delta !== 0) {
+                await tx.cashTransaction.create({
+                    data: {
+                        userId: params.id,
+                        type: delta > 0 ? 'reward' : 'use',
+                        amount: delta,
+                        balanceAfter: updated.balance,
+                        status: 'completed',
+                        method: 'admin',
+                        description: `관리자 잔액 조정 (${before.balance.toLocaleString()}원 → ${updated.balance.toLocaleString()}원)`,
+                    },
+                });
             }
+            return updated;
         });
+
+        if (!user) {
+            return NextResponse.json({ error: '회원을 찾을 수 없습니다.' }, { status: 404 });
+        }
 
         return NextResponse.json({
             message: '회원 정보가 수정되었습니다.',

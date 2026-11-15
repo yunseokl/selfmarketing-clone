@@ -11,8 +11,8 @@ import {
 import { toast } from 'sonner';
 
 const TABS = [
-    { id: 'copy', label: 'AI 마케팅 문구' },
-    { id: 'banner', label: 'AI 홍보 배너' },
+    { id: 'copy', label: '마케팅 문구' },
+    { id: 'banner', label: '홍보 배너' },
 ];
 
 const COLOR_THEMES = [
@@ -134,7 +134,7 @@ async function copyToClipboard(text) {
 export default function AiPage() {
     const [activeTab, setActiveTab] = useState('copy');
 
-    // Tab 1: AI 마케팅 문구
+    // Tab 1: 마케팅 문구
     const [industry, setIndustry] = useState(INDUSTRY_OPTIONS[0].value);
     const [name, setName] = useState('');
     const [tone, setTone] = useState(TONE_OPTIONS[0].value);
@@ -143,7 +143,7 @@ export default function AiPage() {
     const [seed, setSeed] = useState(0);
     const [result, setResult] = useState(null);
 
-    // Tab 2: AI 홍보 배너
+    // Tab 2: 홍보 배너
     const [mainText, setMainText] = useState('여름맞이 특별 프로모션');
     const [subText, setSubText] = useState('지금 확인하고 혜택 받기');
     const [theme, setTheme] = useState(COLOR_THEMES[0].id);
@@ -238,12 +238,12 @@ export default function AiPage() {
             <div className={styles.container}>
                 <div className={styles.header}>
                     <div>
-                        <h1 className={styles.title}>AI 콘텐츠 스튜디오</h1>
+                        <h1 className={styles.title}>콘텐츠 스튜디오</h1>
                         <p className={styles.subtitle}>마케팅 문구와 홍보 배너를 즉시 만들어보세요</p>
                     </div>
                     <span className={styles.freeBadge}>
                         <Sparkles size={14} />
-                        외부 AI 연동 없이 즉시 생성됩니다 — 무제한 무료
+                        준비된 문장 틀을 조합해 즉시 만듭니다 — 무제한 무료
                     </span>
                 </div>
 

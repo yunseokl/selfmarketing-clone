@@ -45,7 +45,6 @@ const tableColumns = [
     '키워드',
     '일 유입',
     '광고기간',
-    '순위',
     '상태',
     '작업',
 ];
@@ -83,7 +82,7 @@ export default function ShoppingPage() {
                 const data = await res.json();
                 const allAds = data.ads || [];
                 setTabCounts({
-                    active: allAds.filter(ad => ad.status === 'active').length,
+                    active: allAds.filter(ad => ad.status === 'active' || ad.status === 'pending').length,
                     expired: allAds.filter(ad => ad.status === 'expired' || ad.status === 'completed').length,
                     refunded: allAds.filter(ad => ad.status === 'refunded').length,
                     all: allAds.length,
@@ -135,11 +134,13 @@ export default function ShoppingPage() {
 
     const getStatusBadge = (status) => {
         const styles = {
+            pending: { bg: 'rgba(245, 158, 11, 0.1)', color: '#F59E0B', text: '대기중' },
             active: { bg: 'rgba(16, 185, 129, 0.1)', color: '#10B981', text: '진행중' },
+            completed: { bg: 'rgba(59, 130, 246, 0.1)', color: '#60A5FA', text: '완료' },
             expired: { bg: 'rgba(107, 114, 128, 0.1)', color: '#6B7280', text: '만료됨' },
             refunded: { bg: 'rgba(239, 68, 68, 0.1)', color: '#EF4444', text: '환불됨' },
         };
-        const s = styles[status] || styles.active;
+        const s = styles[status] || styles.expired;
         return (
             <span style={{
                 backgroundColor: s.bg,
@@ -168,11 +169,8 @@ export default function ShoppingPage() {
     const stats = useMemo(() => {
         const active = ads.filter(ad => ad.status === 'active').length;
         const totalGoal = ads.reduce((sum, ad) => sum + (ad.dailyGoal || 0), 0);
-        const ranked = ads.filter(ad => typeof ad.currentRank === 'number');
-        const avgRank = ranked.length
-            ? Math.round(ranked.reduce((sum, ad) => sum + ad.currentRank, 0) / ranked.length)
-            : null;
-        return { active, totalGoal, avgRank };
+        const totalPaid = ads.reduce((sum, ad) => sum + (ad.totalCost || 0), 0);
+        return { active, totalGoal, totalPaid };
     }, [ads]);
 
     const totalPages = Math.max(1, Math.ceil(filteredAds.length / PAGE_SIZE));
@@ -234,8 +232,8 @@ export default function ShoppingPage() {
                         <strong className={styles.statValue}>{stats.totalGoal.toLocaleString()}건</strong>
                     </div>
                     <div className={styles.statCell}>
-                        <span className={styles.statLabel}>평균 순위</span>
-                        <strong className={styles.statValue}>{stats.avgRank ? `${stats.avgRank}위` : '-'}</strong>
+                        <span className={styles.statLabel}>결제 금액 합계</span>
+                        <strong className={styles.statValue}>{stats.totalPaid.toLocaleString()}원</strong>
                     </div>
                 </div>
 
@@ -318,13 +316,6 @@ export default function ShoppingPage() {
                                             <td>{ad.keyword}</td>
                                             <td>{ad.dailyGoal}건</td>
                                             <td>{formatDate(ad.startDate)} ~ {formatDate(ad.endDate)}</td>
-                                            <td>
-                                                {ad.currentRank ? (
-                                                    <span className={`${styles.rankBadge} ${ad.currentRank <= 10 ? styles.rankBadgeTop : ''}`}>
-                                                        {ad.currentRank}위
-                                                    </span>
-                                                ) : '-'}
-                                            </td>
                                             <td>{getStatusBadge(ad.status)}</td>
                                             <td>
                                                 {ad.status === 'active' && (

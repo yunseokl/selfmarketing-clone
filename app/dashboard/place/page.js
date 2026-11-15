@@ -69,7 +69,7 @@ export default function PlacePage() {
                 const data = await res.json();
                 const allAds = data.ads || [];
                 setTabCounts({
-                    active: allAds.filter(ad => ad.status === 'active').length,
+                    active: allAds.filter(ad => ad.status === 'active' || ad.status === 'pending').length,
                     expired: allAds.filter(ad => ad.status === 'expired' || ad.status === 'completed').length,
                     refunded: allAds.filter(ad => ad.status === 'refunded').length,
                     all: allAds.length,
@@ -123,11 +123,8 @@ export default function PlacePage() {
     const stats = useMemo(() => {
         const active = ads.filter(ad => ad.status === 'active').length;
         const totalGoal = ads.reduce((sum, ad) => sum + (ad.dailyGoal || 0), 0);
-        const ranked = ads.filter(ad => typeof ad.currentRank === 'number');
-        const avgRank = ranked.length
-            ? Math.round(ranked.reduce((sum, ad) => sum + ad.currentRank, 0) / ranked.length)
-            : null;
-        return { active, totalGoal, avgRank };
+        const totalPaid = ads.reduce((sum, ad) => sum + (ad.totalCost || 0), 0);
+        return { active, totalGoal, totalPaid };
     }, [ads]);
 
     const totalPages = Math.max(1, Math.ceil(filteredAds.length / PAGE_SIZE));
@@ -189,8 +186,8 @@ export default function PlacePage() {
                         <strong className={styles.statValue}>{stats.totalGoal.toLocaleString()}회</strong>
                     </div>
                     <div className={styles.statCell}>
-                        <span className={styles.statLabel}>평균 순위</span>
-                        <strong className={styles.statValue}>{stats.avgRank ? `${stats.avgRank}위` : '-'}</strong>
+                        <span className={styles.statLabel}>결제 금액 합계</span>
+                        <strong className={styles.statValue}>{stats.totalPaid.toLocaleString()}원</strong>
                     </div>
                 </div>
 
@@ -250,13 +247,9 @@ export default function PlacePage() {
                                         </p>
                                     </div>
                                     <div className={styles.adActions}>
-                                        {typeof ad.currentRank === 'number' && (
-                                            <span className={`${styles.rankBadge} ${ad.currentRank <= 10 ? styles.rankBadgeTop : ''}`}>
-                                                {ad.currentRank}위
-                                            </span>
-                                        )}
                                         <span className={`${styles.statusBadge} ${styles[ad.status]}`}>
                                             {ad.status === 'active' ? '진행중' :
+                                             ad.status === 'pending' ? '대기중' :
                                              ad.status === 'refunded' ? '환불됨' :
                                              ad.status === 'completed' ? '완료' : '만료됨'}
                                         </span>

@@ -4,6 +4,7 @@ import { authOptions } from '@/lib/auth';
 import { requireAdmin } from '@/lib/auth-helpers';
 import prisma from '@/lib/prisma';
 import { exportOrdersSchema } from '@/lib/validations/export';
+import { buildCsv, formatDateKST, formatDateTimeKST, kstDateStamp } from '@/lib/csv';
 
 // 로그인 세션/쿠키를 읽는 API라 빌드 때 정적으로 고정하지 않습니다.
 export const dynamic = 'force-dynamic';
@@ -75,49 +76,27 @@ export async function POST(request) {
             order.pricePerClick,
             order.dailyGoal,
             order.duration,
-            formatDate(order.startDate),
-            formatDate(order.endDate),
+            formatDateKST(order.startDate),
+            formatDateKST(order.endDate),
             order.totalCost,
             getStatusText(order.status),
-            formatDateTime(order.createdAt)
+            formatDateTimeKST(order.createdAt)
         ]);
 
         // CSV 문자열 생성 (BOM 추가로 한글 깨짐 방지)
-        const BOM = '\uFEFF';
-        const csvContent = BOM + [
-            headers.join(','),
-            ...rows.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
-        ].join('\n');
+        const csvContent = buildCsv(headers, rows);
 
         // CSV 파일로 응답
         return new NextResponse(csvContent, {
             headers: {
                 'Content-Type': 'text/csv; charset=utf-8',
-                'Content-Disposition': `attachment; filename="shopping_orders_${new Date().toISOString().split('T')[0]}.csv"`
+                'Content-Disposition': `attachment; filename="shopping_orders_${kstDateStamp()}.csv"`
             }
         });
     } catch (error) {
         console.error('Error exporting shopping orders:', error);
         return NextResponse.json({ error: '엑셀 다운로드 중 오류가 발생했습니다.' }, { status: 500 });
     }
-}
-
-function formatDate(date) {
-    return new Date(date).toLocaleDateString('ko-KR', {
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit'
-    });
-}
-
-function formatDateTime(date) {
-    return new Date(date).toLocaleString('ko-KR', {
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit'
-    });
 }
 
 function getStatusText(status) {

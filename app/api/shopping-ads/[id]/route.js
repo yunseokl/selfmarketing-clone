@@ -4,6 +4,8 @@ import { authOptions } from '@/lib/auth';
 import prisma from '@/lib/prisma';
 import { updateShoppingAdSchema } from '@/lib/validations/shopping';
 import { createNotification } from '@/lib/notify';
+import { refundAdOrder } from '@/lib/ad-orders';
+import { AlreadyProcessedError } from '@/lib/cash-ledger';
 
 // 로그인 세션/쿠키를 읽는 API라 빌드 때 정적으로 고정하지 않습니다.
 export const dynamic = 'force-dynamic';
@@ -129,41 +131,16 @@ export async function DELETE(request, { params }) {
             return NextResponse.json({ error: '삭제 권한이 없습니다.' }, { status: 403 });
         }
 
-        // 이미 환불된 광고인지 확인
-        if (ad.status === 'refunded') {
-            return NextResponse.json({ error: '이미 환불된 광고입니다.' }, { status: 400 });
+        // 상태 변경과 환불을 한 트랜잭션으로 묶어, 같은 광고가 두 번 환불되지 않게 합니다.
+        let refundAmount;
+        try {
+            ({ refundAmount } = await refundAdOrder('shopping', params.id));
+        } catch (error) {
+            if (error instanceof AlreadyProcessedError) {
+                return NextResponse.json({ error: error.message }, { status: 400 });
+            }
+            throw error;
         }
-
-        // Calculate refund (remaining days)
-        const now = new Date();
-        const endDate = new Date(ad.endDate);
-        const remainingDays = Math.max(0, Math.ceil((endDate - now) / (1000 * 60 * 60 * 24)));
-        const refundAmount = Math.floor((ad.totalCost / ad.duration) * remainingDays);
-
-        // Update ad status, refund user, and log the cash transaction atomically
-        await prisma.$transaction(async (tx) => {
-            await tx.shoppingAd.update({
-                where: { id: params.id },
-                data: { status: 'refunded' }
-            });
-
-            const updatedUser = await tx.user.update({
-                where: { id: user.id },
-                data: { balance: { increment: refundAmount } }
-            });
-
-            await tx.cashTransaction.create({
-                data: {
-                    userId: user.id,
-                    type: 'refund',
-                    amount: refundAmount,
-                    balanceAfter: updatedUser.balance,
-                    status: 'completed',
-                    method: 'system',
-                    description: `광고 취소 환불 - ${ad.productName} (${ad.keyword})`,
-                }
-            });
-        });
 
         await createNotification(user.id, {
             type: 'cash',

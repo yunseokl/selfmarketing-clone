@@ -1,0 +1,1452 @@
+/* AI 답변 실측 — 카드 틀·버튼은 page.module.css 를 함께 쓰고, 색은 시트(.sheet)의 토큰만 씁니다.
+ * 상태색(초록·주황·빨강)은 순위·점수 상태에만, 보라(--ai)는 추이 선 하나에만 씁니다. 면은 밝기 단계로 나눕니다. */
+
+.good {
+    --tone: var(--good);
+    --tone-ink: var(--good-ink);
+    --tone-wash: var(--good-wash);
+}
+
+.fair {
+    --tone: var(--warn);
+    --tone-ink: var(--warn-ink);
+    --tone-wash: var(--warn-wash);
+}
+
+.poor {
+    --tone: var(--bad);
+    --tone-ink: var(--bad-ink);
+    --tone-wash: var(--bad-wash);
+}
+
+.unknown {
+    --tone: var(--ink-3);
+    --tone-ink: var(--ink-2);
+    --tone-wash: var(--sunk);
+}
+
+.up,
+.down,
+.flat {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    font-size: 13px;
+    font-weight: 700;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+}
+
+.up {
+    color: var(--good-ink);
+}
+
+.down {
+    color: var(--bad-ink);
+}
+
+.flat {
+    font-weight: 600;
+    color: var(--ink-2);
+}
+
+.empty {
+    padding: 12px 14px;
+    font-size: 14px;
+    line-height: 1.6;
+    color: var(--ink-2);
+    background: var(--raised-2);
+    border-radius: var(--r);
+}
+
+/* ───────── 결과: 큰 숫자 + 추이 ───────── */
+
+.result {
+    display: grid;
+    grid-template-columns: minmax(200px, 260px) minmax(0, 1fr);
+    gap: 8px;
+}
+
+.figure,
+.trend {
+    min-width: 0;
+    padding: 14px 16px;
+    background: var(--raised-2);
+    border-radius: var(--r);
+}
+
+.figure > span {
+    font-size: 13px;
+    color: var(--ink-2);
+}
+
+/* 이 화면에서 가장 큰 숫자 하나. 자릿수 폭은 맞추지 않습니다. */
+.figure strong {
+    display: block;
+    margin-top: 2px;
+    font-size: 52px;
+    font-weight: 800;
+    line-height: 1.08;
+    letter-spacing: -0.04em;
+    color: var(--ink);
+    font-variant-numeric: normal;
+}
+
+.figure strong small {
+    margin-left: 2px;
+    font-size: 22px;
+    font-weight: 700;
+    letter-spacing: 0;
+    color: var(--ink-2);
+}
+
+.figure p {
+    margin-top: 6px;
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--ink-2);
+}
+
+.figure .due {
+    margin-top: 10px;
+    padding: 8px 10px;
+    color: var(--warn-ink);
+    background: var(--warn-wash);
+    border-radius: var(--r);
+}
+
+.trend h3 {
+    margin: 0 0 4px;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--ink-2);
+}
+
+.chart {
+    height: 170px;
+    margin: 0;
+}
+
+.trendEmpty {
+    display: grid;
+    place-items: center;
+    min-height: 120px;
+    font-size: 13px;
+    line-height: 1.6;
+    text-align: center;
+    color: var(--ink-2);
+}
+
+.tip {
+    padding: 8px 10px;
+    font-size: 12px;
+    color: var(--ink-2);
+    background: var(--raised);
+    border-radius: var(--r);
+    box-shadow: 0 0 0 1px var(--rule), var(--lift);
+}
+
+.tip strong {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 2px;
+    font-size: 16px;
+    font-weight: 800;
+    color: var(--ink);
+}
+
+.tip strong i {
+    width: 12px;
+    height: 2px;
+    background: var(--ai);
+    border-radius: 2px;
+}
+
+.tip strong span {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--ink-2);
+}
+
+.tip ul {
+    display: grid;
+    gap: 1px;
+    margin: 6px 0 0;
+    padding: 6px 0 0;
+    list-style: none;
+    border-top: 1px solid var(--hair);
+}
+
+.tip li b {
+    display: inline-block;
+    min-width: 3.4em;
+    color: var(--ink);
+    font-variant-numeric: tabular-nums;
+}
+
+/* AI별 점유율 — 아래 표(질문 × AI)와 같은 순서로 다섯 칸 */
+.meters {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 8px;
+    margin: 8px 0 0;
+    padding: 0;
+    list-style: none;
+}
+
+.meters li {
+    display: grid;
+    align-content: start;
+    gap: 6px;
+    min-width: 0;
+    padding: 12px 14px;
+    background: var(--raised-2);
+    border-radius: var(--r);
+}
+
+.meterName {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--ink-2);
+}
+
+.meterValue {
+    font-size: 22px;
+    font-weight: 800;
+    line-height: 1.2;
+    letter-spacing: -0.02em;
+    color: var(--ink);
+}
+
+.meterValue small {
+    margin-left: 1px;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0;
+    color: var(--ink-2);
+}
+
+.meterNone {
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 26.4px;
+    color: var(--ink-3);
+}
+
+.meterTop {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.meterFoot {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 2px 8px;
+    min-height: 20px;
+    font-size: 13px;
+    color: var(--ink-2);
+}
+
+.bar {
+    display: block;
+    height: 6px;
+    background: var(--sunk);
+    border-radius: 999px;
+    overflow: hidden;
+}
+
+.bar > span {
+    display: block;
+    height: 100%;
+    background: var(--tone, var(--ink-3));
+    border-radius: 999px;
+}
+
+.spark {
+    display: block;
+}
+
+.spark polyline {
+    fill: none;
+    stroke: var(--ink-3);
+    stroke-width: 1.5;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+.spark circle {
+    fill: var(--ai);
+}
+
+/* 지난 기록 */
+.records {
+    margin-top: 10px;
+}
+
+.records summary,
+.alias summary {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 0;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--ink-2);
+    cursor: pointer;
+}
+
+.records summary:hover,
+.alias summary:hover {
+    color: var(--ink);
+}
+
+.tableWrap {
+    margin-top: 6px;
+    overflow-x: auto;
+}
+
+.table {
+    width: 100%;
+    min-width: 560px;
+    border-collapse: collapse;
+    font-size: 13px;
+    font-variant-numeric: tabular-nums;
+}
+
+.table th,
+.table td {
+    padding: 7px 10px;
+    text-align: right;
+    white-space: nowrap;
+    border-bottom: 1px solid var(--hair);
+}
+
+.table thead th {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--ink-3);
+}
+
+.table th:first-child {
+    text-align: left;
+}
+
+.table tbody th {
+    font-weight: 600;
+    color: var(--ink);
+}
+
+.table td {
+    color: var(--ink-2);
+}
+
+.table td b {
+    color: var(--ink);
+}
+
+.recordTools {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 8px;
+    margin-top: 10px;
+}
+
+.recordTools small {
+    font-size: 12px;
+    color: var(--ink-3);
+}
+
+/* ───────── 묻고 기록하기: 왼쪽 = 질문, 오른쪽 = 묻는 법·붙여 넣기·판정 ───────── */
+
+.benchBox {
+    container-type: inline-size;
+}
+
+.bench {
+    display: grid;
+    grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
+    gap: 8px;
+    align-items: start;
+}
+
+.lists,
+.ask {
+    min-width: 0;
+    padding: 14px 16px;
+    border-radius: var(--r);
+}
+
+/* 오른쪽 입력 칸이 길어져도 질문 표가 따라오게 합니다(두 단일 때만 의미가 있음) */
+.lists {
+    position: sticky;
+    top: 60px;
+    background: var(--raised-2);
+}
+
+/* 채워 넣는 종이처럼 흰 면에 가는 테두리 */
+.ask {
+    background: var(--raised);
+    box-shadow: inset 0 0 0 1px var(--rule);
+    scroll-margin-top: 64px;
+}
+
+.ask.ask:focus-visible {
+    outline: none;
+    box-shadow: inset 0 0 0 2px var(--ink);
+}
+
+.lists h3 {
+    margin: 0 0 6px;
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--ink);
+}
+
+.lists h3 small {
+    margin-left: 4px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--ink-3);
+}
+
+.lists .checkTitle {
+    margin-top: 18px;
+}
+
+/* 질문 × AI 표 */
+.matrix {
+    width: 100%;
+    table-layout: fixed;
+    border-collapse: separate;
+    border-spacing: 0 4px;
+}
+
+/* AI 이름은 낱말 중간에서 끊기지 않게 한 줄로 둡니다 */
+.matrix thead th {
+    padding: 0 1px;
+    overflow: hidden;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    text-align: center;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--ink-3);
+}
+
+.matrix thead th:first-child {
+    width: 32%;
+    font-size: 12px;
+    letter-spacing: 0;
+    text-align: left;
+}
+
+.matrix tbody th {
+    padding: 2px 10px 2px 0;
+    font-weight: 400;
+    text-align: left;
+    vertical-align: middle;
+}
+
+.qLabel {
+    display: block;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--ink);
+}
+
+.qText {
+    display: block;
+    margin-top: 1px;
+    font-size: 12px;
+    line-height: 1.4;
+    color: var(--ink-2);
+    overflow-wrap: anywhere;
+}
+
+.matrix td {
+    padding: 0 2px;
+}
+
+.cell {
+    display: grid;
+    place-items: center;
+    align-content: center;
+    gap: 1px;
+    width: 100%;
+    min-height: 46px;
+    padding: 2px;
+    font: inherit;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--tone-ink, var(--ink-3));
+    background: var(--tone-wash, var(--raised));
+    border: 0;
+    border-radius: var(--r);
+    cursor: pointer;
+    transition: background-color 0.15s ease, box-shadow 0.15s ease, transform var(--duration-fast) ease;
+}
+
+.cell:hover {
+    box-shadow: inset 0 0 0 1px var(--ink-3);
+}
+
+.cell[aria-current='true'] {
+    box-shadow: inset 0 0 0 2px var(--ink);
+}
+
+.cell small {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--ink-3);
+}
+
+.cell:focus-visible {
+    outline-offset: -2px;
+}
+
+.linkBtn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin: 4px 0 0;
+    padding: 4px 0;
+    font: inherit;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--ink);
+    text-align: left;
+    text-decoration: underline;
+    text-decoration-color: var(--rule);
+    text-decoration-thickness: 2px;
+    text-underline-offset: 4px;
+    background: none;
+    border: 0;
+    cursor: pointer;
+}
+
+.linkBtn:hover {
+    text-decoration-color: var(--ink);
+}
+
+/* 확인용 질문 */
+.checks {
+    display: grid;
+    gap: 4px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.check {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    min-height: 40px;
+    padding: 6px 10px;
+    font: inherit;
+    font-size: 13px;
+    text-align: left;
+    color: var(--ink);
+    background: var(--raised);
+    border: 0;
+    border-radius: var(--r);
+    cursor: pointer;
+    transition: box-shadow 0.15s ease, transform var(--duration-fast) ease;
+}
+
+.check:hover {
+    box-shadow: inset 0 0 0 1px var(--ink-3);
+}
+
+.check[aria-current='true'] {
+    box-shadow: inset 0 0 0 2px var(--ink);
+}
+
+.check svg {
+    color: var(--ink-3);
+}
+
+.checkLabel {
+    font-weight: 600;
+    overflow-wrap: anywhere;
+}
+
+.kind {
+    flex-shrink: 0;
+    padding: 1px 7px;
+    font-size: 12px;
+    font-weight: 700;
+    white-space: nowrap;
+    color: var(--ink-2);
+    background: var(--sunk);
+    border-radius: var(--r);
+}
+
+/* 오른쪽: 묻는 법 → 붙여 넣기 → 판정 */
+.askHead {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 8px;
+}
+
+.askHead strong {
+    font-size: 16px;
+    color: var(--ink);
+}
+
+.aiPick {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin: 10px 0 14px;
+}
+
+.ai,
+.aiOn {
+    min-height: 34px;
+    padding: 0 12px;
+    font: inherit;
+    font-size: 13px;
+    font-weight: 700;
+    border: 0;
+    border-radius: var(--r);
+    cursor: pointer;
+    transition: background-color 0.15s ease, color 0.15s ease, transform 0.15s var(--ease), box-shadow var(--duration-normal) ease;
+}
+
+.ai {
+    color: var(--ink-2);
+    background: var(--sunk);
+}
+
+.ai:hover {
+    color: var(--ink);
+}
+
+.aiOn {
+    color: var(--raised);
+    background: var(--ink);
+}
+
+/* 번호는 실제 순서(묻기 → 붙여 넣기 → 판정)입니다 */
+.flow {
+    display: grid;
+    gap: 16px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    counter-reset: step;
+}
+
+.flow > li {
+    position: relative;
+    min-width: 0;
+    padding-left: 30px;
+    counter-increment: step;
+}
+
+.flow > li::before {
+    content: counter(step);
+    position: absolute;
+    top: 0;
+    left: 0;
+    display: grid;
+    place-items: center;
+    width: 20px;
+    height: 20px;
+    font-size: 12px;
+    font-weight: 800;
+    color: var(--raised);
+    background: var(--ink);
+    border-radius: 50%;
+}
+
+.flow h4 {
+    margin: 0 0 6px;
+    font-size: 14px;
+    font-weight: 700;
+    line-height: 20px;
+    color: var(--ink);
+}
+
+.askText {
+    padding: 10px 12px;
+    font-size: 15px;
+    line-height: 1.55;
+    color: var(--ink);
+    background: var(--raised-2);
+    border-radius: var(--r);
+    overflow-wrap: anywhere;
+}
+
+.btnRow {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 8px;
+}
+
+.openBtn {
+    text-decoration: none;
+}
+
+.tips {
+    display: grid;
+    gap: 2px;
+    margin: 8px 0 0;
+    padding: 0 0 0 16px;
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--ink-2);
+}
+
+.skip {
+    padding: 10px 12px;
+    font-size: 13px;
+    line-height: 1.55;
+    color: var(--ink-2);
+    background: var(--raised-2);
+    border-radius: var(--r);
+}
+
+.textarea,
+.input {
+    box-sizing: border-box;
+    width: 100%;
+    font: inherit;
+    font-size: 14px;
+    line-height: 1.5;
+    color: var(--ink);
+    background: var(--raised);
+    border: 1px solid var(--field);
+    border-radius: var(--r);
+}
+
+.textarea {
+    display: block;
+    min-height: 108px;
+    padding: 9px 11px;
+    resize: vertical;
+}
+
+.input {
+    height: 36px;
+    padding: 0 10px;
+}
+
+.textarea::placeholder,
+.input::placeholder {
+    color: var(--ink-3);
+}
+
+.textarea:focus,
+.input:focus {
+    border-color: var(--ink);
+}
+
+.hint,
+.look {
+    margin-top: 6px;
+    font-size: 13px;
+    line-height: 1.55;
+    color: var(--ink-2);
+}
+
+.look {
+    margin-top: 0;
+    color: var(--ink);
+}
+
+.ranks {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+}
+
+.rank,
+.rankOn {
+    min-height: 34px;
+    padding: 0 10px;
+    font: inherit;
+    font-size: 13px;
+    font-weight: 700;
+    border: 0;
+    border-radius: var(--r);
+    cursor: pointer;
+    transition: background-color 0.15s ease, color 0.15s ease, transform 0.15s var(--ease), box-shadow var(--duration-normal) ease;
+}
+
+.rank {
+    color: var(--ink-2);
+    background: var(--sunk);
+}
+
+.rank:hover {
+    color: var(--ink);
+}
+
+.rankOn {
+    color: var(--tone-ink, var(--ink));
+    background: var(--tone-wash, var(--sunk));
+    box-shadow: inset 0 0 0 2px var(--tone, var(--ink));
+}
+
+.verdict {
+    margin-top: 8px;
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--ink-2);
+}
+
+.verdict b {
+    color: var(--ink);
+}
+
+.verdict .linkBtn {
+    margin: 0 0 0 8px;
+    padding: 0;
+}
+
+.block {
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid var(--hair);
+}
+
+.block h5 {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 0 0 6px;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--ink-2);
+}
+
+.listed {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.listed li {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 9px 3px 4px;
+    font-size: 13px;
+    color: var(--ink);
+    background: var(--raised-2);
+    border-radius: var(--r);
+    overflow-wrap: anywhere;
+}
+
+.listed li span {
+    display: grid;
+    place-items: center;
+    min-width: 18px;
+    height: 18px;
+    font-size: 11px;
+    font-weight: 800;
+    color: var(--ink-2);
+    background: var(--sunk);
+    border-radius: 3px;
+}
+
+.listed .mine {
+    font-weight: 700;
+    color: var(--good-ink);
+    background: var(--good-wash);
+}
+
+.listed em,
+.sources em {
+    font-size: 11px;
+    font-style: normal;
+    font-weight: 700;
+}
+
+.quote {
+    margin: 0;
+    padding: 8px 12px;
+    font-size: 14px;
+    line-height: 1.6;
+    color: var(--ink);
+    background: var(--raised-2);
+    border-left: 3px solid var(--rule);
+    border-radius: 0 var(--r) var(--r) 0;
+    overflow-wrap: anywhere;
+}
+
+.facts {
+    display: grid;
+    gap: 4px;
+    margin: 0;
+}
+
+.facts > div {
+    display: grid;
+    grid-template-columns: 5.5em minmax(0, 1fr);
+    gap: 8px;
+    font-size: 13px;
+    line-height: 1.5;
+}
+
+.facts dt {
+    font-weight: 700;
+    color: var(--ink-3);
+}
+
+.facts dd {
+    margin: 0;
+    color: var(--ink);
+    overflow-wrap: anywhere;
+}
+
+.sources {
+    display: grid;
+    gap: 8px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.sources p {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 8px;
+    font-size: 13px;
+}
+
+.sources a {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-weight: 600;
+    color: var(--ink);
+    text-decoration: underline;
+    text-decoration-color: var(--rule);
+    text-underline-offset: 3px;
+    overflow-wrap: anywhere;
+}
+
+.sources a:hover {
+    text-decoration-color: var(--ink);
+}
+
+.sources em {
+    padding: 0 5px;
+    color: var(--good-ink);
+    background: var(--good-wash);
+    border-radius: 3px;
+}
+
+.srcType {
+    padding: 1px 7px;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--ink-2);
+    background: var(--sunk);
+    border-radius: var(--r);
+}
+
+.sources .srcAction {
+    margin-top: 2px;
+    line-height: 1.5;
+    color: var(--ink-2);
+}
+
+.advice {
+    margin-top: 12px;
+    padding: 9px 12px;
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--tone-ink);
+    background: var(--tone-wash);
+    border-radius: var(--r);
+}
+
+.advice .linkBtn {
+    margin: 0 0 0 8px;
+    padding: 0;
+    color: inherit;
+    text-decoration-color: currentColor;
+}
+
+.askFoot {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 8px 12px;
+    margin-top: 16px;
+    padding-top: 12px;
+    border-top: 1px solid var(--hair);
+}
+
+.alias {
+    flex: 1 1 200px;
+    min-width: 0;
+}
+
+.alias label {
+    display: block;
+    margin: 6px 0 4px;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--ink-3);
+}
+
+/* 기록 */
+.saveBar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px 16px;
+    margin-top: 8px;
+    padding: 10px 12px 10px 16px;
+    background: var(--raised-2);
+    border-radius: var(--r);
+}
+
+.saveBar p {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 8px;
+    font-size: 14px;
+    color: var(--ink-2);
+}
+
+.saveBar p b {
+    font-size: 17px;
+    color: var(--ink);
+    font-variant-numeric: tabular-nums;
+}
+
+.saveBtns {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+}
+
+.saveBar small {
+    flex-basis: 100%;
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--ink-3);
+}
+
+/* ───────── 좁은 폭 ───────── */
+
+@container (max-width: 880px) {
+    .bench {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .lists {
+        position: static;
+    }
+}
+
+/* 표를 질문마다 한 덩어리(AI 다섯 칸)로 바꿉니다 */
+@container (max-width: 520px) {
+    .matrix,
+    .matrix tbody,
+    .matrix tbody th,
+    .matrix td {
+        display: block;
+    }
+
+    .matrix thead {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+    }
+
+    .matrix tr {
+        display: grid;
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        gap: 4px;
+        margin-bottom: 12px;
+    }
+
+    .matrix tbody th {
+        grid-column: 1 / -1;
+        padding: 0 0 2px;
+    }
+
+    .matrix td {
+        padding: 0;
+    }
+
+    /* 다섯 칸이 좁아 AI 이름이 낱말 중간에서 끊기지 않도록 작게 한 줄로 둡니다 */
+    .matrix td::before {
+        content: attr(data-label);
+        display: block;
+        margin-bottom: 2px;
+        overflow: hidden;
+        font-size: 10px;
+        font-weight: 700;
+        line-height: 1.3;
+        letter-spacing: -0.02em;
+        text-align: center;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        color: var(--ink-3);
+    }
+}
+
+@media (max-width: 900px) {
+    .result {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .figure strong {
+        font-size: 44px;
+    }
+
+    .meters {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 640px) {
+    .meters {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 6px;
+    }
+
+    .meters li {
+        padding: 10px 12px;
+    }
+    .lists,
+    .ask {
+        padding: 12px;
+    }
+
+    .saveBar {
+        padding: 10px 12px;
+    }
+
+    .saveBtns,
+    .saveBtns button {
+        width: 100%;
+    }
+}
+
+/* ───────── 마이크로 인터랙션 ─────────
+ * 시간·곡선은 시트(.sheet)의 --duration-*, --ease-* 를 씁니다. 올림(:hover)은 마우스로 가리킬 수 있는 화면에서만 쓰고,
+ * 누름(:active)은 그 뒤에 두어 누르는 동안 눌린 모양이 이기게 합니다. */
+
+/* 결과: 큰 숫자와 AI별 칸이 차례로 떠오르고, 막대는 0에서 차오릅니다 */
+.figure strong {
+    animation: riseIn 0.6s var(--ease-out-expo) backwards;
+}
+
+.meters li {
+    animation: riseIn var(--duration-slow) var(--ease-out-expo) backwards;
+    transition: transform var(--duration-normal) var(--ease), box-shadow 0.25s var(--ease);
+}
+
+.meters li:nth-child(2) { animation-delay: 40ms; }
+.meters li:nth-child(3) { animation-delay: 80ms; }
+.meters li:nth-child(4) { animation-delay: 120ms; }
+.meters li:nth-child(n + 5) { animation-delay: 160ms; }
+
+@keyframes riseIn {
+    from {
+        opacity: 0;
+        transform: translateY(8px);
+    }
+}
+
+.bar > span {
+    transform-origin: left center;
+    animation: barGrow 0.9s var(--ease-out-expo) backwards;
+    transition: width var(--duration-slow) var(--ease-out-expo);
+}
+
+@keyframes barGrow {
+    from { transform: scaleX(0); }
+}
+
+.spark circle {
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: dotPop 0.5s var(--ease-spring) 0.35s backwards;
+}
+
+@keyframes dotPop {
+    from { transform: scale(0); }
+}
+
+.tip {
+    animation: riseIn var(--duration-normal) var(--ease-out-expo);
+}
+
+/* 고른 칸·AI·순위는 톡 튀고, 물을 질문은 바뀔 때마다 떠오르며 나타납니다 */
+.aiOn,
+.rankOn,
+.cell[aria-current='true'] {
+    animation: pick var(--duration-slow) var(--ease-spring);
+}
+
+.askText {
+    animation: riseIn var(--duration-slow) var(--ease-out-expo);
+}
+
+@keyframes pick {
+    from { transform: scale(0.92); }
+}
+
+/* 붙여 넣은 답변을 읽은 결과(다시 잴 때 안내·판정·추천 순서·출처)는 위에서 내려오며 나타납니다 */
+.figure .due,
+.block,
+.advice {
+    animation: dropIn var(--duration-slow) var(--ease-out-expo);
+}
+
+@keyframes dropIn {
+    from {
+        opacity: 0;
+        transform: translateY(-8px);
+    }
+}
+
+.listed li {
+    animation: chipIn var(--duration-slow) var(--ease-spring) backwards;
+}
+
+.listed li:nth-child(2) { animation-delay: 40ms; }
+.listed li:nth-child(3) { animation-delay: 80ms; }
+.listed li:nth-child(4) { animation-delay: 120ms; }
+.listed li:nth-child(n + 5) { animation-delay: 160ms; }
+
+@keyframes chipIn {
+    from {
+        opacity: 0;
+        transform: scale(0.85);
+    }
+}
+
+/* 입력 칸: 테두리와 바깥 고리가 부드럽게 켜집니다 */
+.textarea,
+.input {
+    transition: border-color 0.15s ease, box-shadow var(--duration-normal) ease;
+}
+
+.textarea:focus,
+.input:focus {
+    box-shadow: 0 0 0 3px var(--good-wash);
+}
+
+.ask {
+    transition: box-shadow var(--duration-normal) ease;
+}
+
+.table tbody th,
+.table tbody td {
+    transition: background-color 0.15s ease;
+}
+
+.linkBtn,
+.sources a {
+    transition: text-decoration-color var(--duration-normal) ease, opacity var(--duration-fast) ease;
+}
+
+.linkBtn svg,
+.check svg {
+    transition: transform var(--duration-normal) var(--ease);
+}
+
+.records summary,
+.alias summary {
+    transition: color var(--duration-normal) ease;
+}
+
+/* 접기·펼치기: 화살표가 돌고, 펼친 내용이 떠오르며 나타납니다 */
+.records summary::after,
+.alias summary::after {
+    content: '';
+    width: 6px;
+    height: 6px;
+    margin-left: 2px;
+    border-right: 2px solid currentColor;
+    border-bottom: 2px solid currentColor;
+    transform: translateY(-2px) rotate(45deg);
+    transition: transform var(--duration-normal) var(--ease-out-expo);
+}
+
+.records[open] summary::after,
+.alias[open] summary::after {
+    transform: translateY(1px) rotate(225deg);
+}
+
+.records[open] > :not(summary),
+.alias[open] > :not(summary) {
+    animation: riseIn var(--duration-normal) var(--ease-out-expo);
+}
+
+/* 높이까지 부드럽게 여닫는 것은 지원하는 브라우저에서만(그 밖에는 위 떠오름만 보입니다) */
+@supports selector(::details-content) and (interpolate-size: allow-keywords) {
+    .records,
+    .alias {
+        interpolate-size: allow-keywords;
+    }
+
+    .records::details-content,
+    .alias::details-content {
+        block-size: 0;
+        overflow: clip;
+        transition: block-size var(--duration-slow) var(--ease-out-expo), content-visibility var(--duration-slow) allow-discrete;
+    }
+
+    .records[open]::details-content,
+    .alias[open]::details-content {
+        block-size: auto;
+    }
+}
+
+@media (hover: hover) {
+    .meters li:hover {
+        transform: translateY(-2px);
+        box-shadow: var(--lift);
+    }
+
+    .ai:hover,
+    .rank:hover {
+        transform: translateY(-1px);
+        box-shadow: var(--lift-sm);
+    }
+
+    .check:hover svg,
+    .linkBtn:hover svg {
+        transform: translateX(3px);
+    }
+
+    .table tbody tr:hover th,
+    .table tbody tr:hover td {
+        background: var(--raised-2);
+    }
+
+    .textarea:hover:not(:focus),
+    .input:hover:not(:focus) {
+        border-color: var(--field-hover);
+    }
+}
+
+.cell:active {
+    transform: scale(0.94);
+}
+
+.check:active {
+    transform: scale(0.985);
+}
+
+.ai:active,
+.aiOn:active,
+.rank:active,
+.rankOn:active {
+    transform: translateY(1px) scale(0.97);
+    transition-duration: var(--duration-fast);
+}
+
+.ai:active,
+.aiOn:active,
+.rank:active {
+    box-shadow: var(--press);
+}
+
+.linkBtn:active {
+    opacity: 0.6;
+}
+
+/* 손가락으로 쓰는 화면: 누르는 영역을 44px 이상으로 넓힙니다 */
+@media (pointer: coarse), (max-width: 768px) {
+    .check,
+    .ai,
+    .aiOn,
+    .rank,
+    .rankOn,
+    .records summary,
+    .alias summary {
+        min-height: 44px;
+    }
+
+    .rank,
+    .rankOn {
+        min-width: 44px;
+    }
+
+    .input {
+        height: 44px;
+    }
+
+    .linkBtn {
+        position: relative;
+    }
+
+    .linkBtn::after {
+        content: '';
+        position: absolute;
+        inset: -8px 0;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .cell,
+    .check,
+    .ai,
+    .aiOn,
+    .rank,
+    .rankOn,
+    .meters li,
+    .bar > span,
+    .textarea,
+    .input,
+    .ask,
+    .linkBtn svg,
+    .check svg,
+    .records summary::after,
+    .alias summary::after,
+    .records::details-content,
+    .alias::details-content {
+        transition: none;
+    }
+
+    .figure strong,
+    .meters li,
+    .bar > span,
+    .spark circle,
+    .tip,
+    .aiOn,
+    .rankOn,
+    .cell[aria-current='true'],
+    .askText,
+    .figure .due,
+    .block,
+    .advice,
+    .listed li,
+    .records[open] > :not(summary),
+    .alias[open] > :not(summary) {
+        animation: none;
+    }
+}

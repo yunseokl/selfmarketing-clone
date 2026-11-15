@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import prisma from '@/lib/prisma';
+import { getDepositAccount } from '@/lib/site-config';
 import { createNotification } from '@/lib/notify';
 import { createCashChargeSchema } from '@/lib/validations/cash';
 
@@ -39,7 +40,8 @@ export async function GET(request) {
             take: 100,
         });
 
-        return NextResponse.json({ transactions });
+        const { bank, account, holder } = getDepositAccount();
+        return NextResponse.json({ transactions, depositAccount: { bank, account, holder } });
     } catch (error) {
         console.error('Error fetching cash transactions:', error);
         return NextResponse.json({ error: '이용 내역 조회 중 오류가 발생했습니다.' }, { status: 500 });

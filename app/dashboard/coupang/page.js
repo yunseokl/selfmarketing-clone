@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import styles from './page.module.css';
 import {
@@ -142,6 +143,18 @@ export default function CoupangPage() {
                 </div>
 
                 {/* Inquiry Form */}
+                {/* 쿠팡 셀러용 무료 계산 도구 바로가기 */}
+                <div className={styles.toolRow}>
+                    <Link href="/dashboard/margin?tab=coupang-mp" className={styles.toolCard}>
+                        <strong>쿠팡 판매자배송 마진 계산</strong>
+                        <span>카테고리 수수료·배송비 수수료·서비스이용료까지 넣고 1건당 남는 돈과 손익분기 ROAS를 계산합니다.</span>
+                    </Link>
+                    <Link href="/dashboard/margin?tab=coupang-rocket" className={styles.toolCard}>
+                        <strong>로켓그로스 마진 계산</strong>
+                        <span>크기별 입출고·배송비와 보관비를 반영해 로켓그로스로 팔 때의 순이익을 확인합니다.</span>
+                    </Link>
+                </div>
+
                 <form className={styles.formCard} onSubmit={handleSubmit}>
                     <h2 className={styles.formTitle}>견적 문의하기</h2>
                     <div className={styles.formGrid}>
