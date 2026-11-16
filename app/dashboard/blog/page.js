@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import DashboardLayout from '@/components/layout/DashboardLayout';
+import LoadError from '@/components/ui/LoadError';
 import styles from './page.module.css';
 import { Check, ExternalLink, FileText, Sparkles } from 'lucide-react';
 import { toast } from 'sonner';
@@ -44,6 +45,7 @@ export default function BlogPage() {
     const [balance, setBalance] = useState(null);
     const [campaigns, setCampaigns] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [loadError, setLoadError] = useState(false);
     const [submitting, setSubmitting] = useState(false);
 
     const fetchData = useCallback(async () => {
@@ -60,9 +62,13 @@ export default function BlogPage() {
             if (campaignsRes.ok) {
                 const campaignsData = await campaignsRes.json();
                 setCampaigns(campaignsData.campaigns || []);
+                setLoadError(false);
+            } else {
+                setLoadError(true);
             }
         } catch (error) {
             console.error('Error fetching blog data:', error);
+            setLoadError(true);
         } finally {
             setLoading(false);
         }
@@ -241,6 +247,8 @@ export default function BlogPage() {
                     <h2 className={styles.listTitle}>내 캠페인</h2>
                     {loading ? (
                         <div className={styles.emptyState}><p>로딩 중...</p></div>
+                    ) : loadError ? (
+                        <LoadError message="캠페인 목록을 불러오지 못했습니다." onRetry={fetchData} />
                     ) : campaigns.length === 0 ? (
                         <div className={styles.emptyState}>
                             <FileText size={48} className={styles.emptyIcon} />

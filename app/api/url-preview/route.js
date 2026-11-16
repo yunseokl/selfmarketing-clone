@@ -9,6 +9,7 @@ import {
     hasPrivateAddress,
     normalizeHostname,
 } from '@/lib/url-safety';
+import { cleanPreviewTitle, placeIdFromUrl } from '@/lib/ad-url';
 import net from 'net';
 
 // 세션 쿠키를 읽고 외부 URL을 조회하므로 정적 고정하지 않습니다.
@@ -61,7 +62,7 @@ function extractTitleTag(html) {
 }
 
 // 리다이렉트를 직접 따라가며 매 단계마다 스킴과 호스트를 다시 검사합니다.
-// 반환: { blocked: true } | { response } | { response: null } (조회 실패)
+// 반환: { blocked: true } | { response, url } | { response: null } (조회 실패). url 은 마지막으로 도착한 주소입니다.
 async function fetchWithSafeRedirects(startUrl, signal) {
     let current = startUrl;
     for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
@@ -93,10 +94,19 @@ async function fetchWithSafeRedirects(startUrl, signal) {
             continue;
         }
 
-        return { response: res };
+        return { response: res, url: current };
     }
     // 리다이렉트 횟수 초과 — 조회 실패로 취급
     return { response: null };
+}
+
+async function readPreview(res) {
+    if (!res || !res.ok) return { title: null, image: null };
+    const html = (await res.text()).slice(0, MAX_BODY_CHARS);
+    const title = cleanPreviewTitle(extractMeta(html, 'og:title') || extractTitleTag(html));
+    // 가게·상품 이름을 못 읽은 화면의 대표 이미지는 공통 이미지라 쓰지 않습니다.
+    const image = title ? extractMeta(html, 'og:image') : null;
+    return { title, image: image || null };
 }
 
 // POST { url } → { title, image }
@@ -135,16 +145,19 @@ export async function POST(request) {
             return NextResponse.json({ error: '허용되지 않는 주소입니다.' }, { status: 400 });
         }
 
-        const res = result.response;
-        if (!res || !res.ok) {
-            return NextResponse.json({ title: null, image: null });
+        let preview = await readPreview(result.response);
+
+        // 네이버 지도 주소(naver.me 단축 주소 포함)는 화면에 가게 이름이 없어, 매장 번호로 플레이스 화면을 한 번 더 읽습니다.
+        if (!preview.title) {
+            const placeId = placeIdFromUrl(String(result.url || target));
+            const placeUrl = placeId ? new URL(`https://m.place.naver.com/place/${placeId}/home`) : null;
+            if (placeUrl && placeUrl.href !== String(result.url || '')) {
+                const placeResult = await fetchWithSafeRedirects(placeUrl, controller.signal);
+                if (!placeResult.blocked) preview = await readPreview(placeResult.response);
+            }
         }
 
-        const html = (await res.text()).slice(0, MAX_BODY_CHARS);
-        const title = extractMeta(html, 'og:title') || extractTitleTag(html);
-        const image = extractMeta(html, 'og:image');
-
-        return NextResponse.json({ title: title || null, image: image || null });
+        return NextResponse.json(preview);
     } catch {
         return NextResponse.json({ title: null, image: null });
     } finally {

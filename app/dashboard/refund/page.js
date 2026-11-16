@@ -4,6 +4,7 @@ import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import DashboardLayout from '@/components/layout/DashboardLayout';
+import LoadError from '@/components/ui/LoadError';
 import styles from './page.module.css';
 import {
     BadgePercent, Check, Globe, Image as ImageIcon, Link2,
@@ -52,6 +53,7 @@ export default function RefundPage() {
     const [memo, setMemo] = useState('');
     const [requests, setRequests] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [loadError, setLoadError] = useState(false);
     const [submitting, setSubmitting] = useState(false);
 
     const fetchRequests = useCallback(async () => {
@@ -61,9 +63,13 @@ export default function RefundPage() {
             if (res.ok) {
                 const data = await res.json();
                 setRequests(data.requests || []);
+                setLoadError(false);
+            } else {
+                setLoadError(true);
             }
         } catch (error) {
             console.error('Error fetching refund requests:', error);
+            setLoadError(true);
         } finally {
             setLoading(false);
         }
@@ -247,6 +253,8 @@ export default function RefundPage() {
                     <h2 className={styles.listTitle}>내 신청 내역</h2>
                     {loading ? (
                         <div className={styles.emptyState}><p>로딩 중...</p></div>
+                    ) : loadError ? (
+                        <LoadError message="신청 내역을 불러오지 못했습니다." onRetry={fetchRequests} />
                     ) : requests.length === 0 ? (
                         <div className={styles.emptyState}>
                             <BadgePercent size={48} className={styles.emptyIcon} />

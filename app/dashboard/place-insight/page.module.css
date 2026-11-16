@@ -1460,6 +1460,38 @@
     color: var(--ink-2);
 }
 
+/* 할 일에서 관련 구역으로 가는 글자 버튼 */
+.actionLink {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    margin-top: 4px;
+    padding: 0;
+    font: inherit;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--ink);
+    background: none;
+    border: 0;
+    text-decoration: underline;
+    text-decoration-color: var(--good);
+    text-decoration-thickness: 2px;
+    text-underline-offset: 4px;
+    cursor: pointer;
+}
+
+.actionLink:hover {
+    color: var(--good-ink);
+}
+
+.actionLink svg {
+    transition: transform 0.2s var(--ease);
+}
+
+.actionLink:hover svg {
+    transform: translateX(2px);
+}
+
 .fillPanel {
     display: grid;
     gap: 9px;
@@ -1561,7 +1593,10 @@
 
 .slotRow li {
     display: flex;
-    align-items: center;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: center;
+    gap: 1px;
     min-height: 38px;
     padding: 6px 12px;
     font-size: 14px;
@@ -1596,6 +1631,219 @@
 [data-in='false'] .slotRow li {
     animation: none;
     opacity: 0;
+}
+
+.slotState {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--ink-2);
+}
+
+.slotState[data-tone='good'] { color: var(--good-ink); }
+.slotState[data-tone='warn'] { color: var(--warn-ink); }
+
+/* 추천 키워드: 지역 + 업종 조합과 근거 */
+.reco {
+    margin-top: 6px;
+    padding: 12px 14px;
+    background: var(--raised);
+    border-radius: var(--r);
+    scroll-margin-top: 64px;
+}
+
+.recoHead {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: baseline;
+    gap: 6px 14px;
+}
+
+.recoHead h3 {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 14px;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.recoHead h3 svg {
+    align-self: center;
+    color: var(--good-ink);
+}
+
+.recoHead p {
+    font-size: 13px;
+    color: var(--ink-2);
+}
+
+.recoRegions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 6px;
+    margin-top: 8px;
+    font-size: 13px;
+    color: var(--ink-2);
+}
+
+.recoRegions svg {
+    color: var(--ink-3);
+}
+
+.recoRegions .word small {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--ink-3);
+}
+
+.recoNotice {
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+    margin-top: 8px;
+    padding: 8px 10px;
+    font-size: 13px;
+    color: var(--warn-ink);
+    background: var(--warn-wash);
+    border-radius: var(--r);
+}
+
+.recoNotice svg {
+    flex-shrink: 0;
+    margin-top: 3px;
+}
+
+.recoList {
+    display: grid;
+    gap: 3px;
+    margin-top: 10px;
+    list-style: none;
+}
+
+.recoList li {
+    display: grid;
+    grid-template-columns: minmax(150px, 0.32fr) minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 6px 14px;
+    min-height: 44px;
+    padding: 6px 8px 6px 12px;
+    background: var(--raised-2);
+    border-radius: var(--r);
+    animation: rise 0.5s var(--ease) backwards;
+    animation-delay: calc(var(--d, 0) * 50ms);
+    transition: box-shadow 0.2s ease;
+}
+
+.recoList li:hover {
+    box-shadow: inset 0 0 0 1px var(--good);
+}
+
+.recoWord {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 0;
+    font-size: 14px;
+}
+
+.recoWord strong {
+    font-weight: 700;
+    overflow-wrap: anywhere;
+}
+
+.recoReasons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+}
+
+.reason {
+    padding: 1px 8px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--ink-2);
+    background: var(--sunk);
+    border-radius: var(--r);
+}
+
+.reason[data-kind='rival'],
+.reason[data-kind='blog'] {
+    color: var(--good-ink);
+    background: var(--good-wash);
+}
+
+.recoAct {
+    display: inline-flex;
+    justify-content: flex-end;
+    min-width: 76px;
+}
+
+.recoAct .rankPending,
+.recoAct .rankError {
+    grid-column: auto;
+}
+
+/* 이미 조회한 추천 키워드의 순위. 누르면 순위 표의 그 줄로 갑니다 */
+.recoRank {
+    min-height: 32px;
+    padding: 0 10px;
+    font: inherit;
+    font-size: 14px;
+    font-weight: 700;
+    white-space: nowrap;
+    color: var(--ink);
+    background: none;
+    border: 0;
+    border-radius: var(--r);
+    box-shadow: inset 0 0 0 1px var(--rule);
+    cursor: pointer;
+    transition: box-shadow 0.2s ease, background-color 0.15s ease;
+}
+
+.recoRank:hover {
+    background: var(--raised);
+    box-shadow: inset 0 0 0 1px var(--ink-3);
+}
+
+.recoRank[data-tone='good'] { color: var(--good-ink); }
+.recoRank[data-tone='warn'] { color: var(--warn-ink); }
+.recoRank[data-tone='bad'] { color: var(--bad-ink); }
+
+/* 등록 키워드 → 바꿔 볼 조합 */
+.recoSwaps {
+    display: grid;
+    gap: 4px;
+    margin-top: 10px;
+    padding-top: 10px;
+    font-size: 13px;
+    color: var(--ink-2);
+    list-style: none;
+    border-top: 1px solid var(--hair);
+}
+
+.recoSwaps li {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 6px;
+}
+
+.recoSwaps svg {
+    flex-shrink: 0;
+    color: var(--ink-3);
+}
+
+.recoSwaps b {
+    font-weight: 700;
+    color: var(--ink);
+}
+
+.recoFoot {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 10px;
 }
 
 .rankForm {
@@ -1732,6 +1980,40 @@
     padding-bottom: 10px;
     font-size: 13px;
     color: var(--good-ink);
+}
+
+/* 이 순위가 내 지역의 검색 결과인지 알려 주는 한 줄 */
+.rankScope {
+    display: flex;
+    align-items: flex-start;
+    gap: 5px;
+    margin: -2px 16px 0;
+    padding-bottom: 10px;
+    font-size: 13px;
+    color: var(--ink-2);
+}
+
+.rankScope svg {
+    flex-shrink: 0;
+    margin-top: 3px;
+    color: var(--ink-3);
+}
+
+.rankScope strong {
+    font-weight: 700;
+    color: var(--ink);
+}
+
+.rankScope[data-tone='warn'],
+.rankScope[data-tone='warn'] strong,
+.rankScope[data-tone='warn'] svg {
+    color: var(--warn-ink);
+}
+
+.rankScope[data-tone='bad'],
+.rankScope[data-tone='bad'] strong,
+.rankScope[data-tone='bad'] svg {
+    color: var(--bad-ink);
 }
 
 /* 순위 눈금(1위~살펴본 범위, 로그 눈금) */
@@ -2712,6 +2994,83 @@
     font-weight: 600;
 }
 
+/* 메뉴·가격표 */
+.menuBoard {
+    margin-top: 10px;
+    padding: 12px 14px;
+    background: var(--raised);
+    border-radius: var(--r);
+}
+
+.menuHead {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: baseline;
+    gap: 6px 14px;
+}
+
+.menuHead h3 {
+    font-size: 14px;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.menuHead p {
+    font-size: 13px;
+    color: var(--ink-2);
+}
+
+.menuList {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 3px 10px;
+    margin-top: 10px;
+    list-style: none;
+}
+
+.menuList li {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 10px;
+    min-height: 34px;
+    padding: 5px 12px;
+    font-size: 13px;
+    background: var(--raised-2);
+    border-radius: var(--r);
+}
+
+.menuList[data-photo='true'] li {
+    grid-template-columns: minmax(0, 1fr) auto 64px;
+}
+
+.menuName {
+    font-weight: 600;
+    overflow-wrap: anywhere;
+}
+
+.menuPrice {
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.menuPhoto {
+    font-size: 12px;
+    text-align: right;
+    white-space: nowrap;
+    color: var(--ink-3);
+}
+
+.menuPrice[data-missing='true'],
+.menuPhoto[data-missing='true'] {
+    font-weight: 700;
+    color: var(--warn-ink);
+}
+
+.menuBoard .toggleBtn {
+    margin-top: 8px;
+}
+
 /* ───────── 출처 ───────── */
 
 .source {
@@ -3068,6 +3427,24 @@
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 
+    .recoHead,
+    .menuHead {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .recoList li {
+        grid-template-columns: minmax(0, 1fr) auto;
+    }
+
+    .recoReasons {
+        grid-column: 1 / -1;
+        grid-row: 2;
+    }
+
+    .menuList {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
     .rankForm {
         grid-template-columns: minmax(0, 1fr);
     }
@@ -3129,7 +3506,8 @@
         padding: 0 14px;
     }
 
-    .savedChip button {
+    .savedChip button,
+    .recoRank {
         min-height: 44px;
     }
 
@@ -3156,7 +3534,8 @@
     .index a,
     .graphBtn,
     .textLink,
-    .inlineLink {
+    .inlineLink,
+    .actionLink {
         position: relative;
     }
 
@@ -3174,7 +3553,8 @@
     }
 
     .textLink::after,
-    .inlineLink::after {
+    .inlineLink::after,
+    .actionLink::after {
         content: '';
         position: absolute;
         inset: -12px 0;

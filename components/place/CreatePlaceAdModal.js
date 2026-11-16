@@ -4,7 +4,10 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { X, Check, Wallet } from 'lucide-react';
 import { toast } from 'sonner';
+import { PLACE_AD_HOSTS, isAllowedAdUrl, normalizeAdUrl } from '@/lib/ad-url';
 import styles from './CreatePlaceAdModal.module.css';
+
+const URL_HELP = '네이버 플레이스·지도 주소를 입력해주세요. 네이버 지도 앱의 공유 주소(naver.me)도 됩니다.';
 
 const serviceTypes = [
     { id: 'selma30', name: '베이직 플레이스 유입 30원', price: 30 },
@@ -53,15 +56,20 @@ export default function CreatePlaceAdModal({ isOpen, onClose, onSuccess }) {
         };
     }, [isOpen]);
 
-    const handleUrlCheck = async () => {
-        const url = formData.placeUrl.trim();
-        if (!url) return;
-
-        // 네이버 플레이스/지도 URL만 허용
-        if (!/(place|map)\.naver\.com/i.test(url)) {
-            setError('네이버 플레이스 또는 지도 URL을 입력해주세요.');
-            return;
+    // 붙여넣은 글에서 주소만 골라 확인합니다. 쓸 수 없는 주소면 안내를 띄우고 null 을 돌려줍니다.
+    const checkedUrl = () => {
+        const url = normalizeAdUrl(formData.placeUrl);
+        if (!isAllowedAdUrl(url, PLACE_AD_HOSTS)) {
+            setError(URL_HELP);
+            return null;
         }
+        if (url !== formData.placeUrl) setFormData(prev => ({ ...prev, placeUrl: url }));
+        return url;
+    };
+
+    const handleUrlCheck = async () => {
+        const url = checkedUrl();
+        if (!url) return;
 
         setChecking(true);
         setError('');
@@ -93,9 +101,12 @@ export default function CreatePlaceAdModal({ isOpen, onClose, onSuccess }) {
     };
 
     const handleNext = () => {
-        if (step === 1 && !formData.placeName.trim()) {
-            setError('업체명을 입력해주세요.');
-            return;
+        if (step === 1) {
+            if (!checkedUrl()) return;
+            if (!formData.placeName.trim()) {
+                setError("업체명을 입력해주세요. '조회'를 누르면 자동으로 채워집니다.");
+                return;
+            }
         }
         if (step === 2 && !formData.keyword.trim()) {
             setError('키워드를 입력해주세요.');
@@ -207,7 +218,7 @@ export default function CreatePlaceAdModal({ isOpen, onClose, onSuccess }) {
                     {step === 1 && (
                         <div className={styles.stepContent}>
                             <label className={styles.label}>플레이스 URL</label>
-                            <p className={styles.labelDesc}>네이버 플레이스 또는 지도 URL을 입력해주세요</p>
+                            <p className={styles.labelDesc}>네이버 플레이스·지도 주소 또는 지도 앱 공유 주소(naver.me)를 붙여넣어 주세요</p>
                             <div className={styles.urlInput}>
                                 <input
                                     type="text"
@@ -218,7 +229,7 @@ export default function CreatePlaceAdModal({ isOpen, onClose, onSuccess }) {
                                 <button
                                     className={styles.checkBtn}
                                     onClick={handleUrlCheck}
-                                    disabled={!formData.placeUrl || checking}
+                                    disabled={checking}
                                 >
                                     {checking ? '조회 중...' : '조회'}
                                 </button>
@@ -391,11 +402,7 @@ export default function CreatePlaceAdModal({ isOpen, onClose, onSuccess }) {
                         </button>
                     )}
                     {step < 4 ? (
-                        <button
-                            className={styles.nextBtn}
-                            onClick={handleNext}
-                            disabled={step === 1 && !formData.placeName.trim()}
-                        >
+                        <button className={styles.nextBtn} onClick={handleNext}>
                             다음
                         </button>
                     ) : insufficient ? (

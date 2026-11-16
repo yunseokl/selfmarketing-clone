@@ -182,7 +182,7 @@ export default function AdminDashboard() {
                         )}
                         {!stats.system.keywordTrendConfigured && (
                             <div>
-                                · 키워드 트렌드 연동 키가 없어 회원 화면에 &lsquo;연동 준비 중&rsquo; 안내가 표시됩니다.
+                                · 키워드 트렌드 연동 키가 없어 회원 화면에 그래프 대신 외부 도구 바로가기가 표시됩니다.
                                 NAVER API HUB에서 검색어 트렌드 키를 발급받아 NAVER_API_HUB_KEY_ID, NAVER_API_HUB_KEY 를 등록하세요.
                             </div>
                         )}

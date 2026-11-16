@@ -160,7 +160,14 @@ export default function AiPage() {
 
     const handleAddKeyword = () => {
         const value = keywordDraft.trim();
-        if (!value || keywords.length >= 3) return;
+        if (!value) {
+            toast.error('추가할 키워드를 입력해주세요.');
+            return;
+        }
+        if (keywords.length >= 3) {
+            toast.error('강점 키워드는 최대 3개까지 넣을 수 있어요. 기존 키워드를 지운 뒤 추가해주세요.');
+            return;
+        }
         if (keywords.includes(value)) {
             setKeywordDraft('');
             return;
@@ -302,13 +309,8 @@ export default function AiPage() {
                                         value={keywordDraft}
                                         onChange={(e) => setKeywordDraft(e.target.value)}
                                         onKeyDown={handleKeywordKeyDown}
-                                        disabled={keywords.length >= 3}
                                     />
-                                    <button
-                                        type="button"
-                                        onClick={handleAddKeyword}
-                                        disabled={keywords.length >= 3 || !keywordDraft.trim()}
-                                    >
+                                    <button type="button" onClick={handleAddKeyword}>
                                         추가
                                     </button>
                                 </div>

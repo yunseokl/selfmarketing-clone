@@ -237,6 +237,168 @@
 
 .noticeLinks {
     font-size: 13px !important;
+    margin-top: 10px;
+}
+
+.adminNote {
+    margin-top: 12px;
+    padding: 12px 14px;
+    font-size: 13px !important;
+    background: rgba(15, 23, 42, 0.45);
+    border: 1px solid var(--glass-border);
+    border-radius: 10px;
+}
+
+.adminNote b {
+    display: block;
+    font-size: 12px;
+    color: #FDE68A;
+    margin-bottom: 4px;
+}
+
+.adminNote code {
+    padding: 1px 6px;
+    font-size: 12px;
+    color: var(--text-white);
+    background: rgba(255, 255, 255, 0.08);
+    border-radius: 5px;
+    overflow-wrap: anywhere;
+}
+
+/* 연동 전: 입력한 키워드로 여는 외부 도구 바로가기 */
+.linkGrid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 12px;
+}
+
+.linkTile {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 18px;
+    background: rgba(15, 23, 42, 0.45);
+    border: 1px solid var(--glass-border);
+    border-radius: 12px;
+}
+
+.linkTile h3 {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--text-white);
+}
+
+.linkTile p {
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--text-gray);
+}
+
+.linkTile .tileHint {
+    font-size: 12px;
+    color: var(--text-dim);
+}
+
+.copyList {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 6px;
+}
+
+.copyList li {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 6px 6px 6px 12px;
+    font-size: 14px;
+    color: var(--text-white);
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid var(--glass-border);
+    border-radius: 8px;
+}
+
+.copyList li span {
+    overflow-wrap: anywhere;
+}
+
+.copyList button {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0;
+    padding: 5px 10px;
+    font-size: 12px;
+    font-weight: 600;
+    font-family: inherit;
+    color: var(--text-gray);
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid var(--glass-border);
+    border-radius: 6px;
+    cursor: pointer;
+}
+
+.copyList button:hover {
+    color: var(--text-white);
+    background: rgba(255, 255, 255, 0.12);
+}
+
+.linkBtn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    margin-top: auto;
+    height: 42px;
+    padding: 0 16px;
+    font-size: 14px;
+    font-weight: 700;
+    color: #fff;
+    background: linear-gradient(135deg, var(--primary) 0%, #7C3AED 100%);
+    border-radius: 10px;
+    transition: all 0.2s;
+}
+
+.linkBtn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 6px 16px rgba(109, 40, 217, 0.4);
+}
+
+.linkRow {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: auto;
+}
+
+.linkRow a {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 8px 12px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-white);
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid var(--glass-border);
+    border-radius: 999px;
+    overflow-wrap: anywhere;
+}
+
+.linkRow a:hover {
+    background: rgba(255, 255, 255, 0.12);
+}
+
+.inlineLink {
+    color: #93C5FD;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+}
+
+.inlineLink:hover {
+    color: #fff;
 }
 
 /* 결과 카드 */

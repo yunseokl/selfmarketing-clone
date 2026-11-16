@@ -5,6 +5,7 @@ import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import CreateAdModal from '@/components/shopping/CreateAdModal';
+import LoadError from '@/components/ui/LoadError';
 import styles from './page.module.css';
 import { Users, DollarSign, Link2, Search, RefreshCw, Plus, Package, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -57,6 +58,7 @@ export default function ShoppingPage() {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [ads, setAds] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [loadError, setLoadError] = useState(false);
     const [currentPage, setCurrentPage] = useState(1);
     const [tabCounts, setTabCounts] = useState({ active: 0, expired: 0, refunded: 0, all: 0 });
 
@@ -67,9 +69,13 @@ export default function ShoppingPage() {
             if (res.ok) {
                 const data = await res.json();
                 setAds(data.ads || []);
+                setLoadError(false);
+            } else {
+                setLoadError(true);
             }
         } catch (error) {
             console.error('Error fetching ads:', error);
+            setLoadError(true);
         } finally {
             setLoading(false);
         }
@@ -104,6 +110,7 @@ export default function ShoppingPage() {
 
     const handleRefresh = () => {
         fetchAds();
+        fetchTabCounts();
     };
 
     const handleDelete = async (id) => {
@@ -264,8 +271,8 @@ export default function ShoppingPage() {
                                 onChange={(e) => setSearchQuery(e.target.value)}
                             />
                         </div>
-                        <button className={styles.refreshBtn} onClick={handleRefresh}>
-                            <RefreshCw size={18} />
+                        <button className={styles.refreshBtn} onClick={handleRefresh} aria-label="목록 새로고침">
+                            <RefreshCw size={18} className={loading ? styles.spinning : ''} />
                         </button>
                     </div>
 
@@ -288,13 +295,19 @@ export default function ShoppingPage() {
                                             </div>
                                         </td>
                                     </tr>
+                                ) : loadError ? (
+                                    <tr>
+                                        <td colSpan={tableColumns.length}>
+                                            <LoadError message="광고 목록을 불러오지 못했습니다." onRetry={handleRefresh} />
+                                        </td>
+                                    </tr>
                                 ) : filteredAds.length === 0 ? (
                                     <tr>
                                         <td colSpan={tableColumns.length}>
                                             <div className={styles.emptyState}>
                                                 <Package size={48} className={styles.emptyIcon} />
-                                                <h4>쇼핑 광고가 없습니다.</h4>
-                                                <p>새 광고를 만들어 시작해보세요.</p>
+                                                <h4>{searchQuery ? '검색 결과가 없습니다.' : '쇼핑 광고가 없습니다.'}</h4>
+                                                <p>{searchQuery ? '다른 상품명이나 키워드로 찾아보세요.' : '새 광고를 만들어 시작해보세요.'}</p>
                                             </div>
                                         </td>
                                     </tr>
@@ -335,7 +348,7 @@ export default function ShoppingPage() {
                     </div>
 
                     {/* Pagination */}
-                    {filteredAds.length > 0 && (
+                    {totalPages > 1 && (
                         <div className={styles.pagination}>
                             <button
                                 className={styles.pageBtn}

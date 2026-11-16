@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import CreatePlaceAdModal from '@/components/place/CreatePlaceAdModal';
+import LoadError from '@/components/ui/LoadError';
 import styles from './page.module.css';
 import { Users, DollarSign, MapPin, Search, RefreshCw, Plus, Building2, X } from 'lucide-react';
 import { toast } from 'sonner';
@@ -35,6 +36,7 @@ export default function PlacePage() {
     const [searchQuery, setSearchQuery] = useState('');
     const [ads, setAds] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [loadError, setLoadError] = useState(false);
     const [currentPage, setCurrentPage] = useState(1);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [tabCounts, setTabCounts] = useState({
@@ -51,12 +53,13 @@ export default function PlacePage() {
             if (res.ok) {
                 const data = await res.json();
                 setAds(data.ads || []);
+                setLoadError(false);
             } else {
-                toast.error('광고 목록을 불러오는데 실패했습니다.');
+                setLoadError(true);
             }
         } catch (error) {
             console.error('Error fetching ads:', error);
-            toast.error('광고 목록을 불러오는데 실패했습니다.');
+            setLoadError(true);
         } finally {
             setLoading(false);
         }
@@ -91,7 +94,6 @@ export default function PlacePage() {
     const handleRefresh = () => {
         fetchAds();
         fetchTabCounts();
-        toast.success('목록을 새로고침했습니다.');
     };
 
     const handleCancelAd = async (adId) => {
@@ -216,8 +218,8 @@ export default function PlacePage() {
                                 onChange={(e) => setSearchQuery(e.target.value)}
                             />
                         </div>
-                        <button className={styles.refreshBtn} onClick={handleRefresh}>
-                            <RefreshCw size={18} />
+                        <button className={styles.refreshBtn} onClick={handleRefresh} aria-label="목록 새로고침">
+                            <RefreshCw size={18} className={loading ? styles.spinning : ''} />
                         </button>
                     </div>
 
@@ -226,11 +228,13 @@ export default function PlacePage() {
                             <RefreshCw size={48} className={`${styles.emptyIcon} ${styles.spinning}`} />
                             <h4>로딩 중...</h4>
                         </div>
+                    ) : loadError ? (
+                        <LoadError message="광고 목록을 불러오지 못했습니다." onRetry={handleRefresh} />
                     ) : filteredAds.length === 0 ? (
                         <div className={styles.emptyState}>
                             <Building2 size={48} className={styles.emptyIcon} />
-                            <h4>플레이스 광고가 없습니다.</h4>
-                            <p>새 광고를 만들어 시작해보세요.</p>
+                            <h4>{searchQuery ? '검색 결과가 없습니다.' : '플레이스 광고가 없습니다.'}</h4>
+                            <p>{searchQuery ? '다른 업체명이나 키워드로 찾아보세요.' : '새 광고를 만들어 시작해보세요.'}</p>
                         </div>
                     ) : (
                         <div className={styles.adsList}>
@@ -268,7 +272,7 @@ export default function PlacePage() {
                         </div>
                     )}
 
-                    {filteredAds.length > 0 && (
+                    {totalPages > 1 && (
                         <div className={styles.pagination}>
                             <button
                                 className={styles.pageBtn}

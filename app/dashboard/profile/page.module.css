@@ -184,22 +184,29 @@
     gap: 12px;
 }
 
-.kakaoIcon {
-    width: 32px;
-    height: 32px;
-    background: #FEE500;
+.socialInfo span {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text-white);
+}
+
+.loginIcon {
+    width: 36px;
+    height: 36px;
+    flex-shrink: 0;
+    background: rgba(109, 40, 217, 0.2);
     border-radius: 50%;
-    color: #1A1A1A;
+    color: #C4B5FD;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-weight: 800;
-    font-size: 18px;
 }
 
-.notConnected {
+.loginHint {
+    margin-top: 2px;
     font-size: 13px;
     color: var(--text-dim);
+    overflow-wrap: anywhere;
 }
 
 /* Security List */
@@ -245,33 +252,118 @@
     background: rgba(255, 255, 255, 0.1);
 }
 
-/* Business Notice */
-.businessNotice {
-    text-align: center;
-    padding: 40px;
-    background: rgba(0, 0, 0, 0.2);
-    border-radius: 12px;
-    border: 1px dashed var(--glass-border);
-}
-
-.businessNotice p {
+/* Business Info */
+.businessLead {
+    font-size: 14px;
+    line-height: 1.7;
     color: var(--text-gray);
     margin-bottom: 20px;
 }
 
-.registerBtn {
-    padding: 12px 24px;
-    background: var(--primary);
-    color: white;
-    font-weight: 600;
+.businessForm {
+    padding: 20px;
+    background: rgba(0, 0, 0, 0.2);
     border-radius: 12px;
-    box-shadow: 0 4px 12px rgba(109, 40, 217, 0.3);
-    transition: all 0.2s;
+    border: 1px solid var(--glass-border);
 }
 
-.registerBtn:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 8px 16px rgba(109, 40, 217, 0.4);
+.fieldError {
+    font-size: 12px;
+    color: #FCA5A5;
+}
+
+.businessHistory {
+    margin-top: 28px;
+}
+
+.businessHistory h3 {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text-white);
+    margin-bottom: 12px;
+}
+
+.businessEmpty,
+.businessFootnote {
+    font-size: 13px;
+    color: var(--text-dim);
+}
+
+.businessFootnote {
+    margin-top: 12px;
+}
+
+.businessFootnote a {
+    color: #93C5FD;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+}
+
+.businessList {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 10px;
+}
+
+.businessList li {
+    padding: 14px 16px;
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 12px;
+    border: 1px solid var(--glass-border);
+}
+
+.businessItemHead {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.businessItemHead strong {
+    font-size: 14px;
+    color: var(--text-white);
+    overflow-wrap: anywhere;
+}
+
+.businessWaiting,
+.businessDone {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0;
+    padding: 3px 9px;
+    font-size: 12px;
+    font-weight: 600;
+    border-radius: 999px;
+}
+
+.businessWaiting {
+    color: #FDE68A;
+    background: rgba(245, 158, 11, 0.15);
+}
+
+.businessDone {
+    color: #6EE7B7;
+    background: rgba(16, 185, 129, 0.15);
+}
+
+.businessDate {
+    margin-top: 4px;
+    font-size: 12px;
+    color: var(--text-dim);
+}
+
+.businessAnswer {
+    margin-top: 10px;
+    padding: 10px 12px;
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--text-gray);
+    white-space: pre-wrap;
+    background: rgba(255, 255, 255, 0.04);
+    border-radius: 8px;
 }
 
 @keyframes fadeIn {

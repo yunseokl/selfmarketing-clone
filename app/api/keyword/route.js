@@ -22,7 +22,6 @@ const RATE_MAX = 30;
 const hits = new Map();
 
 const ERROR_RESPONSES = {
-    NOT_CONFIGURED: { status: 503, error: '검색 트렌드 데이터 연동이 아직 설정되지 않았습니다.' },
     KEY_REJECTED: { status: 502, error: '검색 트렌드 연동 키를 확인해야 합니다. 관리자에게 문의해주세요.' },
     RATE_LIMITED: { status: 429, error: '오늘 조회 한도를 모두 사용했습니다. 잠시 후 다시 시도해주세요.' },
     TIMEOUT: { status: 504, error: '네이버 응답이 늦어지고 있습니다. 잠시 후 다시 시도해주세요.' },
@@ -38,7 +37,7 @@ async function getCurrentUser() {
 
     const user = await prisma.user.findUnique({
         where: { email: session.user.email },
-        select: { id: true },
+        select: { id: true, role: true },
     });
 
     if (!user) {
@@ -86,7 +85,12 @@ export async function GET() {
             if (recent.length >= 10) break;
         }
 
-        return NextResponse.json({ recent, configured: Boolean(trendConfig()) });
+        return NextResponse.json({
+            recent,
+            configured: Boolean(trendConfig()),
+            // 연동 키는 서버 환경변수라 관리자에게만 등록 방법을 안내합니다.
+            canConfigure: userCheck.user.role === 'admin',
+        });
     } catch (error) {
         console.error('Error fetching keyword searches:', error);
         return NextResponse.json({ error: '최근 조회 기록을 불러오는 중 오류가 발생했습니다.' }, { status: 500 });
@@ -116,9 +120,32 @@ export async function POST(request) {
 
         const keywords = uniqueKeywords(validation.data.keyword, validation.data.compare);
 
+        const tooMany = () => NextResponse.json(
+            { error: '조회가 너무 잦습니다. 10분 뒤에 다시 시도해주세요.', code: 'TOO_MANY_REQUESTS' },
+            { status: 429 }
+        );
+
+        // 연동 키가 없으면 그래프 수치를 만들 수 없습니다. 오류로 막지 않고, 화면이 같은 키워드로
+        // 외부 도구 바로가기를 보여 줄 수 있게 정리된 키워드만 돌려줍니다(수치는 만들지 않음).
         if (!trendConfig()) {
-            const { status, error } = ERROR_RESPONSES.NOT_CONFIGURED;
-            return NextResponse.json({ error, code: 'NOT_CONFIGURED' }, { status });
+            if (!allowRequest(userCheck.user.id)) return tooMany();
+
+            const last = await prisma.keywordSearch.findFirst({
+                where: { userId: userCheck.user.id },
+                orderBy: { createdAt: 'desc' },
+                select: { keyword: true },
+            });
+            if (last?.keyword !== keywords[0]) {
+                await prisma.keywordSearch.create({
+                    data: {
+                        userId: userCheck.user.id,
+                        keyword: keywords[0],
+                        type: 'trend-link',
+                        result: JSON.stringify({ compare: keywords.slice(1) }),
+                    },
+                });
+            }
+            return NextResponse.json({ configured: false, keywords });
         }
 
         const cacheKey = keywords.join('|').toLowerCase();
@@ -127,15 +154,14 @@ export async function POST(request) {
             return NextResponse.json({ result: cached.result });
         }
 
-        if (!allowRequest(userCheck.user.id)) {
-            return NextResponse.json(
-                { error: '조회가 너무 잦습니다. 10분 뒤에 다시 시도해주세요.', code: 'TOO_MANY_REQUESTS' },
-                { status: 429 }
-            );
-        }
+        if (!allowRequest(userCheck.user.id)) return tooMany();
 
         const trend = await fetchTrend(keywords);
         if (!trend.ok) {
+            // 키가 요청 도중 빠진 드문 경우에도 화면은 바로가기 안내로 넘어갑니다.
+            if (trend.code === 'NOT_CONFIGURED') {
+                return NextResponse.json({ configured: false, keywords });
+            }
             const { status, error } = ERROR_RESPONSES[trend.code] || ERROR_RESPONSES.UPSTREAM_ERROR;
             console.error('Keyword trend fetch failed:', trend.code, trend.status || '');
             return NextResponse.json({ error, code: trend.code }, { status });

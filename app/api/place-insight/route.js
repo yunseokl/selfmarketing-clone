@@ -3,6 +3,7 @@ import prisma from '@/lib/prisma';
 import { kstDateKey } from '@/lib/rank-log';
 import { parseMetrics, upsertMetric, metricChange } from '@/lib/place-history';
 import { placeLookupSchema } from '@/lib/validations/place-insight';
+import { mentionTerms } from '@/lib/place-keywords';
 import { getCurrentUser, readJson, savedPlaceToClient } from '@/lib/place-api';
 import {
     getPlaceService, placeLookupConfig, placeLookupStatus, placeErrorResponse,
@@ -13,7 +14,7 @@ import {
 export const dynamic = 'force-dynamic';
 
 // 플레이스 분석 — 네이버 플레이스 공개 화면의 데이터를 읽어 매장 요약·숨은 대표키워드·운영 정보·리뷰 활동을 보여 줍니다.
-// 매장 1곳 분석에 네이버 요청은 최대 2건(매장 화면 1건 + 활동 묶음 1건)이고, 각각 30분 동안 저장해 다시 씁니다.
+// 매장 1곳 분석에 네이버 요청은 최대 2건(매장 화면 1건 + 활동·키워드 언급 묶음 1건)이고, 각각 30분 동안 저장해 다시 씁니다.
 // 조회 방식과 한계는 lib/naver-place.js, 요청을 아끼는 장치는 lib/place-gate.js 참고.
 
 // GET - 기능 상태와 저장한 내 매장 목록
@@ -66,10 +67,11 @@ export async function POST(request) {
         const { value: place, fetchedAt, cached } = await client.getPlace(placeId);
 
         // 리뷰·소식 활동은 따로 받습니다. 여기서 실패해도 매장 정보는 그대로 보여 줍니다.
+        // 같은 요청에 "업종·등록 키워드 낱말이 블로그 후기에 몇 번 나오는지"도 함께 물어, 추천 키워드의 근거로 씁니다.
         let activity = null;
         let activityError = null;
         try {
-            activity = (await client.getActivity(placeId)).value;
+            activity = (await client.getActivity(placeId, { mentionTerms: mentionTerms(place) })).value;
         } catch (error) {
             const mapped = placeErrorResponse(error);
             if (!mapped) console.error('Error loading place activity:', error);

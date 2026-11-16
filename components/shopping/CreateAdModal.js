@@ -4,7 +4,10 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { X, Check, Wallet } from 'lucide-react';
 import { toast } from 'sonner';
+import { SHOPPING_AD_HOSTS, isAllowedAdUrl, normalizeAdUrl } from '@/lib/ad-url';
 import styles from './CreateAdModal.module.css';
+
+const URL_HELP = '스마트스토어·네이버 쇼핑·브랜드스토어 상품 주소를 입력해주세요. (예: https://smartstore.naver.com/스토어/products/상품번호)';
 
 const serviceTypes = [
     { id: 'selma30', name: '베이직 쇼핑 유입 30원', price: 30 },
@@ -51,14 +54,20 @@ export default function CreateAdModal({ isOpen, onClose, onSuccess }) {
         };
     }, [isOpen]);
 
-    const handleUrlCheck = async () => {
-        const url = formData.productUrl.trim();
-        if (!url) return;
-
-        if (!/naver\.com/i.test(url)) {
-            setError('올바른 네이버 쇼핑 URL을 입력해주세요.');
-            return;
+    // 붙여넣은 글에서 주소만 골라 확인합니다. 쓸 수 없는 주소면 안내를 띄우고 null 을 돌려줍니다.
+    const checkedUrl = () => {
+        const url = normalizeAdUrl(formData.productUrl);
+        if (!isAllowedAdUrl(url, SHOPPING_AD_HOSTS)) {
+            setError(URL_HELP);
+            return null;
         }
+        if (url !== formData.productUrl) setFormData(prev => ({ ...prev, productUrl: url }));
+        return url;
+    };
+
+    const handleUrlCheck = async () => {
+        const url = checkedUrl();
+        if (!url) return;
 
         setChecking(true);
         setError('');
@@ -91,7 +100,14 @@ export default function CreateAdModal({ isOpen, onClose, onSuccess }) {
     };
 
     const handleNext = () => {
-        if (step === 2 && !formData.keyword) {
+        if (step === 1) {
+            if (!checkedUrl()) return;
+            if (!formData.productName.trim()) {
+                setError("상품명을 입력해주세요. '조회'를 누르면 자동으로 채워집니다.");
+                return;
+            }
+        }
+        if (step === 2 && !formData.keyword.trim()) {
             setError('키워드를 입력해주세요.');
             return;
         }
@@ -210,7 +226,7 @@ export default function CreateAdModal({ isOpen, onClose, onSuccess }) {
                     {step === 1 && (
                         <div className={styles.stepContent}>
                             <label className={styles.label}>상품 URL</label>
-                            <p className={styles.labelDesc}>네이버 쇼핑 상품 URL을 입력해주세요</p>
+                            <p className={styles.labelDesc}>스마트스토어·네이버 쇼핑·브랜드스토어 상품 주소를 붙여넣어 주세요</p>
                             <div className={styles.urlInput}>
                                 <input
                                     type="text"
@@ -221,7 +237,7 @@ export default function CreateAdModal({ isOpen, onClose, onSuccess }) {
                                 <button
                                     className={styles.checkBtn}
                                     onClick={handleUrlCheck}
-                                    disabled={!formData.productUrl || checking}
+                                    disabled={checking}
                                 >
                                     {checking ? '조회 중...' : '조회'}
                                 </button>
@@ -391,11 +407,7 @@ export default function CreateAdModal({ isOpen, onClose, onSuccess }) {
                         </button>
                     )}
                     {step < 4 ? (
-                        <button
-                            className={styles.nextBtn}
-                            onClick={handleNext}
-                            disabled={step === 1 && !formData.productName}
-                        >
+                        <button className={styles.nextBtn} onClick={handleNext}>
                             다음
                         </button>
                     ) : insufficient ? (

@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import DashboardLayout from '@/components/layout/DashboardLayout';
+import LoadError from '@/components/ui/LoadError';
 import styles from './page.module.css';
 import {
     MapPin,
@@ -304,6 +305,16 @@ function DashboardHomeAuthed() {
                 initial="hidden"
                 animate="visible"
             >
+                {loadError && !loading && (
+                    <div style={{ gridColumn: '1 / -1' }}>
+                        <LoadError
+                            compact
+                            message="대시보드 정보를 불러오지 못해 숫자가 0으로 보일 수 있습니다."
+                            onRetry={fetchDashboard}
+                        />
+                    </div>
+                )}
+
                 {/* 1. Welcome Widget (Span 2) */}
                 <motion.div className={`${styles.card} ${styles.welcomeCard}`} variants={itemVariants}>
                     <div className={styles.welcomeContent}>
@@ -397,7 +408,7 @@ function DashboardHomeAuthed() {
                                             ) : isActive ? (
                                                 <Link href={step.href} className={styles.stepButton}>시작하기</Link>
                                             ) : (
-                                                <button disabled className={styles.stepButtonDisabled}>대기중</button>
+                                                <Link href={step.href} className={`${styles.stepButton} ${styles.stepButtonLater}`}>먼저 해보기</Link>
                                             )}
                                         </div>
                                     );

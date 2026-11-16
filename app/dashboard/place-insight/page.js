@@ -7,16 +7,21 @@ import Link from 'next/link';
 import { toast } from 'sonner';
 import {
     AlertCircle, ArrowUpRight, ArrowUpToLine, BadgeCheck, BookmarkCheck, BookmarkPlus, CalendarCheck, Check, CheckCircle2,
-    ChevronDown, ChevronRight, Copy, CreditCard, Info, KeyRound, Link2, Loader2, Minus, Search, ShoppingBag, Store, Ticket,
+    ChevronDown, ChevronRight, Copy, CreditCard, Info, KeyRound, Lightbulb, Link2, Loader2, MapPin, Minus, Search, ShoppingBag, Store, Ticket,
     TrendingDown, TrendingUp, Utensils, Waypoints, X,
 } from 'lucide-react';
 import DashboardLayout from '@/components/layout/DashboardLayout';
-import { keywordFrequency, diagnoseRank, parseCount, buildActionItems, daysAgo } from '@/lib/naver-place';
+import { keywordFrequency, diagnoseRank, parseCount, buildActionItems, daysAgo, distanceKm, rankLocality } from '@/lib/naver-place';
+import { recommendKeywords, pickRankKeywords, rankScope } from '@/lib/place-keywords';
 import styles from './page.module.css';
 import PlaceGraph from './PlaceGraph';
 import GeoAeoPanel from './GeoAeoPanel';
 
 const MAX_KEYWORDS = 5;
+// 추천 키워드의 '순위 보기'로 순위 표에 덧붙일 수 있는 줄 수
+const RANK_ROWS_MAX = 10;
+const RECO_SHOWN = 6;
+const MENU_SHOWN = 8;
 
 /* ───────── 표시 도우미 ───────── */
 
@@ -44,6 +49,13 @@ function timeLabel(ms) {
 function shorten(text, max) {
     const value = String(text || '').trim();
     return value.length > max ? `${value.slice(0, max - 1)}…` : value;
+}
+
+// 1km 미만은 10m 단위, 10km 미만은 소수 한 자리
+function kmLabel(km) {
+    if (km === null || km === undefined) return '-';
+    if (km < 1) return `${Math.max(10, Math.round(km * 100) * 10)}m`;
+    return km < 10 ? `${km.toFixed(1)}km` : `${formatNumber(Math.round(km))}km`;
 }
 
 function splitKeywords(text) {
@@ -412,8 +424,8 @@ function SummaryRail({ place, placeInfo, activity, ranks, actions, saving, onSav
             {ranks.length > 0 && (
                 <div className={styles.ticker} style={{ '--d': 2 }}>
                     <h3>
-                        대표키워드 순위
-                        {settled && <span className={styles.tickerSum} data-tone={top10 > 0 ? 'good' : undefined}>10위 안 {top10}/{ranks.length}</span>}
+                        키워드 순위
+                        {settled &&<span className={styles.tickerSum} data-tone={top10 > 0 ? 'good' : undefined}>10위 안 {top10}/{ranks.length}</span>}
                     </h3>
                     <ul>
                         {ranks.map((row) => (
@@ -462,6 +474,7 @@ function SummaryRail({ place, placeInfo, activity, ranks, actions, saving, onSav
 
 const IDLE_FEATURES = [
     ['숨은 대표키워드', '스마트플레이스에 등록했지만 매장 화면에는 안 보이는 키워드를 보여 줍니다. 경쟁 매장 것도 볼 수 있습니다.'],
+    ['추천 키워드', '주소·업종·리뷰에서 "청주약국" 같은 지역 + 업종 조합을 뽑고, 블로그 후기와 상위 매장 키워드로 근거를 붙입니다.'],
     ['실제 검색 순위', '키워드를 검색했을 때 내 매장이 몇 번째인지 네이버 목록에서 광고를 빼고 셉니다.'],
     ['상위 매장 비교', '상위 10곳의 방문자 리뷰·블로그 리뷰·저장 수를 내 매장과 나란히 놓습니다.'],
     ['지금 할 일', '답글률·소식·영업시간·쿠폰처럼 비어 있거나 오래된 항목을 먼저 할 순서로 정리합니다.'],
@@ -543,7 +556,7 @@ function LoadingStatus() {
             <Loader2 size={20} className={styles.spin} aria-hidden="true" />
             <div className={styles.loadingText}>
                 <strong>매장 정보를 불러오는 중입니다</strong>
-                <p>네이버 플레이스에서 아래 항목을 한 번에 읽습니다. 이어서 대표키워드 순위를 조회합니다.</p>
+                <p>네이버 플레이스에서 아래 항목을 한 번에 읽습니다. 이어서 지역 키워드 순위를 조회합니다.</p>
                 <ul aria-hidden="true">
                     {LOADING_PARTS.map((part, index) => <li key={part} style={{ '--d': index }}>{part}</li>)}
                 </ul>
@@ -581,10 +594,21 @@ function FillStatus({ place }) {
         rows.push(['소개글', !place.missing.description, place.missing.description ? '비어 있음' : '등록됨']);
         rows.push(['메뉴·가격 사진', !place.missing.menuImage, place.missing.menuImage ? '비어 있음' : '등록됨']);
         rows.push(['편의시설', !place.missing.conveniences, place.missing.conveniences ? '비어 있음' : `${place.conveniences.length}개 등록`]);
+        rows.push(['찾아오는 길', !place.missing.accessor, place.missing.accessor ? '비어 있음' : '등록됨']);
+    }
+    const businessPhotos = place.detail?.photos?.business;
+    if (businessPhotos !== null && businessPhotos !== undefined) {
+        rows.push(['업체 사진', businessPhotos > 0, businessPhotos > 0 ? `${formatNumber(businessPhotos)}장` : '없음']);
+    }
+    if (Array.isArray(place.keywords)) {
+        rows.push(['대표키워드', place.keywords.length >= MAX_KEYWORDS, `${place.keywords.length}/${MAX_KEYWORDS}개`]);
     }
     rows.push(['톡톡 상담', place.hasTalktalk, place.hasTalktalk ? '연결됨' : '연결 안 됨']);
     rows.push(['블로그', place.hasBlog, place.hasBlog ? '연결됨' : '연결 안 됨']);
     const done = rows.filter((row) => row[1]).length;
+    const menus = place.detail?.menus;
+    // 메뉴 목록을 못 읽은 경우(예전에 저장된 결과)에는 지금까지처럼 사진 수를 보여 줍니다.
+    const menuPhotoKnown = !Array.isArray(menus) || menus.length === 0 || menus.some((menu) => menu.hasImage !== null && menu.hasImage !== undefined);
     return (
         <aside className={`${styles.fillPanel} ${styles.rise}`} style={{ '--d': 2 }}>
             <div className={styles.fillHead}>
@@ -604,10 +628,14 @@ function FillStatus({ place }) {
             </ul>
             {place.menuCount > 0 && (
                 <p className={styles.note}>
-                    등록된 메뉴 {place.menuCount}개 중 사진 {place.menuImageCount}개
-                    {place.menuPricedCount !== null && place.menuPricedCount !== undefined && ` · 가격 ${place.menuPricedCount}개`}
-                    {place.menuDescribedCount !== null && place.menuDescribedCount !== undefined && ` · 설명 ${place.menuDescribedCount}개`}
-                    {place.menuCategoryCount ? ` · 분류 ${place.menuCategoryCount}개` : ''}.
+                    등록된 메뉴 {place.menuCount}개 중{' '}
+                    {[
+                        // 미용실 가격표처럼 메뉴마다 사진 칸이 없는 업종은 사진 수를 세지 않습니다.
+                        menuPhotoKnown ? `사진 ${place.menuImageCount}개` : null,
+                        place.menuPricedCount !== null && place.menuPricedCount !== undefined ? `가격 ${place.menuPricedCount}개` : null,
+                        place.menuDescribedCount !== null && place.menuDescribedCount !== undefined ? `설명 ${place.menuDescribedCount}개` : null,
+                        place.menuCategoryCount ? `분류 ${place.menuCategoryCount}개` : null,
+                    ].filter(Boolean).join(' · ')}.
                 </p>
             )}
             <Link href="/dashboard/place-check" className={styles.textLink}>
@@ -638,6 +666,12 @@ function TodoSection({ place, actions }) {
                                 <div>
                                     <strong>{item.title}</strong>
                                     <p>{item.detail}</p>
+                                    {item.link && (
+                                        <button type="button" className={styles.actionLink} onClick={() => scrollToId(item.link.target)}>
+                                            {item.link.label}
+                                            <ChevronRight size={14} aria-hidden="true" />
+                                        </button>
+                                    )}
                                 </div>
                             </li>
                         ))}
@@ -651,9 +685,18 @@ function TodoSection({ place, actions }) {
 
 /* ───────── 키워드 순위 ───────── */
 
-function KeywordSlots({ keywords, onCopy }) {
+// 등록한 키워드 한 칸 아래에 붙는 진단: 지역이 들어 있는지, 블로그 후기에 그 낱말이 몇 번 나오는지
+function slotState(entry, blogTotal) {
+    if (!entry) return null;
+    const blog = entry.blog === null || entry.blog === undefined ? null : `블로그 ${entry.blog}${blogTotal ? `/${blogTotal}` : '개'}`;
+    if (entry.hasRegion) return { tone: 'good', text: ['지역 포함', blog].filter(Boolean).join(' · ') };
+    return { tone: 'warn', text: ['지역 없음', blog].filter(Boolean).join(' · ') };
+}
+
+function KeywordSlots({ keywords, diagnosis, blogTotal, onCopy }) {
     const list = keywords || [];
     const slots = Array.from({ length: Math.max(MAX_KEYWORDS, list.length) }, (_, index) => list[index] || null);
+    const stateOf = new Map((diagnosis || []).map((entry) => [entry.keyword, slotState(entry, blogTotal)]));
     return (
         <div className={`${styles.slots} ${styles.rise}`} style={{ '--d': 1 }}>
             <div className={styles.slotsHead}>
@@ -670,11 +713,15 @@ function KeywordSlots({ keywords, onCopy }) {
                 <p className={styles.note}>대표키워드를 읽지 못했습니다. 잠시 후 다시 조회해주세요.</p>
             ) : (
                 <ol className={styles.slotRow}>
-                    {slots.map((word, index) => (
-                        <li key={word || `empty-${index}`} data-empty={word ? undefined : 'true'} style={{ '--d': index }}>
-                            {word || '빈 칸'}
-                        </li>
-                    ))}
+                    {slots.map((word, index) => {
+                        const state = word ? stateOf.get(word) : null;
+                        return (
+                            <li key={word || `empty-${index}`} data-empty={word ? undefined : 'true'} style={{ '--d': index }}>
+                                <span>{word || '빈 칸'}</span>
+                                {state && <small className={styles.slotState} data-tone={state.tone}>{state.text}</small>}
+                            </li>
+                        );
+                    })}
                 </ol>
             )}
             {keywords !== null && list.length === 0 && (
@@ -683,6 +730,145 @@ function KeywordSlots({ keywords, onCopy }) {
                     <Link href="/dashboard/place-check" className={styles.inlineLink}>대표키워드 고르는 법 보기</Link>
                 </p>
             )}
+        </div>
+    );
+}
+
+// 추천 키워드: 지역 + 업종(메뉴·서비스) 조합과 근거. 누르면 그 키워드의 순위를 순위 표에 덧붙여 조회합니다.
+function KeywordReco({ recommendation, ranks, rankPick, comparing, ranking, unavailable, canCompare, onRank, onRankAll, onCompare, onCopy }) {
+    const [more, setMore] = useState(false);
+    if (!recommendation) return null;
+    const { regions, items, registered, rivalCount } = recommendation;
+    const shown = more ? items : items.slice(0, RECO_SHOWN);
+    const rankOf = new Map(ranks.map((row) => [row.keyword, row]));
+    const unranked = items.filter((item) => !rankOf.has(item.keyword)).slice(0, MAX_KEYWORDS);
+    const swaps = registered.filter((entry) => !entry.hasRegion && (entry.suggest || entry.spoken?.keyword));
+    return (
+        <div id="kw-reco" className={`${styles.reco} ${styles.rise}`} style={{ '--d': 2 }}>
+            <div className={styles.recoHead}>
+                <h3>
+                    <Lightbulb size={16} aria-hidden="true" />
+                    추천 키워드
+                    {items.length > 0 && <span className={styles.slotCount}>{items.length}</span>}
+                </h3>
+                <p>
+                    주소·업종·리뷰에서 뽑은 &lsquo;지역 + 업종&rsquo; 조합입니다. 손님이 실제로 검색하는 말이니 순위를 먼저 확인하고, 대표키워드·소개글·소식에 넣으세요.
+                </p>
+            </div>
+
+            {regions.length > 0 && (
+                <p className={styles.recoRegions}>
+                    <MapPin size={14} aria-hidden="true" />
+                    <span>읽은 지역</span>
+                    {regions.map((region) => (
+                        <span key={`${region.scope}-${region.term}`} className={styles.word}>
+                            {region.term}<small>{region.label}</small>
+                        </span>
+                    ))}
+                </p>
+            )}
+
+            {rankPick && rankPick.skipped.length > 0 && rankPick.added.length > 0 && (
+                <p className={styles.recoNotice}>
+                    <Info size={14} aria-hidden="true" />
+                    <span>
+                        등록한 대표키워드 {rankPick.skipped.map((word) => `'${word}'`).join(', ')}에는 지역명이 없어 검색하는 위치마다 순위가 달라집니다.
+                        그래서 지역을 붙인 추천 키워드 {rankPick.added.length}개로 순위를 조회했습니다.
+                    </span>
+                </p>
+            )}
+
+            {regions.length === 0 ? (
+                <p className={styles.note}>주소에서 지역 이름을 읽지 못해 추천을 만들지 못했습니다. 아래 입력 칸에 &lsquo;지역 + 업종&rsquo;을 직접 넣어 순위를 조회해 보세요.</p>
+            ) : items.length === 0 ? (
+                <p className={styles.note}>새로 추천할 조합이 없습니다. 등록한 대표키워드가 이미 지역과 업종을 잘 담고 있습니다.</p>
+            ) : (
+                <ol className={styles.recoList}>
+                    {shown.map((item, index) => {
+                        const row = rankOf.get(item.keyword);
+                        return (
+                            <li key={item.keyword} style={{ '--d': index }}>
+                                <span className={styles.recoWord}>
+                                    <strong>{item.keyword}</strong>
+                                    {!item.registrable && <span className={styles.tagMuted}>순위 확인용</span>}
+                                </span>
+                                <span className={styles.recoReasons}>
+                                    {item.reasons.map((reason) => (
+                                        <span key={reason.text} className={styles.reason} data-kind={reason.kind}>{reason.text}</span>
+                                    ))}
+                                </span>
+                                <span className={styles.recoAct}>
+                                    {row?.state === 'done' && (
+                                        <button type="button" className={styles.recoRank} data-tone={rankTone(row.result)} onClick={() => onRank(item.keyword)} aria-label={`${item.keyword} ${rankLabel(row.result)}, 순위 표에서 보기`}>
+                                            {rankLabel(row.result)}
+                                        </button>
+                                    )}
+                                    {row?.state === 'loading' && <span className={styles.rankPending}><Loader2 size={14} className={styles.spin} aria-hidden="true" /> 조회 중</span>}
+                                    {row?.state === 'error' && <span className={styles.rankError}>조회 실패</span>}
+                                    {!row && (
+                                        <button type="button" className={styles.ghostBtn} onClick={() => onRank(item.keyword)} disabled={ranking || unavailable}>
+                                            순위 보기
+                                        </button>
+                                    )}
+                                </span>
+                            </li>
+                        );
+                    })}
+                </ol>
+            )}
+
+            {swaps.length > 0 && (
+                <ul className={styles.recoSwaps}>
+                    {swaps.map((entry) => (
+                        <li key={entry.keyword}>
+                            <span className={styles.word}>{entry.keyword}</span>
+                            <ChevronRight size={14} aria-hidden="true" />
+                            {entry.spoken?.keyword ? (
+                                <span>
+                                    <b>{entry.spoken.keyword}</b> — 블로그 후기 언급: &lsquo;{entry.keyword}&rsquo; {entry.blog ?? 0}개 · &lsquo;{entry.spoken.term}&rsquo; {entry.spoken.blog}개
+                                </span>
+                            ) : (
+                                <span><b>{entry.suggest}</b> — 지역을 붙이면 순위를 정확히 확인할 수 있습니다.</span>
+                            )}
+                        </li>
+                    ))}
+                </ul>
+            )}
+
+            {items.length > 0 && (
+                <div className={styles.recoFoot}>
+                    {unranked.length > 0 && (
+                        <button type="button" className={styles.secondaryBtn} onClick={() => onRankAll(unranked.map((item) => item.keyword))} disabled={ranking || unavailable}>
+                            <Search size={16} aria-hidden="true" />
+                            아직 안 본 {unranked.length}개 순위 조회
+                        </button>
+                    )}
+                    <button type="button" className={styles.secondaryBtn} onClick={() => onCopy(items.filter((item) => item.registrable).map((item) => item.keyword))}>
+                        <Copy size={16} aria-hidden="true" />
+                        복사
+                    </button>
+                    {items.length > RECO_SHOWN && (
+                        <button type="button" className={styles.toggleBtn} onClick={() => setMore((prev) => !prev)} aria-expanded={more}>
+                            <ChevronDown size={16} aria-hidden="true" />
+                            {more ? '접기' : `${items.length - RECO_SHOWN}개 더 보기`}
+                        </button>
+                    )}
+                    {rivalCount === 0 && canCompare && (
+                        <button type="button" className={styles.secondaryBtn} onClick={onCompare} disabled={comparing || unavailable}>
+                            {comparing ? <Loader2 size={16} className={styles.spin} aria-hidden="true" /> : <KeyRound size={16} aria-hidden="true" />}
+                            상위 매장 키워드와 비교
+                        </button>
+                    )}
+                </div>
+            )}
+            <p className={styles.note}>
+                {rivalCount > 0
+                    ? `상위 매장 ${rivalCount}곳이 등록한 대표키워드와 비교한 결과입니다. `
+                    : comparing ? '상위 매장의 대표키워드를 읽어 비교하는 중입니다. ' : ''}
+                &lsquo;맛집&rsquo;·&lsquo;잘하는&rsquo; 같은 홍보성 표현은 대표키워드 등록이 거절될 수 있어 &lsquo;순위 확인용&rsquo;으로만 표시합니다.
+                지역명이 들어간 대표키워드는 네이버가 수정할 수 있으니 소개글·소식에도 같은 표현을 함께 쓰세요.{' '}
+                <Link href="/dashboard/place-check" className={styles.inlineLink}>대표키워드 점검기</Link>
+            </p>
         </div>
     );
 }
@@ -724,11 +910,17 @@ function CellBar({ value, max }) {
     );
 }
 
-function RankTable({ result }) {
+// origin: 내 매장 좌표. 상위 매장이 내 매장에서 얼마나 떨어져 있는지(직선 거리) 함께 보여 줍니다.
+function RankTable({ result, origin }) {
     const rows = [...result.top];
     if (result.target && !rows.some((row) => row.isTarget)) rows.push(result.target);
     const maxVisitor = Math.max(1, ...rows.map((row) => row.visitorReviews || 0));
     const maxBlog = Math.max(1, ...rows.map((row) => row.blogReviews || 0));
+    const distances = rows.map((row) => (row.isTarget ? null : distanceKm(origin, row)));
+    const showDistance = distances.some((km) => km !== null);
+    // 저장 수·평점을 공개하지 않는 업종(약국 등)은 모든 줄이 비어 있어 칸을 숨깁니다.
+    const showSave = rows.some((row) => row.saveText);
+    const showScore = rows.some((row) => row.score);
     return (
         <div className={styles.tableWrap}>
             <table className={`${styles.table} ${styles.rankTable}`}>
@@ -739,26 +931,33 @@ function RankTable({ result }) {
                         <th scope="col">매장</th>
                         <th scope="col">방문자 리뷰</th>
                         <th scope="col">블로그 리뷰</th>
-                        <th scope="col">저장</th>
-                        <th scope="col">평점</th>
+                        {showSave && <th scope="col">저장</th>}
+                        {showScore && <th scope="col">평점</th>}
+                        {showDistance && <th scope="col">내 매장에서</th>}
                     </tr>
                 </thead>
                 <tbody>
-                    {rows.map((row, index) => (
-                        <tr key={row.placeId} className={row.isTarget ? styles.myRow : undefined} style={{ '--d': index }}>
-                            <td className={styles.numCell}>{row.rank}</td>
-                            <th scope="row">
-                                <span className={styles.shopName}>{row.name}</span>
-                                {row.isTarget && <span className={styles.tag}>내 매장</span>}
-                                {row.isNew && <span className={styles.tagMuted}>새로 오픈</span>}
-                                {row.category && <small>{row.category}</small>}
-                            </th>
-                            <td><CellBar value={row.visitorReviews} max={maxVisitor} /></td>
-                            <td><CellBar value={row.blogReviews} max={maxBlog} /></td>
-                            <td className={styles.numCell}>{row.saveText || '-'}</td>
-                            <td className={styles.numCell}>{row.score ? row.score.toFixed(2) : '-'}</td>
-                        </tr>
-                    ))}
+                    {rows.map((row, index) => {
+                        // 행정구역의 마지막 낱말(동·읍·면)만 보여 줍니다.
+                        const town = row.area ? row.area.split(' ').pop() : null;
+                        const sub = [row.category, town].filter(Boolean).join(' · ');
+                        return (
+                            <tr key={row.placeId} className={row.isTarget ? styles.myRow : undefined} style={{ '--d': index }}>
+                                <td className={styles.numCell}>{row.rank}</td>
+                                <th scope="row">
+                                    <span className={styles.shopName}>{row.name}</span>
+                                    {row.isTarget && <span className={styles.tag}>내 매장</span>}
+                                    {row.isNew && <span className={styles.tagMuted}>새로 오픈</span>}
+                                    {sub && <small>{sub}</small>}
+                                </th>
+                                <td><CellBar value={row.visitorReviews} max={maxVisitor} /></td>
+                                <td><CellBar value={row.blogReviews} max={maxBlog} /></td>
+                                {showSave && <td className={styles.numCell}>{row.saveText || '-'}</td>}
+                                {showScore && <td className={styles.numCell}>{row.score ? row.score.toFixed(2) : '-'}</td>}
+                                {showDistance && <td className={styles.numCell}>{row.isTarget ? '-' : kmLabel(distances[index])}</td>}
+                            </tr>
+                        );
+                    })}
                 </tbody>
             </table>
         </div>
@@ -913,8 +1112,15 @@ function CountList({ title, items, unit = '회', d = 0, node }) {
     );
 }
 
-function ReviewSection({ place, briefing }) {
-    const hasCounts = place.reviewVotes.length + place.reviewThemes.length + place.reviewMenus.length > 0;
+// unmentioned: 등록한 대표키워드 가운데 블로그 후기에 한 번도 나오지 않은 것
+function ReviewSection({ place, briefing, mentions, unmentioned = [] }) {
+    // 미용실: 스타일별 누적 예약 수 / 블로그 후기에 업종·등록 키워드 낱말이 들어간 글 수
+    const styleItems = (place.detail?.styles || []).map((style) => ({ label: style.name, count: style.count }));
+    const mentionItems = (mentions?.terms || [])
+        .filter((entry) => entry.count > 0)
+        .sort((a, b) => b.count - a.count)
+        .map((entry) => ({ label: entry.term, count: entry.count }));
+    const hasCounts = place.reviewVotes.length + place.reviewThemes.length + place.reviewMenus.length + styleItems.length + mentionItems.length > 0;
     return (
         <Reveal id="sec-reviews" className={styles.section} data-group="voice" data-node="hub:voice">
             <SectionHead title="리뷰" hub="hub:voice">
@@ -955,12 +1161,24 @@ function ReviewSection({ place, briefing }) {
                             <CountList title="손님이 고른 좋은 점" items={place.reviewVotes} unit="명" d={2} node="rv:vote" />
                             <CountList title="많이 언급된 주제" items={place.reviewThemes} d={3} />
                             <CountList title="많이 언급된 메뉴·시술" items={place.reviewMenus} d={4} />
+                            <CountList title="예약 많은 스타일" items={styleItems} unit="건" d={5} />
+                            <CountList
+                                title={`블로그 후기에 나온 낱말${mentions?.blogTotal ? ` (전체 ${formatNumber(mentions.blogTotal)}개 중)` : ''}`}
+                                items={mentionItems}
+                                unit="개"
+                                d={6}
+                            />
                         </>
                     ) : (
                         <p className={`${styles.emptyPanel} ${styles.rise}`} style={{ '--d': 2 }}>아직 집계된 리뷰가 없습니다.</p>
                     )}
                 </div>
             </div>
+            {unmentioned.length > 0 && (
+                <p className={styles.note}>
+                    블로그 후기에 한 번도 나오지 않은 등록 대표키워드: {unmentioned.map((word) => `'${word}'`).join(', ')}. 손님이 쓰는 표현과 다른지 확인해 보세요.
+                </p>
+            )}
             {briefing && (
                 <figure className={`${styles.briefing} ${styles.rise}`} style={{ '--d': 5 }}>
                     <figcaption>
@@ -1179,9 +1397,67 @@ function Fact({ label, node, children }) {
     );
 }
 
+// 매장이 공개한 메뉴·가격표. 가격이나 사진이 빠진 메뉴를 눈에 띄게 표시합니다.
+function MenuBoard({ place }) {
+    const [open, setOpen] = useState(false);
+    const menus = place.detail?.menus || [];
+    if (menus.length === 0) return null;
+    const total = place.menuCount || menus.length;
+    const unpriced = place.menuPricedCount === null || place.menuPricedCount === undefined ? null : total - place.menuPricedCount;
+    // 미용실 가격표처럼 메뉴마다 사진을 붙이는 칸이 없는 업종은 사진 여부를 따지지 않습니다.
+    const photoKnown = menus.some((menu) => menu.hasImage !== null && menu.hasImage !== undefined);
+    const noPhoto = photoKnown ? total - (place.menuImageCount || 0) : 0;
+    const gaps = [unpriced > 0 ? `가격 없는 메뉴 ${unpriced}개` : null, noPhoto > 0 ? `사진 없는 메뉴 ${noPhoto}개` : null].filter(Boolean);
+    const shown = open ? menus : menus.slice(0, MENU_SHOWN);
+    return (
+        <div className={`${styles.menuBoard} ${styles.rise}`} style={{ '--d': 3 }}>
+            <div className={styles.menuHead}>
+                <h3>메뉴·가격 <span className={styles.slotCount}>{formatNumber(total)}</span></h3>
+                <p>
+                    {gaps.length > 0
+                        ? `${gaps.join(', ')}가 있습니다. 채우면 손님이 방문 전에 비교하기 쉽습니다.`
+                        : photoKnown ? '모든 메뉴에 가격과 사진이 있습니다.' : '모든 메뉴에 가격이 있습니다.'}
+                    {place.detail.menuUpdatedAt ? ` 마지막 수정 ${place.detail.menuUpdatedAt}.` : ''}
+                </p>
+            </div>
+            <ul className={styles.menuList} data-photo={photoKnown ? 'true' : undefined}>
+                {shown.map((menu, index) => (
+                    <li key={`${menu.name}-${index}`}>
+                        <span className={styles.menuName}>
+                            {menu.name}
+                            {menu.recommended && <span className={styles.tagMuted}>대표</span>}
+                        </span>
+                        <span className={styles.menuPrice} data-missing={menu.price ? undefined : 'true'}>{menu.price || '가격 없음'}</span>
+                        {photoKnown && (
+                            <span className={styles.menuPhoto} data-missing={menu.hasImage ? undefined : 'true'}>{menu.hasImage ? '사진 있음' : '사진 없음'}</span>
+                        )}
+                    </li>
+                ))}
+            </ul>
+            {menus.length > MENU_SHOWN && (
+                <button type="button" className={styles.toggleBtn} onClick={() => setOpen((prev) => !prev)} aria-expanded={open}>
+                    <ChevronDown size={16} aria-hidden="true" />
+                    {open ? '접기' : `${menus.length - MENU_SHOWN}개 더 보기`}
+                </button>
+            )}
+            {total > menus.length && <p className={styles.note}>메뉴가 많아 앞의 {menus.length}개만 보여 줍니다.</p>}
+        </div>
+    );
+}
+
 function OpsSection({ place }) {
     const detail = place.detail;
     const { hours, photos, tools, parking } = detail;
+    const seats = detail.seats || [];
+    const seatText = [
+        seats.length > 0 ? seats.join(', ') : null,
+        detail.rental === true ? '대관 가능' : null,
+        detail.corkage === true ? '콜키지 가능' : null,
+    ].filter(Boolean).join(' · ');
+    const themes = detail.themes || [];
+    const externalSites = detail.externalSites || [];
+    // 메뉴판 사진 수는 메뉴를 올리는 업종에서만 뜻이 있어, 메뉴나 메뉴판 사진이 하나라도 있을 때만 보여 줍니다.
+    const hasBoardCount = detail.menuBoardPhotos > 0 || (place.menuCount > 0 && detail.menuBoardPhotos === 0);
     return (
         <Reveal id="sec-ops" className={styles.section} data-group="ops" data-node="hub:ops">
             <SectionHead title="운영 정보" hub="hub:ops">
@@ -1195,7 +1471,11 @@ function OpsSection({ place }) {
                             : <span className={styles.warnText}>영업시간 미등록</span>}
                     </Fact>
                     <Fact label="사진" node="ops:photos">
-                        업체 사진 {formatNumber(photos.business)}장 · 전체 사진 {formatNumber(photos.top)}장 · 방문자 사진·영상 {formatNumber(photos.visitorMedia)}개
+                        {photos.business === 0
+                            ? <span className={styles.warnText}>업체 사진 0장</span>
+                            : <>업체 사진 {formatNumber(photos.business)}장</>}
+                        {' '}· 전체 사진 {formatNumber(photos.top)}장 · 방문자 사진·영상 {formatNumber(photos.visitorMedia)}개
+                        {hasBoardCount ? ` · 메뉴판 사진 ${formatNumber(detail.menuBoardPhotos)}장` : ''}
                     </Fact>
                     {tools.length > 0 && (
                         <Fact label="네이버 도구">
@@ -1210,9 +1490,20 @@ function OpsSection({ place }) {
                     )}
                     <Fact label="예약·쿠폰" node="ops:booking">
                         {detail.hasBooking === null ? '예약 확인 불가' : detail.hasBooking ? '네이버 예약 연결됨' : '네이버 예약 없음'}
+                        {detail.bookingItemCount > 0 ? ` (예약 상품 ${formatNumber(detail.bookingItemCount)}개)` : ''}
                         {detail.couponCount !== null ? ` · 쿠폰 ${formatNumber(detail.couponCount)}개` : ''}
                         {detail.hasFeed !== null ? ` · 소식 ${detail.hasFeed ? '있음' : '없음'}` : ''}
                     </Fact>
+                    {detail.bookingPromotion && <Fact label="예약 혜택 문구">{detail.bookingPromotion}</Fact>}
+                    {(detail.stylistCount > 0 || themes.length > 0) && (
+                        <Fact label="디자이너·특징">
+                            {[detail.stylistCount > 0 ? `디자이너 ${formatNumber(detail.stylistCount)}명` : null, ...themes].filter(Boolean).join(' · ')}
+                        </Fact>
+                    )}
+                    {seatText && <Fact label="좌석·대관">{seatText}</Fact>}
+                    {typeof detail.hasAiBriefing === 'boolean' && (
+                        <Fact label="네이버 AI 브리핑">{detail.hasAiBriefing ? '매장 화면에 노출 중' : '아직 노출되지 않음'}</Fact>
+                    )}
                     {parking && (
                         <Fact label="주차">
                             {parking.available ? `가능${parking.free === true ? ' (무료)' : parking.free === false ? ' (유료)' : ''}${parking.valet ? ' · 발레파킹' : ''}` : '정보 없음'}
@@ -1220,10 +1511,14 @@ function OpsSection({ place }) {
                     )}
                     {detail.facilities.length > 0 && <Fact label="편의시설">{detail.facilities.join(', ')}{detail.pet === true ? ' · 반려동물 동반' : ''}</Fact>}
                     {detail.links.length > 0 && <Fact label="연결 채널">{detail.links.join(', ')}</Fact>}
+                    {externalSites.length > 0 && <Fact label="함께 보이는 서비스">{externalSites.join(', ')}</Fact>}
                     {detail.subway && (
                         <Fact label="가까운 역">
                             {detail.subway.station}{detail.subway.exit ? ` ${detail.subway.exit}번 출구` : ''}{detail.subway.walkMinutes ? ` · 걸어서 ${detail.subway.walkMinutes}분` : ''}
                         </Fact>
+                    )}
+                    {!detail.subway && detail.busStops > 0 && (
+                        <Fact label="대중교통">가까운 버스 정류장 {formatNumber(detail.busStops)}곳 (지하철역 정보 없음)</Fact>
                     )}
                     {(detail.badges.length > 0 || detail.benefits.length > 0 || detail.newOpening) && (
                         <Fact label="표시 배지·혜택">
@@ -1250,6 +1545,7 @@ function OpsSection({ place }) {
                     </div>
                 )}
             </div>
+            <MenuBoard place={place} />
         </Reveal>
     );
 }
@@ -1283,6 +1579,11 @@ export default function PlaceInsightPage() {
     const [ranks, setRanks] = useState([]);
     const [openKeyword, setOpenKeyword] = useState(null);
     const [rivals, setRivals] = useState({});
+    // 이 매장에서 읽은 상위 매장 대표키워드 모음(키워드를 바꿔 조회해도 유지). 추천 키워드와 비교하는 데 씁니다.
+    const [rivalPool, setRivalPool] = useState([]);
+    const [comparing, setComparing] = useState(false);
+    // 첫 분석 때 순위를 자동 조회한 키워드 구성: { skipped: 지역이 없어 뺀 등록 키워드, added: 대신 넣은 추천 키워드 }
+    const [rankPick, setRankPick] = useState(null);
     const [activeSection, setActiveSection] = useState(null);
     const sheetRef = useRef(null);
     const graphRef = useRef(null);
@@ -1330,6 +1631,9 @@ export default function PlaceInsightPage() {
         setActivityError(null);
         setRanks([]);
         setRivals({});
+        setRivalPool([]);
+        setComparing(false);
+        setRankPick(null);
         setOpenKeyword(null);
         rankRun.current += 1;
         setRanking(false);
@@ -1351,11 +1655,13 @@ export default function PlaceInsightPage() {
             setPlaceInfo({ fetchedAt: data.fetchedAt, cached: data.cached, saved: data.saved, change: data.change });
             setActivity(data.activity || null);
             setActivityError(data.activityError || null);
-            const keywords = (data.place.keywords || []).slice(0, MAX_KEYWORDS);
-            setKeywordText(keywords.join(', '));
+            // 순위는 지역이 들어간 키워드로 봐야 의미가 있어, 지역 없는 등록 키워드 대신 추천 키워드(지역 + 업종)를 씁니다.
+            const pick = pickRankKeywords(data.place, recommendKeywords({ place: data.place, activity: data.activity || null }), MAX_KEYWORDS);
+            setRankPick(pick);
+            setKeywordText(pick.keywords.join(', '));
             if (data.saved) fetchMeta();
-            // 매장 코드 하나로 전체 분석이 끝나도록 대표키워드 순위까지 이어서 조회합니다.
-            if (keywords.length > 0) checkRanks(data.place.placeId, keywords);
+            // 매장 코드 하나로 전체 분석이 끝나도록 키워드 순위와 상위 매장 대표키워드 비교까지 이어서 조회합니다.
+            if (pick.keywords.length > 0) checkRanks(data.place.placeId, pick.keywords, { compare: true });
         } catch (error) {
             console.error('Error analyzing place:', error);
             toast.error('플레이스 조회 중 오류가 발생했습니다.');
@@ -1412,60 +1718,137 @@ export default function PlaceInsightPage() {
         }
     };
 
-    const copyKeywords = async () => {
+    const copyWords = async (words, label) => {
         try {
-            await navigator.clipboard.writeText(place.keywords.join(', '));
-            toast.success('대표키워드를 복사했습니다.');
+            await navigator.clipboard.writeText(words.join(', '));
+            toast.success(`${label}를 복사했습니다.`);
         } catch {
             toast.error('복사하지 못했습니다. 직접 선택해 복사해주세요.');
         }
     };
 
+    const copyKeywords = () => copyWords(place.keywords, '대표키워드');
+
+    // 키워드 1개의 순위를 조회해 순위 표의 그 줄을 채웁니다.
+    // 돌려주는 값: { result: 조회 결과 또는 null, stop: 조회 제한·횟수 초과라 이어서 조회하면 안 됨 }
+    const fetchRank = async (placeId, keyword, run) => {
+        const setRow = (row) => setRanks((prev) => prev.map((item) => (item.keyword === keyword ? { keyword, ...row } : item)));
+        try {
+            const res = await fetch('/api/place-insight/rank', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ placeId, keyword, deep, record }),
+            });
+            // 그사이 다른 매장을 분석했으면 이 조회는 버립니다.
+            if (rankRun.current !== run) return { result: null, stop: true };
+            const data = await res.json();
+            if (!res.ok) {
+                const message = errorText(data, '순위를 조회하지 못했습니다.');
+                setRow({ state: 'error', error: message });
+                // 조회 제한·횟수 초과면 남은 키워드도 실패하므로 멈춥니다.
+                if (res.status === 429 || res.status === 503) {
+                    toast.error(message);
+                    fetchMeta();
+                    return { result: null, stop: true };
+                }
+                return { result: null, stop: false };
+            }
+            setRow({ state: 'done', result: data.result, recorded: data.recorded });
+            return { result: data.result, stop: false };
+        } catch (error) {
+            console.error('Error fetching rank:', error);
+            setRow({ state: 'error', error: '순위 조회 중 오류가 발생했습니다.' });
+            return { result: null, stop: false };
+        }
+    };
+
+    // 상위 5곳의 대표키워드를 읽어 그 키워드 줄에 보여 주고, 추천 키워드와 비교할 모음에도 넣습니다.
+    // quiet: 자동으로 부른 경우. 실패해도 알림을 띄우지 않습니다(버튼으로 다시 할 수 있음).
+    const loadRivals = async (result, { quiet = false } = {}) => {
+        const placeIds = result.top.filter((row) => !row.isTarget).slice(0, 5).map((row) => row.placeId);
+        if (placeIds.length === 0) return;
+        const run = rankRun.current;
+        setComparing(true);
+        setRivals((prev) => ({ ...prev, [result.keyword]: { loading: true } }));
+        try {
+            const res = await fetch('/api/place-insight/keywords', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ placeIds }),
+            });
+            const data = await res.json();
+            if (rankRun.current !== run) return;
+            if (!res.ok) {
+                if (!quiet) toast.error(errorText(data, '대표키워드를 조회하지 못했습니다.'));
+                setRivals((prev) => ({ ...prev, [result.keyword]: undefined }));
+                return;
+            }
+            setRivals((prev) => ({ ...prev, [result.keyword]: { loading: false, items: data.items, failed: data.failed } }));
+            setRivalPool((prev) => {
+                const known = new Set(prev.map((item) => item.placeId));
+                return [...prev, ...data.items.filter((item) => !known.has(item.placeId))];
+            });
+        } catch (error) {
+            console.error('Error fetching rival keywords:', error);
+            if (rankRun.current !== run) return;
+            if (!quiet) toast.error('대표키워드 조회 중 오류가 발생했습니다.');
+            setRivals((prev) => ({ ...prev, [result.keyword]: undefined }));
+        } finally {
+            if (rankRun.current === run) setComparing(false);
+        }
+    };
+
     // 키워드를 하나씩 차례로 조회합니다(네이버에 한꺼번에 몰리지 않게).
-    const checkRanks = async (placeId, keywords) => {
+    // compare: 조회가 끝나면 상위 매장 대표키워드까지 이어서 읽습니다(첫 분석 때 한 번).
+    const checkRanks = async (placeId, keywords, { compare = false } = {}) => {
         const run = rankRun.current + 1;
         rankRun.current = run;
         setRanking(true);
+        setComparing(false);
         setRivals({});
         setOpenKeyword(keywords[0]);
         setRanks(keywords.map((keyword) => ({ keyword, state: 'loading' })));
         let stopped = false;
+        let comparable = null;
 
         for (const keyword of keywords) {
-            // 그사이 다른 매장을 분석했으면 이 조회는 버립니다.
             if (rankRun.current !== run) return;
             if (stopped) {
                 setRanks((prev) => prev.map((row) => (row.keyword === keyword ? { keyword, state: 'error', error: '조회를 멈췄습니다.' } : row)));
                 continue;
             }
-            try {
-                const res = await fetch('/api/place-insight/rank', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ placeId, keyword, deep, record }),
-                });
-                if (rankRun.current !== run) return;
-                const data = await res.json();
-                if (!res.ok) {
-                    const message = errorText(data, '순위를 조회하지 못했습니다.');
-                    setRanks((prev) => prev.map((row) => (row.keyword === keyword ? { keyword, state: 'error', error: message } : row)));
-                    // 조회 제한·횟수 초과면 남은 키워드도 실패하므로 여기서 멈춥니다.
-                    if (res.status === 429 || res.status === 503) {
-                        stopped = true;
-                        toast.error(message);
-                        fetchMeta();
-                    }
-                    continue;
-                }
-                setRanks((prev) => prev.map((row) => (row.keyword === keyword
-                    ? { keyword, state: 'done', result: data.result, recorded: data.recorded }
-                    : row)));
-            } catch (error) {
-                console.error('Error fetching rank:', error);
-                setRanks((prev) => prev.map((row) => (row.keyword === keyword ? { keyword, state: 'error', error: '순위 조회 중 오류가 발생했습니다.' } : row)));
-            }
+            const outcome = await fetchRank(placeId, keyword, run);
+            if (rankRun.current !== run) return;
+            if (outcome.stop) stopped = true;
+            // 내 매장 말고 두 곳 이상이 나온 첫 키워드의 상위 매장과 비교합니다.
+            if (!comparable && outcome.result && outcome.result.top.filter((row) => !row.isTarget).length >= 2) comparable = outcome.result;
         }
         setRanking(false);
+        if (compare && !stopped && comparable) loadRivals(comparable, { quiet: true });
+    };
+
+    // 추천 키워드의 '순위 보기': 이미 조회한 키워드면 그 줄로 가고, 아니면 순위 표 끝에 한 줄을 덧붙여 조회합니다.
+    const addRank = async (keyword) => {
+        if (!place) return;
+        const index = ranks.findIndex((row) => row.keyword === keyword);
+        if (index >= 0) {
+            if (ranks[index].state === 'done') setOpenKeyword(keyword);
+            scrollToId(`rank-row-${index}`);
+            return;
+        }
+        if (ranking) return;
+        if (ranks.length >= RANK_ROWS_MAX) {
+            toast.error(`순위 표에는 ${RANK_ROWS_MAX}개까지 담을 수 있습니다. 아래 입력 칸에 키워드를 넣어 다시 조회해주세요.`);
+            return;
+        }
+        const run = rankRun.current;
+        const row = ranks.length;
+        setRanking(true);
+        setRanks((prev) => [...prev, { keyword, state: 'loading' }]);
+        setOpenKeyword(keyword);
+        requestAnimationFrame(() => scrollToId(`rank-row-${row}`));
+        await fetchRank(place.placeId, keyword, run);
+        if (rankRun.current === run) setRanking(false);
     };
 
     const runRanks = (event) => {
@@ -1486,37 +1869,30 @@ export default function PlaceInsightPage() {
             return;
         }
         setKeywordError(false);
+        setRankPick(null);
         checkRanks(place.placeId, keywords);
     };
 
-    const loadRivals = async (result) => {
-        const placeIds = result.top.filter((row) => !row.isTarget).slice(0, 5).map((row) => row.placeId);
-        if (placeIds.length === 0) return;
-        setRivals((prev) => ({ ...prev, [result.keyword]: { loading: true } }));
-        try {
-            const res = await fetch('/api/place-insight/keywords', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ placeIds }),
-            });
-            const data = await res.json();
-            if (!res.ok) {
-                toast.error(errorText(data, '대표키워드를 조회하지 못했습니다.'));
-                setRivals((prev) => ({ ...prev, [result.keyword]: undefined }));
-                return;
-            }
-            setRivals((prev) => ({ ...prev, [result.keyword]: { loading: false, items: data.items, failed: data.failed } }));
-        } catch (error) {
-            console.error('Error fetching rival keywords:', error);
-            toast.error('대표키워드 조회 중 오류가 발생했습니다.');
-            setRivals((prev) => ({ ...prev, [result.keyword]: undefined }));
-        }
+    // 추천 키워드 여러 개를 한 번에 조회합니다(입력 칸도 같은 키워드로 맞춤).
+    const rankRecommended = (keywords) => {
+        if (!place || keywords.length === 0) return;
+        setKeywordText(keywords.join(', '));
+        setKeywordError(false);
+        setRankPick(null);
+        checkRanks(place.placeId, keywords);
+        scrollToId('sec-rank');
     };
 
     const paused = meta.pausedUntil && meta.pausedUntil > Date.now();
     const unavailable = !meta.enabled || paused;
     const myKeywordKeys = new Set((place?.keywords || []).map((word) => word.replace(/\s+/g, '').toLowerCase()));
-    const actions = useMemo(() => (place ? buildActionItems(place, activity) : []), [place, activity]);
+    const recommendation = useMemo(
+        () => (place ? recommendKeywords({ place, activity, rivals: rivalPool }) : null),
+        [place, activity, rivalPool],
+    );
+    const actions = useMemo(() => (place ? buildActionItems(place, activity, { recommendation }) : []), [place, activity, recommendation]);
+    // 상위 매장과 비교할 수 있는 순위 결과(내 매장 말고 두 곳 이상 나온 첫 키워드)
+    const comparable = ranks.find((row) => row.state === 'done' && row.result.top.filter((item) => !item.isTarget).length >= 2)?.result || null;
     const graph = useMemo(() => {
         if (loadingPlace) return LOADING_GRAPH;
         return place ? buildGraph(place, activity, ranks, actions) : IDLE_GRAPH;
@@ -1833,7 +2209,22 @@ export default function PlaceInsightPage() {
                                 키워드를 검색했을 때 내 매장이 몇 번째에 나오는지 네이버 목록에서 광고를 빼고 셉니다. 한 번에 {MAX_KEYWORDS}개까지, 쉼표로 구분해 입력하세요.
                             </SectionHead>
 
-                            <KeywordSlots keywords={place.keywords} onCopy={copyKeywords} />
+                            <KeywordSlots keywords={place.keywords} diagnosis={recommendation?.registered} blogTotal={recommendation?.blogTotal} onCopy={copyKeywords} />
+
+                            <KeywordReco
+                                key={place.placeId}
+                                recommendation={recommendation}
+                                ranks={ranks}
+                                rankPick={rankPick}
+                                comparing={comparing}
+                                ranking={ranking}
+                                unavailable={unavailable}
+                                canCompare={Boolean(comparable)}
+                                onRank={addRank}
+                                onRankAll={rankRecommended}
+                                onCompare={() => comparable && loadRivals(comparable)}
+                                onCopy={(words) => copyWords(words, '추천 키워드')}
+                            />
 
                             <form className={`${styles.rankForm} ${styles.rise}`} style={{ '--d': 2 }} onSubmit={runRanks}>
                                 <div className={styles.inputWrap}>
@@ -1874,6 +2265,10 @@ export default function PlaceInsightPage() {
                                         const rival = rivals[row.keyword];
                                         const note = row.state === 'done' ? recordNote(row.recorded) : null;
                                         const result = row.result;
+                                        // 이 순위가 내 지역의 검색 결과인지(상위 매장과의 거리·네이버가 인식한 지역)
+                                        const scope = row.state === 'done' && result.scanned > 0
+                                            ? rankScope({ keyword: row.keyword, locality: rankLocality(result, place.coordinate), regions: recommendation?.regions })
+                                            : null;
                                         return (
                                             <li key={row.keyword} id={`rank-row-${index}`} className={styles.rankRow} data-state={row.state} data-open={open ? 'true' : undefined} data-node={`kw:${row.keyword}`} style={{ '--d': index }}>
                                                 <div className={styles.rankLine}>
@@ -1906,6 +2301,12 @@ export default function PlaceInsightPage() {
                                                         </>
                                                     )}
                                                 </div>
+                                                {scope && (scope.tone !== 'ok' || scope.text) && (
+                                                    <p className={styles.rankScope} data-tone={scope.tone}>
+                                                        <MapPin size={14} aria-hidden="true" />
+                                                        <span><strong>{scope.title}</strong>{scope.text ? ` · ${scope.text}` : ''}</span>
+                                                    </p>
+                                                )}
                                                 {note && <p className={styles.rankNote}>{note}</p>}
 
                                                 {open && (
@@ -1914,7 +2315,7 @@ export default function PlaceInsightPage() {
                                                             <p className={styles.note}>이 키워드로 검색된 매장이 없습니다.</p>
                                                         ) : (
                                                             <>
-                                                                <RankTable result={result} />
+                                                                <RankTable result={result} origin={place.coordinate} />
                                                                 <RankDiagnosis diagnosis={diagnoseRank(buildMine(place, result), result.topSignals)} />
 
                                                                 {!rival && (
@@ -1962,7 +2363,12 @@ export default function PlaceInsightPage() {
                             )}
                         </Reveal>
 
-                        <ReviewSection place={place} briefing={activity?.briefing} />
+                        <ReviewSection
+                            place={place}
+                            briefing={activity?.briefing}
+                            mentions={activity?.mentions}
+                            unmentioned={(recommendation?.registered || []).filter((entry) => entry.blog === 0).map((entry) => entry.keyword)}
+                        />
                         <ActivitySection activity={activity} error={activityError} />
 
                         <div id="sec-geo" className={styles.geo} data-node="hub:geo">

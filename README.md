@@ -44,7 +44,7 @@ Next.js 14(App Router), NextAuth, Prisma, PostgreSQL 기반.
 - `DEPOSIT_BANK`, `DEPOSIT_ACCOUNT`, `DEPOSIT_HOLDER`: 무통장입금 계좌(은행·계좌번호·예금주).
   세 값을 모두 넣어야 적용되며, 없으면 코드의 기본 값이 표시되고 관리자 대시보드에 확인 경고가 뜹니다
 - (선택) `NAVER_API_HUB_KEY_ID`, `NAVER_API_HUB_KEY`: NAVER API HUB의 검색어 트렌드 키.
-  등록하면 키워드 트렌드가 동작하고, 없으면 '연동 준비 중' 안내와 네이버 공식 도구 링크를 보여 줍니다.
+  등록하면 키워드 트렌드 화면에 추이 그래프가 나오고, 없으면 그래프 대신 입력한 키워드로 여는 외부 도구 바로가기(네이버 데이터랩·구글 트렌드·네이버 검색)를 보여 줍니다.
   기존 개발자센터 키(`NAVER_CLIENT_ID`, `NAVER_CLIENT_SECRET`, 데이터랩 사용 설정)도 2027-06-30까지 쓸 수 있습니다
 
 ### 데이터 출처에 대한 원칙

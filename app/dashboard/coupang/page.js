@@ -5,6 +5,7 @@ import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import DashboardLayout from '@/components/layout/DashboardLayout';
+import LoadError from '@/components/ui/LoadError';
 import styles from './page.module.css';
 import {
     BarChart3, CheckCircle2, Clock, MessageSquareText, Package, Send, Target, UserCheck,
@@ -38,6 +39,7 @@ export default function CoupangPage() {
     const [message, setMessage] = useState('');
     const [inquiries, setInquiries] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [loadError, setLoadError] = useState(false);
     const [submitting, setSubmitting] = useState(false);
 
     const fetchInquiries = useCallback(async () => {
@@ -47,12 +49,13 @@ export default function CoupangPage() {
             if (res.ok) {
                 const data = await res.json();
                 setInquiries(data.inquiries || []);
+                setLoadError(false);
             } else {
-                setInquiries([]);
+                setLoadError(true);
             }
         } catch (error) {
             console.error('Error fetching coupang inquiries:', error);
-            setInquiries([]);
+            setLoadError(true);
         } finally {
             setLoading(false);
         }
@@ -214,6 +217,8 @@ export default function CoupangPage() {
                     <h2 className={styles.listTitle}>내 문의 내역</h2>
                     {loading ? (
                         <div className={styles.emptyState}><p>로딩 중...</p></div>
+                    ) : loadError ? (
+                        <LoadError message="문의 내역을 불러오지 못했습니다." onRetry={fetchInquiries} />
                     ) : inquiries.length === 0 ? (
                         <div className={styles.emptyState}>
                             <MessageSquareText size={48} className={styles.emptyIcon} />

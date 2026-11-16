@@ -1,16 +1,20 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import DashboardLayout from '@/components/layout/DashboardLayout';
+import LoadError from '@/components/ui/LoadError';
 import styles from './page.module.css';
 import {
     User, Shield, Building, ChevronRight, Settings,
-    Bell, TrendingUp, Wallet, Megaphone, MessageCircle, Info,
+    Bell, TrendingUp, Wallet, Megaphone, MessageCircle, Info, Mail, CheckCircle2, Clock,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { buildBusinessRequest, formatBusinessNumber, isBusinessRequest } from '@/lib/business';
+
+const EMPTY_BUSINESS_FORM = { company: '', number: '', owner: '', email: '', businessType: '', address: '' };
 
 const tabs = [
     { id: 'profile', label: '프로필 정보', icon: User },
@@ -57,6 +61,12 @@ export default function ProfilePage() {
     const [showPasswordForm, setShowPasswordForm] = useState(false);
     const [passwordForm, setPasswordForm] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
     const [changingPassword, setChangingPassword] = useState(false);
+    const [businessForm, setBusinessForm] = useState(EMPTY_BUSINESS_FORM);
+    const [businessErrors, setBusinessErrors] = useState({});
+    const [businessRequests, setBusinessRequests] = useState([]);
+    const [businessLoading, setBusinessLoading] = useState(false);
+    const [businessLoadError, setBusinessLoadError] = useState(false);
+    const [submittingBusiness, setSubmittingBusiness] = useState(false);
 
     useEffect(() => {
         // Minimum loading time for smooth transition
@@ -74,8 +84,34 @@ export default function ProfilePage() {
     useEffect(() => {
         if (userInfo) {
             setEditForm({ name: userInfo.name || '', phone: userInfo.phone || '' });
+            // 세금계산서 이메일은 가입 이메일을 기본으로 채워 둡니다(직접 바꿀 수 있음).
+            setBusinessForm((prev) => (prev.email ? prev : { ...prev, email: userInfo.email || '' }));
         }
     }, [userInfo]);
+
+    // 사업자 정보 등록 요청은 1:1 문의(충전·결제)로 접수되므로, 그중 등록 요청만 골라 보여 줍니다.
+    const fetchBusinessRequests = useCallback(async () => {
+        try {
+            setBusinessLoading(true);
+            const res = await fetch('/api/inquiries?category=payment');
+            if (!res.ok) {
+                setBusinessLoadError(true);
+                return;
+            }
+            const data = await res.json();
+            setBusinessRequests((data.inquiries || []).filter(isBusinessRequest));
+            setBusinessLoadError(false);
+        } catch (error) {
+            console.error('Error fetching business requests:', error);
+            setBusinessLoadError(true);
+        } finally {
+            setBusinessLoading(false);
+        }
+    }, []);
+
+    useEffect(() => {
+        if (activeTab === 'business') fetchBusinessRequests();
+    }, [activeTab, fetchBusinessRequests]);
 
     const fetchUserInfo = async () => {
         try {
@@ -218,6 +254,48 @@ export default function ProfilePage() {
         }
     };
 
+    const setBusinessField = (key, value) => {
+        setBusinessForm((prev) => ({ ...prev, [key]: value }));
+        if (businessErrors[key]) setBusinessErrors((prev) => ({ ...prev, [key]: '' }));
+    };
+
+    const handleBusinessSubmit = async (e) => {
+        e.preventDefault();
+        const request = buildBusinessRequest(businessForm);
+        if (!request.ok) {
+            setBusinessErrors(request.errors);
+            toast.error(Object.values(request.errors)[0]);
+            return;
+        }
+        setBusinessErrors({});
+        setSubmittingBusiness(true);
+        try {
+            const res = await fetch('/api/inquiries', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ category: 'payment', title: request.title, content: request.content }),
+            });
+            const data = await res.json().catch(() => null);
+            if (!res.ok) {
+                toast.error(data?.error || '등록 요청을 보내지 못했습니다.');
+                return;
+            }
+            toast.success('사업자 정보 등록을 요청했습니다. 담당자가 확인 후 답변드릴게요.');
+            setBusinessForm({ ...EMPTY_BUSINESS_FORM, email: userInfo?.email || '' });
+            fetchBusinessRequests();
+        } catch (error) {
+            console.error('Error submitting business request:', error);
+            toast.error('등록 요청 중 오류가 발생했습니다.');
+        } finally {
+            setSubmittingBusiness(false);
+        }
+    };
+
+    const openPasswordChange = () => {
+        setActiveTab('security');
+        setShowPasswordForm(true);
+    };
+
     const isAdmin = userInfo?.role === 'admin';
     const hasUnreadNotifications = notifications.some(n => !n.isRead);
 
@@ -321,13 +399,22 @@ export default function ProfilePage() {
                                 </form>
 
                                 <div className={styles.socialSection}>
-                                    <h3>소셜 연동</h3>
+                                    <h3>로그인 방법</h3>
                                     <div className={styles.socialItem}>
                                         <div className={styles.socialInfo}>
-                                            <div className={styles.kakaoIcon}>K</div>
-                                            <span>카카오</span>
+                                            <div className={styles.loginIcon}><Mail size={16} aria-hidden="true" /></div>
+                                            <div>
+                                                <span>이메일·비밀번호</span>
+                                                <p className={styles.loginHint}>
+                                                    {loading ? '계정 정보를 불러오는 중...' : `${userInfo?.email || '가입한 이메일'} 계정으로 로그인하고 있어요.`}
+                                                </p>
+                                            </div>
                                         </div>
-                                        <span className={styles.notConnected}>미연동</span>
+                                        {userInfo?.hasPassword !== false && (
+                                            <button type="button" className={styles.actionBtn} onClick={openPasswordChange}>
+                                                비밀번호 변경
+                                            </button>
+                                        )}
                                     </div>
                                 </div>
 
@@ -479,11 +566,134 @@ export default function ProfilePage() {
                         {activeTab === 'business' && (
                             <div className={styles.section}>
                                 <h2 className={styles.sectionTitle}>사업자 정보</h2>
-                                <div className={styles.businessNotice}>
-                                    <p>사업자 정보를 등록하면 세금계산서 발행이 가능합니다.</p>
-                                    <Link href="/dashboard/support" className={styles.registerBtn}>
-                                        1:1 문의로 등록 요청하기
-                                    </Link>
+                                <p className={styles.businessLead}>
+                                    세금계산서를 받으려면 사업자 정보를 보내 주세요. 담당자가 확인해 등록하고, 결과는 아래 요청 내역에 답변으로 남깁니다.
+                                    사업자등록증 사본이 필요하면 답변으로 따로 안내드려요.
+                                </p>
+
+                                <form className={styles.businessForm} onSubmit={handleBusinessSubmit} noValidate>
+                                    <div className={styles.editFieldRow}>
+                                        <div className={styles.editField}>
+                                            <label htmlFor="bizCompany">상호(법인명)</label>
+                                            <input
+                                                id="bizCompany"
+                                                type="text"
+                                                className="glass-input"
+                                                maxLength={60}
+                                                value={businessForm.company}
+                                                onChange={(e) => setBusinessField('company', e.target.value)}
+                                                placeholder="예: 다온상회"
+                                                aria-invalid={Boolean(businessErrors.company)}
+                                            />
+                                            {businessErrors.company && <p className={styles.fieldError} role="alert">{businessErrors.company}</p>}
+                                        </div>
+                                        <div className={styles.editField}>
+                                            <label htmlFor="bizNumber">사업자등록번호</label>
+                                            <input
+                                                id="bizNumber"
+                                                type="text"
+                                                inputMode="numeric"
+                                                className="glass-input"
+                                                value={businessForm.number}
+                                                onChange={(e) => setBusinessField('number', formatBusinessNumber(e.target.value))}
+                                                placeholder="000-00-00000"
+                                                aria-invalid={Boolean(businessErrors.number)}
+                                            />
+                                            {businessErrors.number && <p className={styles.fieldError} role="alert">{businessErrors.number}</p>}
+                                        </div>
+                                    </div>
+                                    <div className={styles.editFieldRow}>
+                                        <div className={styles.editField}>
+                                            <label htmlFor="bizOwner">대표자명</label>
+                                            <input
+                                                id="bizOwner"
+                                                type="text"
+                                                className="glass-input"
+                                                maxLength={30}
+                                                value={businessForm.owner}
+                                                onChange={(e) => setBusinessField('owner', e.target.value)}
+                                                placeholder="예: 홍길동"
+                                                aria-invalid={Boolean(businessErrors.owner)}
+                                            />
+                                            {businessErrors.owner && <p className={styles.fieldError} role="alert">{businessErrors.owner}</p>}
+                                        </div>
+                                        <div className={styles.editField}>
+                                            <label htmlFor="bizEmail">세금계산서 받을 이메일</label>
+                                            <input
+                                                id="bizEmail"
+                                                type="email"
+                                                className="glass-input"
+                                                maxLength={100}
+                                                value={businessForm.email}
+                                                onChange={(e) => setBusinessField('email', e.target.value)}
+                                                placeholder="tax@example.com"
+                                                aria-invalid={Boolean(businessErrors.email)}
+                                            />
+                                            {businessErrors.email && <p className={styles.fieldError} role="alert">{businessErrors.email}</p>}
+                                        </div>
+                                    </div>
+                                    <div className={styles.editFieldRow}>
+                                        <div className={styles.editField}>
+                                            <label htmlFor="bizType">업태·종목 (선택)</label>
+                                            <input
+                                                id="bizType"
+                                                type="text"
+                                                className="glass-input"
+                                                maxLength={60}
+                                                value={businessForm.businessType}
+                                                onChange={(e) => setBusinessField('businessType', e.target.value)}
+                                                placeholder="예: 도소매 / 전자상거래"
+                                            />
+                                        </div>
+                                        <div className={styles.editField}>
+                                            <label htmlFor="bizAddress">사업장 주소 (선택)</label>
+                                            <input
+                                                id="bizAddress"
+                                                type="text"
+                                                className="glass-input"
+                                                maxLength={150}
+                                                value={businessForm.address}
+                                                onChange={(e) => setBusinessField('address', e.target.value)}
+                                                placeholder="사업자등록증에 적힌 주소"
+                                            />
+                                        </div>
+                                    </div>
+                                    <button type="submit" className="btn btn-primary" disabled={submittingBusiness}>
+                                        {submittingBusiness ? '보내는 중...' : '등록 요청 보내기'}
+                                    </button>
+                                </form>
+
+                                <div className={styles.businessHistory}>
+                                    <h3>요청 내역</h3>
+                                    {businessLoading && businessRequests.length === 0 ? (
+                                        <Skeleton className="h-16 w-full" />
+                                    ) : businessLoadError ? (
+                                        <LoadError compact message="요청 내역을 불러오지 못했습니다." onRetry={fetchBusinessRequests} />
+                                    ) : businessRequests.length === 0 ? (
+                                        <p className={styles.businessEmpty}>아직 보낸 등록 요청이 없습니다.</p>
+                                    ) : (
+                                        <ul className={styles.businessList}>
+                                            {businessRequests.map((request) => {
+                                                const answered = request.status === 'answered' || Boolean(request.answer);
+                                                return (
+                                                    <li key={request.id}>
+                                                        <div className={styles.businessItemHead}>
+                                                            <strong>{request.title}</strong>
+                                                            <span className={answered ? styles.businessDone : styles.businessWaiting}>
+                                                                {answered ? <CheckCircle2 size={13} aria-hidden="true" /> : <Clock size={13} aria-hidden="true" />}
+                                                                {answered ? '답변완료' : '확인 대기'}
+                                                            </span>
+                                                        </div>
+                                                        <p className={styles.businessDate}>{new Date(request.createdAt).toLocaleDateString('ko-KR')} 요청</p>
+                                                        {request.answer && <p className={styles.businessAnswer}>{request.answer}</p>}
+                                                    </li>
+                                                );
+                                            })}
+                                        </ul>
+                                    )}
+                                    <p className={styles.businessFootnote}>
+                                        같은 내용은 <Link href="/dashboard/support">고객센터 &gt; 내 문의 내역</Link>에서도 볼 수 있어요.
+                                    </p>
                                 </div>
                             </div>
                         )}

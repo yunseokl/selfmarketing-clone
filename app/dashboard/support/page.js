@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
 import Link from 'next/link';
 import DashboardLayout from '@/components/layout/DashboardLayout';
+import LoadError from '@/components/ui/LoadError';
 import styles from './page.module.css';
 import { HelpCircle, ChevronDown, Send, Inbox, Clock, CheckCircle2, LogIn } from 'lucide-react';
 import { toast } from 'sonner';
@@ -119,6 +120,7 @@ export default function SupportPage() {
 
     const [inquiries, setInquiries] = useState([]);
     const [loadingInquiries, setLoadingInquiries] = useState(true);
+    const [loadError, setLoadError] = useState(false);
     const [openInquiryId, setOpenInquiryId] = useState(null);
 
     const fetchInquiries = useCallback(async () => {
@@ -128,9 +130,13 @@ export default function SupportPage() {
             if (res.ok) {
                 const data = await res.json();
                 setInquiries(data.inquiries || []);
+                setLoadError(false);
+            } else {
+                setLoadError(true);
             }
         } catch (error) {
             console.error('Error fetching inquiries:', error);
+            setLoadError(true);
         } finally {
             setLoadingInquiries(false);
         }
@@ -317,6 +323,8 @@ export default function SupportPage() {
                             <div className={styles.emptyState}>
                                 <p>로딩 중...</p>
                             </div>
+                        ) : loadError ? (
+                            <LoadError message="문의 내역을 불러오지 못했습니다." onRetry={fetchInquiries} />
                         ) : inquiries.length === 0 ? (
                             <div className={styles.emptyState}>
                                 <Inbox size={40} className={styles.emptyIcon} />

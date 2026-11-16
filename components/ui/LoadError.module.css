@@ -1,0 +1,74 @@
+.box {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    padding: 36px 20px;
+    text-align: center;
+    color: var(--text-gray);
+}
+
+.icon {
+    color: #FBBF24;
+    flex-shrink: 0;
+}
+
+.text {
+    display: grid;
+    gap: 4px;
+}
+
+.text strong {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--text-white);
+}
+
+.text span {
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--text-gray);
+}
+
+.retry {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 14px;
+    font-size: 13px;
+    font-weight: 600;
+    font-family: inherit;
+    color: var(--text-white);
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid var(--glass-border);
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.retry:hover {
+    background: rgba(255, 255, 255, 0.16);
+}
+
+/* 카드 위쪽에 얹는 한 줄짜리 안내 */
+.compact {
+    flex-direction: row;
+    align-items: center;
+    padding: 14px 16px;
+    text-align: left;
+    background: rgba(245, 158, 11, 0.1);
+    border: 1px solid rgba(245, 158, 11, 0.3);
+    border-radius: 12px;
+}
+
+.compact .text {
+    flex: 1;
+    min-width: 0;
+}
+
+@media (max-width: 640px) {
+    .compact {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+}

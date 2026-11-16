@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import DashboardLayout from '@/components/layout/DashboardLayout';
+import LoadError from '@/components/ui/LoadError';
 import styles from './page.module.css';
 import { Wallet, Building2, Copy } from 'lucide-react';
 import { toast } from 'sonner';
@@ -42,6 +43,7 @@ export default function ChargePage() {
     const [transactions, setTransactions] = useState([]);
     const [depositAccount, setDepositAccount] = useState(null);
     const [loading, setLoading] = useState(true);
+    const [loadError, setLoadError] = useState(false);
 
     const fetchBalance = useCallback(async () => {
         try {
@@ -63,9 +65,13 @@ export default function ChargePage() {
                 const data = await res.json();
                 setTransactions(data.transactions || []);
                 if (data.depositAccount) setDepositAccount(data.depositAccount);
+                setLoadError(false);
+            } else {
+                setLoadError(true);
             }
         } catch (error) {
             console.error('Error fetching transactions:', error);
+            setLoadError(true);
         } finally {
             setLoading(false);
         }
@@ -93,7 +99,11 @@ export default function ChargePage() {
     };
 
     const handleCopyAccount = () => {
-        if (!depositAccount) return;
+        if (!depositAccount) {
+            toast.error('계좌 정보를 아직 불러오지 못했습니다. 잠시 후 다시 눌러 주세요.');
+            fetchTransactions();
+            return;
+        }
         navigator.clipboard.writeText(depositAccount.account)
             .then(() => toast.success('계좌번호가 복사되었습니다.'))
             .catch(() => toast.error('복사하지 못했습니다. 계좌번호를 직접 적어 주세요.'));
@@ -226,7 +236,9 @@ export default function ChargePage() {
                                 <span>
                                     {depositAccount
                                         ? `${depositAccount.bank} ${depositAccount.account} (예금주: ${depositAccount.holder})`
-                                        : '계좌 정보를 불러오는 중...'}
+                                        : loadError
+                                            ? '계좌 정보를 불러오지 못했습니다. 복사 버튼을 누르면 다시 불러옵니다.'
+                                            : '계좌 정보를 불러오는 중...'}
                                 </span>
                                 <button type="button" className={styles.copyBtn} onClick={handleCopyAccount}>
                                     <Copy size={14} />
@@ -283,6 +295,12 @@ export default function ChargePage() {
                             <tbody>
                                 {loading ? (
                                     <tr><td colSpan={6} className={styles.emptyCell}>로딩 중...</td></tr>
+                                ) : loadError ? (
+                                    <tr>
+                                        <td colSpan={6}>
+                                            <LoadError message="이용 내역을 불러오지 못했습니다." onRetry={fetchTransactions} />
+                                        </td>
+                                    </tr>
                                 ) : transactions.length === 0 ? (
                                     <tr><td colSpan={6} className={styles.emptyCell}>이용 내역이 없습니다.</td></tr>
                                 ) : (

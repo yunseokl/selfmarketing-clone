@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import DashboardLayout from '@/components/layout/DashboardLayout';
+import LoadError from '@/components/ui/LoadError';
 import styles from './page.module.css';
 import { Pin, Megaphone, Search, ChevronDown, Eye } from 'lucide-react';
 
@@ -14,6 +15,7 @@ const categoryInfo = {
 export default function NoticePage() {
     const [notices, setNotices] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [loadError, setLoadError] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
     const [openId, setOpenId] = useState(null);
     const [viewedIds, setViewedIds] = useState(new Set());
@@ -25,9 +27,13 @@ export default function NoticePage() {
             if (res.ok) {
                 const data = await res.json();
                 setNotices(data.notices || []);
+                setLoadError(false);
+            } else {
+                setLoadError(true);
             }
         } catch (error) {
             console.error('Error fetching notices:', error);
+            setLoadError(true);
         } finally {
             setLoading(false);
         }
@@ -87,6 +93,8 @@ export default function NoticePage() {
                         <div className={styles.emptyState}>
                             <p>로딩 중...</p>
                         </div>
+                    ) : loadError ? (
+                        <LoadError message="공지사항을 불러오지 못했습니다." onRetry={fetchNotices} />
                     ) : filteredNotices.length === 0 ? (
                         <div className={styles.emptyState}>
                             <Megaphone size={40} className={styles.emptyIcon} />

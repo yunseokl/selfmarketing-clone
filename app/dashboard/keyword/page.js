@@ -6,10 +6,11 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { toast } from 'sonner';
 import {
-    ArrowDownRight, ArrowUpRight, CalendarDays, Clock, ExternalLink, Info, Loader2, Minus, Search, Table2, TrendingUp,
+    ArrowDownRight, ArrowUpRight, CalendarDays, Clock, Copy, ExternalLink, Info, Loader2, Minus, Search, Table2, TrendingUp,
 } from 'lucide-react';
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import DashboardLayout from '@/components/layout/DashboardLayout';
+import { buildKeywordLinks, SEARCHAD_URL } from '@/lib/keyword-links';
 import styles from './page.module.css';
 
 const EXAMPLE_KEYWORDS = ['캠핑의자', '단백질쉐이크', '무선청소기'];
@@ -79,7 +80,10 @@ export default function KeywordTrendPage() {
     const [compareText, setCompareText] = useState('');
     const [recent, setRecent] = useState([]);
     const [configured, setConfigured] = useState(null);
+    const [canConfigure, setCanConfigure] = useState(false);
     const [result, setResult] = useState(null);
+    // 연동 키가 없을 때: 그래프 대신 입력한 키워드로 여는 외부 도구 바로가기
+    const [links, setLinks] = useState(null);
     const [loading, setLoading] = useState(false);
     const [showTable, setShowTable] = useState(false);
 
@@ -90,6 +94,7 @@ export default function KeywordTrendPage() {
             const data = await res.json();
             setRecent(data.recent || []);
             setConfigured(Boolean(data.configured));
+            setCanConfigure(Boolean(data.canConfigure));
         } catch (error) {
             console.error('Error fetching keyword meta:', error);
         }
@@ -124,11 +129,19 @@ export default function KeywordTrendPage() {
             const data = await res.json();
 
             if (!res.ok) {
-                if (data.code === 'NOT_CONFIGURED') setConfigured(false);
                 toast.error(typeof data.error === 'string' ? data.error : '요청을 처리하지 못했습니다.');
                 return;
             }
 
+            if (data.configured === false) {
+                setConfigured(false);
+                setResult(null);
+                setLinks(buildKeywordLinks(data.keywords));
+                fetchMeta();
+                return;
+            }
+
+            setLinks(null);
             setResult(data.result);
             setShowTable(false);
             fetchMeta();
@@ -151,6 +164,16 @@ export default function KeywordTrendPage() {
         analyze(value, []);
     };
 
+    const copyKeyword = async (value) => {
+        try {
+            if (!navigator.clipboard?.writeText) throw new Error('clipboard unavailable');
+            await navigator.clipboard.writeText(value);
+            toast.success(`'${value}' 복사했어요. 데이터랩의 주제어 칸에 붙여넣으세요.`);
+        } catch {
+            toast.error('복사하지 못했어요. 키워드를 직접 입력해 주세요.');
+        }
+    };
+
     // 차트·표용: 달마다 한 줄, 키워드별 값은 k0, k1 … 에
     const chartData = useMemo(() => {
         if (!result) return [];
@@ -165,7 +188,7 @@ export default function KeywordTrendPage() {
     }, [result]);
 
     const hasAnyData = result?.summary.some((s) => s.hasData);
-    const disabled = loading || configured === false;
+    const linkMode = configured === false;
 
     return (
         <DashboardLayout>
@@ -186,7 +209,6 @@ export default function KeywordTrendPage() {
                                     value={keyword}
                                     placeholder="예: 캠핑의자"
                                     onChange={(e) => setKeyword(e.target.value)}
-                                    disabled={configured === false}
                                 />
                             </div>
                         </div>
@@ -200,65 +222,52 @@ export default function KeywordTrendPage() {
                                     value={compareText}
                                     placeholder="예: 캠핑테이블, 캠핑체어"
                                     onChange={(e) => setCompareText(e.target.value)}
-                                    disabled={configured === false}
                                 />
                             </div>
                         </div>
-                        <button type="submit" className={styles.submitBtn} disabled={disabled}>
+                        <button type="submit" className={styles.submitBtn} disabled={loading}>
                             {loading ? <Loader2 size={18} className={styles.spin} /> : <TrendingUp size={18} />}
-                            {loading ? '조회 중...' : '추이 보기'}
+                            {loading ? '조회 중...' : linkMode ? '바로 확인하기' : '추이 보기'}
                         </button>
                     </form>
 
-                    {configured !== false && (
-                        <div className={styles.chips}>
-                            <span>예시</span>
-                            {EXAMPLE_KEYWORDS.map((example) => (
-                                <button key={example} type="button" onClick={() => runExample(example)} disabled={loading}>
-                                    {example}
-                                </button>
-                            ))}
-                        </div>
-                    )}
+                    <div className={styles.chips}>
+                        <span>예시</span>
+                        {EXAMPLE_KEYWORDS.map((example) => (
+                            <button key={example} type="button" onClick={() => runExample(example)} disabled={loading}>
+                                {example}
+                            </button>
+                        ))}
+                    </div>
                 </section>
 
-                {configured === false && (
+                {linkMode && (
                     <section className={styles.notice} role="status">
                         <Info size={20} aria-hidden="true" />
                         <div>
-                            <strong>검색 트렌드 데이터 연동을 준비하고 있어요</strong>
+                            <strong>지금은 그래프 대신 바로가기로 안내해요</strong>
                             <p>
-                                연동이 끝나면 이 화면에서 바로 조회할 수 있습니다. 그동안은 네이버가 제공하는 공식 도구에서
-                                같은 자료를 무료로 볼 수 있어요.
+                                이 화면에 추이 그래프를 그리려면 네이버 검색어 트렌드 연동 키가 서버에 등록되어 있어야 하는데, 아직 등록되지 않았어요.
+                                키워드를 입력하면 같은 자료를 볼 수 있는 도구를 그 키워드로 바로 열어 드립니다.
                             </p>
-                            <ul>
-                                <li>
-                                    <a href="https://datalab.naver.com/keyword/trendSearch.naver" target="_blank" rel="noopener noreferrer">
-                                        네이버 데이터랩 검색어 트렌드 <ExternalLink size={13} />
-                                    </a>
-                                    <span>키워드별 검색 추이 비교 (로그인 없이 사용)</span>
-                                </li>
-                                <li>
-                                    <a href="https://datalab.naver.com/shoppingInsight/sCategory.naver" target="_blank" rel="noopener noreferrer">
-                                        네이버 데이터랩 쇼핑인사이트 <ExternalLink size={13} />
-                                    </a>
-                                    <span>분야별 인기 검색어와 성별·연령별 클릭 추이</span>
-                                </li>
-                                <li>
-                                    <a href="https://searchad.naver.com" target="_blank" rel="noopener noreferrer">
-                                        네이버 검색광고 키워드 도구 <ExternalLink size={13} />
-                                    </a>
-                                    <span>내 광고 계정으로 로그인하면 월간 검색수를 볼 수 있어요 (도구 &gt; 키워드 도구)</span>
-                                </li>
-                            </ul>
-                            <p className={styles.noticeLinks}>
-                                지금 바로 쓸 수 있는 도구: <Link href="/dashboard/margin">마진·ROAS 계산기</Link> · <Link href="/dashboard/seo">상품명 SEO 분석</Link>
-                            </p>
+                            {canConfigure ? (
+                                <p className={styles.adminNote}>
+                                    <b>관리자 안내</b>
+                                    서버 환경변수에 <code>NAVER_API_HUB_KEY_ID</code>, <code>NAVER_API_HUB_KEY</code>
+                                    (NAVER API HUB의 &lsquo;검색어 트렌드&rsquo; 키)를 등록하고 다시 배포하면 이 화면에 그래프가 바로 나옵니다.
+                                    기존 네이버 개발자센터 키는 <code>NAVER_CLIENT_ID</code>, <code>NAVER_CLIENT_SECRET</code>으로도 동작합니다.
+                                </p>
+                            ) : (
+                                <p className={styles.noticeLinks}>
+                                    그래프 연동이 필요하면 <Link href="/dashboard/support">고객센터</Link>로 알려 주세요.
+                                    지금 바로 쓸 수 있는 도구: <Link href="/dashboard/margin">마진·ROAS 계산기</Link> · <Link href="/dashboard/seo">상품명 SEO 분석</Link>
+                                </p>
+                            )}
                         </div>
                     </section>
                 )}
 
-                {recent.length > 0 && configured !== false && (
+                {recent.length > 0 && (
                     <div className={styles.recent}>
                         <Clock size={14} aria-hidden="true" />
                         <span>최근 조회</span>
@@ -268,6 +277,69 @@ export default function KeywordTrendPage() {
                             </button>
                         ))}
                     </div>
+                )}
+
+                {links && (
+                    <section className={styles.card} aria-live="polite" aria-label="검색 추이 바로가기">
+                        <div className={styles.cardHead}>
+                            <div>
+                                <h2>&lsquo;{links.keywords.join(', ')}&rsquo; 검색 추이 바로 확인</h2>
+                                <p>아래 도구에서 같은 자료를 볼 수 있어요 · 기준 기간 {links.range.startDate.slice(0, 7)} ~ {links.range.endDate.slice(0, 7)}</p>
+                            </div>
+                        </div>
+
+                        <div className={styles.linkGrid}>
+                            <article className={styles.linkTile}>
+                                <h3>네이버 데이터랩 검색어 트렌드</h3>
+                                <p>네이버 검색 기준이고 로그인 없이 무료예요. 주소로 키워드를 넘길 수 없어서, 키워드를 복사한 뒤 열린 화면의 &lsquo;주제어&rsquo; 칸에 붙여넣어 주세요.</p>
+                                <ul className={styles.copyList}>
+                                    {links.keywords.map((name) => (
+                                        <li key={name}>
+                                            <span>{name}</span>
+                                            <button type="button" onClick={() => copyKeyword(name)}>
+                                                <Copy size={13} aria-hidden="true" /> 복사
+                                            </button>
+                                        </li>
+                                    ))}
+                                </ul>
+                                <a className={styles.linkBtn} href={links.datalab} target="_blank" rel="noopener noreferrer">
+                                    데이터랩 열기 <ExternalLink size={14} aria-hidden="true" />
+                                </a>
+                            </article>
+
+                            <article className={styles.linkTile}>
+                                <h3>구글 트렌드</h3>
+                                <p>
+                                    {links.keywords.length > 1 ? '입력한 키워드 비교와 ' : '입력한 키워드와 '}
+                                    기간(한국 · 최근 3년)이 미리 들어간 채로 열려요. 구글 검색 기준이라 네이버와는 차이가 날 수 있어요.
+                                </p>
+                                <p className={styles.tileHint}>처음 열 때 오류(429) 화면이 보이면 새로고침을 한 번 눌러 주세요.</p>
+                                <a className={styles.linkBtn} href={links.googleTrends} target="_blank" rel="noopener noreferrer">
+                                    구글 트렌드에서 보기 <ExternalLink size={14} aria-hidden="true" />
+                                </a>
+                            </article>
+
+                            <article className={styles.linkTile}>
+                                <h3>네이버 검색 결과</h3>
+                                <p>지금 이 키워드로 어떤 상품·가게가 보이는지, 연관 검색어는 무엇인지 확인하세요.</p>
+                                <div className={styles.linkRow}>
+                                    {links.naverSearch.map((item) => (
+                                        <a key={item.keyword} href={item.url} target="_blank" rel="noopener noreferrer">
+                                            {item.keyword} <ExternalLink size={12} aria-hidden="true" />
+                                        </a>
+                                    ))}
+                                </div>
+                            </article>
+                        </div>
+
+                        <p className={styles.basis}>
+                            <Info size={13} aria-hidden="true" />
+                            <span>
+                                실제 월간 검색수는 네이버 검색광고의 키워드 도구(광고 계정 로그인 &gt; 도구 &gt; 키워드 도구)에서 볼 수 있어요.{' '}
+                                <a className={styles.inlineLink} href={SEARCHAD_URL} target="_blank" rel="noopener noreferrer">검색광고 열기</a>
+                            </span>
+                        </p>
+                    </section>
                 )}
 
                 {result && (
@@ -418,7 +490,7 @@ export default function KeywordTrendPage() {
                     </div>
                 )}
 
-                {!result && configured !== false && (
+                {!result && !links && (
                     <section className={styles.guide}>
                         <div><b>1</b><h3>키워드 입력</h3><p>팔려는 상품이나 우리 가게를 찾을 때 쓰는 단어를 넣으세요.</p></div>
                         <div><b>2</b><h3>성수기 확인</h3><p>최근 3년 동안 어느 달에 검색이 몰리는지 보고 준비 시점을 잡으세요.</p></div>

@@ -375,7 +375,7 @@
 }
 
 .stepCardInactive {
-    opacity: 0.7;
+    border-color: rgba(255, 255, 255, 0.08);
 }
 
 .stepBadge {
@@ -425,10 +425,17 @@
     text-decoration: none;
 }
 
-.stepButtonDisabled {
-    background: rgba(255, 255, 255, 0.05);
-    color: #64748B;
-    cursor: not-allowed;
+/* 다음 차례가 아닌 단계도 순서와 상관없이 바로 시작할 수 있습니다 */
+.stepButtonLater {
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    color: #CBD5E1;
+    padding: 7px 0;
+}
+
+.stepButtonLater:hover {
+    background: rgba(255, 255, 255, 0.12);
+    color: #fff;
 }
 
 /* Welcome Card Decoration */

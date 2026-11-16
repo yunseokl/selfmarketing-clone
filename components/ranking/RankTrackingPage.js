@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import DashboardLayout from '@/components/layout/DashboardLayout';
+import LoadError from '@/components/ui/LoadError';
 import styles from './RankTrackingPage.module.css';
 import {
     ChevronDown,
@@ -111,6 +112,7 @@ export default function RankTrackingPage({
     const { status } = useSession();
     const [trackings, setTrackings] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [loadError, setLoadError] = useState(false);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [saving, setSaving] = useState(false);
     const [recordingId, setRecordingId] = useState('');
@@ -137,12 +139,13 @@ export default function RankTrackingPage({
             if (res.ok) {
                 setTrackings(data.trackings || []);
                 setToday(data.today || '');
+                setLoadError(false);
             } else {
-                toast.error(getValidationMessage(data.error));
+                setLoadError(true);
             }
         } catch (error) {
             console.error('Error fetching rank trackings:', error);
-            toast.error('순위 기록장을 불러오지 못했습니다.');
+            setLoadError(true);
         } finally {
             setLoading(false);
         }
@@ -168,6 +171,15 @@ export default function RankTrackingPage({
     }, [searchQuery, trackings]);
 
     const atLimit = trackings.length >= MAX_TRACKINGS;
+
+    // 한도에 닿아도 버튼을 꺼 두지 않고, 눌렀을 때 이유와 방법을 알려 줍니다.
+    const openAddModal = () => {
+        if (atLimit) {
+            toast.error(`최대 ${MAX_TRACKINGS}개까지 등록할 수 있습니다. 쓰지 않는 항목을 삭제한 뒤 추가해주세요.`);
+            return;
+        }
+        setIsModalOpen(true);
+    };
 
     const resetForm = () => {
         setFormData({ url: '', name: '', keyword: '', rank: '' });
@@ -308,7 +320,9 @@ export default function RankTrackingPage({
             });
             const data = await res.json();
             if (!res.ok) {
-                toast.error(typeof data.error === 'string' ? data.error : '순위를 조회하지 못했습니다.');
+                toast.error(data.disabled
+                    ? "실제 순위 조회가 지금 꺼져 있습니다. 직접 확인한 순위는 '기록'으로 남길 수 있어요."
+                    : typeof data.error === 'string' ? data.error : '순위를 조회하지 못했습니다.');
                 return;
             }
             if (!data.recorded?.saved) {
@@ -380,11 +394,7 @@ export default function RankTrackingPage({
                 </div>
 
                 <div className={styles.toolbar}>
-                    <button
-                        className={styles.addBtn}
-                        onClick={() => setIsModalOpen(true)}
-                        disabled={atLimit}
-                    >
+                    <button className={styles.addBtn} onClick={openAddModal}>
                         <Plus size={18} />
                         {addLabel}
                     </button>
@@ -418,6 +428,19 @@ export default function RankTrackingPage({
 
                 {loading ? (
                     <div className={styles.emptyState}>순위 기록장을 불러오는 중입니다.</div>
+                ) : loadError ? (
+                    <div className={styles.emptyState}>
+                        <LoadError message="순위 기록장을 불러오지 못했습니다." onRetry={fetchTrackings} />
+                    </div>
+                ) : filteredTrackings.length === 0 && trackings.length > 0 ? (
+                    <div className={styles.emptyState}>
+                        <Search size={40} className={styles.emptyIcon} />
+                        <h4>검색 결과가 없습니다.</h4>
+                        <p>&lsquo;{searchQuery.trim()}&rsquo;에 맞는 항목이 없어요. 등록한 항목은 {trackings.length}개입니다.</p>
+                        <button className={styles.emptyBtn} onClick={() => setSearchQuery('')}>
+                            검색어 지우기
+                        </button>
+                    </div>
                 ) : filteredTrackings.length === 0 ? (
                     <div className={styles.emptyState}>
                         <Icon size={48} className={styles.emptyIcon} />
@@ -429,11 +452,7 @@ export default function RankTrackingPage({
                                 ? '스마트스토어 상품 URL + "남자 겨울 패딩" 키워드를 등록하고, 검색해서 확인한 순위를 주 1회 적어 보세요.'
                                 : '네이버 플레이스 URL + "강남 미용실" 키워드를 등록하고, 검색해서 확인한 순위를 주 1회 적어 보세요.'}
                         </div>
-                        <button
-                            className={styles.emptyBtn}
-                            onClick={() => setIsModalOpen(true)}
-                            disabled={atLimit}
-                        >
+                        <button className={styles.emptyBtn} onClick={openAddModal}>
                             <Plus size={18} />
                             {addLabel}
                         </button>

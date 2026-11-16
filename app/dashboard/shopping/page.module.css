@@ -259,6 +259,15 @@
     color: var(--text-white);
 }
 
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+.spinning {
+    animation: spin 1s linear infinite;
+}
+
 /* Table */
 .tableContainer {
     overflow-x: auto;
