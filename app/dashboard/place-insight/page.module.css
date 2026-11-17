@@ -1339,8 +1339,14 @@
  * data-node 가 그래프 점의 id 와 같은 카드는, 그래프에서 그 점을 가리키면 테두리가 켜지고(data-linked)
  * 점을 눌러 이동해 오면 고리가 한 번 퍼집니다(data-flash). */
 
-.sheet [data-node] {
+.sheet [data-node],
+.sheet [data-flash='true'] {
     position: relative;
+}
+
+/* 그래프에서 고른 줄로 이동할 때 위에 붙는 목차(약 58px)에 가리지 않게 합니다(구역은 따로 정한 값을 씁니다). */
+.sheet [data-node]:not(.section):not(.geo) {
+    scroll-margin-top: 72px;
 }
 
 .sheet [data-node][data-linked='true']:not(.section):not(.geo) {
@@ -1353,7 +1359,7 @@
     transform: scaleY(1.5) scaleX(1.5);
 }
 
-.sheet [data-node][data-flash='true']:not(.section):not(.geo)::after,
+.sheet [data-flash='true']:not(.section):not(.geo)::after,
 .section[data-flash='true'] > .sectionHead::after,
 .geo[data-flash='true']::after {
     content: '';
@@ -1847,6 +1853,121 @@
     flex-wrap: wrap;
     gap: 6px;
     margin-top: 10px;
+}
+
+/* 접어 두는 한 줄: 추천에서 뺀 키워드 · 등록 키워드에서 살펴볼 점 */
+.fold {
+    margin-top: 10px;
+    padding-top: 6px;
+    border-top: 1px solid var(--hair);
+}
+
+.foldBtn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 36px;
+    padding: 0 10px 0 6px;
+    font: inherit;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--ink-2);
+    background: none;
+    border: 0;
+    border-radius: var(--r);
+    cursor: pointer;
+    transition: color 0.15s ease, background-color 0.15s ease;
+}
+
+.foldBtn:hover {
+    color: var(--ink);
+    background: var(--raised-2);
+}
+
+.foldBtn svg {
+    flex-shrink: 0;
+    transition: transform 0.3s var(--ease);
+}
+
+.foldBtn[aria-expanded='true'] svg {
+    transform: rotate(180deg);
+}
+
+.foldList {
+    display: grid;
+    gap: 3px;
+    margin-top: 4px;
+    list-style: none;
+}
+
+.foldList li {
+    display: grid;
+    gap: 2px;
+    padding: 8px 12px;
+    font-size: 13px;
+    line-height: 1.55;
+    color: var(--ink-2);
+    background: var(--raised-2);
+    border-radius: var(--r);
+}
+
+.foldList b {
+    font-weight: 700;
+    color: var(--ink);
+}
+
+.foldHead {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 2px 8px;
+}
+
+.foldHead strong {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--ink);
+    overflow-wrap: anywhere;
+}
+
+.ruleTag {
+    padding: 0 7px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--ink-2);
+    background: var(--sunk);
+    border-radius: var(--r);
+}
+
+.foldMuted {
+    color: var(--ink-3);
+}
+
+/* 지역만 바꾼 조합: "강남 + 낱말 · 낱말"을 한 문단으로 흘려 씁니다(낱말이 많으면 지역 이름 옆에서 이어 줄바꿈). */
+.foldWords {
+    color: var(--ink);
+    overflow-wrap: anywhere;
+}
+
+.foldWords b {
+    margin-right: 8px;
+}
+
+.slotConcern {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--warn-ink);
+}
+
+/* 운영 정보의 낱말(편의시설·좌석): 그래프의 같은 점과 이어지는 칸 */
+.factWord {
+    margin: 0 -2px;
+    padding: 0 2px;
+    border-radius: var(--r);
+}
+
+.countList .toggleBtn {
+    margin-top: 8px;
 }
 
 .rankForm {
@@ -3551,7 +3672,8 @@
     }
 
     .savedChip button,
-    .recoRank {
+    .recoRank,
+    .foldBtn {
         min-height: 44px;
     }
 
@@ -3730,7 +3852,7 @@
         width: 100%;
     }
 
-    .sheet [data-node][data-flash='true']:not(.section):not(.geo)::after,
+    .sheet [data-flash='true']:not(.section):not(.geo)::after,
     .section[data-flash='true'] > .sectionHead::after,
     .geo[data-flash='true']::after {
         animation: none;

@@ -381,6 +381,11 @@
     visibility: hidden;
 }
 
+/* 톡 해서 띄운 쪽지의 지시선(실선) */
+.leads > line[data-state='held'] {
+    stroke-dasharray: none;
+}
+
 /* 손가락으로 당길 때 손가락과 점을 잇는 가는 선(실선) */
 .leads > line.tether {
     stroke: rgba(243, 237, 224, 0.62);
@@ -476,12 +481,24 @@
 }
 
 /* 끌어당기는 점의 이름·값: 포인터 옆에 붙어 다니는 작은 쪽지(크기는 그대로 두고 바탕만 깝니다) */
-.label[data-state='held'] {
+.label[data-state='held'],
+.label[data-note='true'] {
     background: var(--g-card);
     border-radius: 2px;
     outline: 5px solid var(--g-card);
     box-shadow: 0 0 0 6px var(--g-hair-2);
     text-shadow: none;
+}
+
+/* 손가락으로 톡 해서 띄운 이름 쪽지: 이름만 적어 작게, 점 바로 곁에 둡니다(값은 아래 줄에 함께 적힙니다).
+   이 모양은 React 가 붙이므로(data-note) 쪽지의 크기를 그대로 재서 자리를 잡습니다. */
+.label[data-note='true'] b {
+    font-weight: 700;
+    color: #FFFFFF;
+}
+
+.label[data-note='true'] span {
+    display: none;
 }
 
 /* 관계 이름표: 고른 점에서 뻗은 연결 위에 붙는 작은 글자(관계의 이름) */
@@ -1062,6 +1079,50 @@
     color: var(--g-text-3);
 }
 
+/* 톡 해서 쪽지를 띄운 동안의 아래 줄: 줄 전체가 그 항목의 카드를 여는 단추(높이는 줄과 같은 44~48px) */
+.readoutPeek {
+    display: flex;
+    flex: 1 1 auto;
+    align-items: center;
+    gap: 8px;
+    position: relative;
+    width: calc(100% + 32px);
+    min-width: 0;
+    height: 100%;
+    margin: 0 -16px;
+    padding: 0 38px 0 16px;
+    font: inherit;
+    line-height: inherit;
+    color: inherit;
+    text-align: left;
+    background: none;
+    border: 0;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.readoutPeek:active {
+    background: var(--g-hair);
+}
+
+.readoutPeek:focus-visible {
+    outline: 2px solid var(--g-text-2);
+    outline-offset: -3px;
+}
+
+/* 줄 오른쪽 끝의 작은 화살표: 눌러서 여는 줄이라는 표시(이름·값 사이에 끼지 않게 끝에 따로 둡니다) */
+.readoutPeek::after {
+    content: '›';
+    position: absolute;
+    top: 50%;
+    right: 16px;
+    font-size: 18px;
+    font-weight: 500;
+    line-height: 1;
+    color: var(--g-text-2);
+    transform: translateY(-54%);
+}
+
 /* 조작 안내: 넓으면 한 줄, 좁으면 두 줄까지(위의 고정 높이 안에 두 줄이 들어갑니다). */
 .readoutHint {
     display: -webkit-box;
@@ -1330,6 +1391,19 @@
 
     .readoutText::before {
         content: none;
+    }
+
+    .readoutPeek {
+        flex-wrap: wrap;
+        align-content: center;
+        gap: 0 8px;
+        width: calc(100% + 24px);
+        margin: 0 -12px;
+        padding: 0 34px 0 12px;
+    }
+
+    .readoutPeek::after {
+        right: 14px;
     }
 }
 

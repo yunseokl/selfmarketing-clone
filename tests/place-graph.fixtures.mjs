@@ -1425,11 +1425,13 @@ export const SALON = {
 };
 
 // 화면(page.js)이 그래프에 넘기는 것과 같은 묶음을 만듭니다.
+// 추천 키워드는 화면처럼 순위 표 줄(ranks)을 함께 넘겨 만듭니다(내 순위가 좋은 지역을 앞세우고 나쁜 지역에는 새 조합을 만들지 않음).
 export function graphInput(sample, overrides = {}) {
     const place = sample.place;
     const activity = sample.activity ?? null;
     const rivalPool = sample.rivalPool || [];
-    const recommendation = recommendKeywords({ place, activity, rivals: rivalPool });
+    const ranks = overrides.ranks ?? sample.ranks ?? [];
+    const recommendation = recommendKeywords({ place, activity, rivals: rivalPool, ranks });
     const actions = buildActionItems(place, activity, { recommendation, nowMs: NOW });
-    return { place, activity, ranks: sample.ranks || [], rivals: {}, rivalPool, recommendation, actions, nowMs: NOW, ...overrides };
+    return { place, activity, ranks, rivals: {}, rivalPool, recommendation, actions, nowMs: NOW, ...overrides };
 }

@@ -171,6 +171,13 @@ function assertSound(graph, name) {
         if (link.rank !== undefined) assert.equal(Number.isInteger(link.rank) && link.rank >= 1 && String(link.badge).includes(`${link.rank}위`), true, `${name}: ${link.id} rank ${link.rank}`);
         // 경쟁 매장과 키워드를 잇는 연결에는 값이 꼭 붙는다(없으면 조각에 키워드 점의 값 = 내 순위가 대신 나온다)
         if (source.type === 'rival' && KEYWORD_TYPES.includes(target.type)) assert.equal(typeof link.badge, 'string', `${name}: ${link.id} 에 조각 값이 없음`);
+        // 내 매장과 잇는 연결에도 값이 꼭 붙고, 그 값은 업종 이름이 아니다. 값이 없으면 상대 카드의 조각에 내 매장 점의 값(업종 이름)이
+        // 순위 자리에 대신 나온다(약국 카드의 "메가헬스팜약국〔약국〕" 옆에 경쟁 매장은 "〔순위 조회 전〕"이던 것)
+        if (link.kind === 'cross' && (source.type === 'store' || target.type === 'store')) {
+            const store = byId.get('store');
+            assert.equal(typeof link.badge, 'string', `${name}: ${link.id} 에 조각 값이 없어 내 매장 점의 값 '${store.sub}'이 대신 나옴`);
+            assert.notEqual(link.badge, store.sub, `${name}: ${link.id} 조각 값이 업종 이름 '${store.sub}'`);
+        }
         if (link.kind === 'tree') {
             assert.equal(link.rel, 'partOf', `${name}: ${link.id} 트리 연결`);
             assert.equal(source.parent, link.target, `${name}: ${link.id} 는 자식 → 부모`);
@@ -535,8 +542,9 @@ test('살펴보기 카드: 묶음 제목이 방향에 맞게 갈리고 조각에
         ['등록한 대표키워드', ['논현횟집〔순위 조회 전〕', '강남구청점심〔이 매장 2위〕', '강남횟집〔순위 조회 전〕']],
     ]);
     // 낱말이 겹치는 추천 키워드는 "숙성회"를 등록한 매장에서 볼 수 있다
+    // ("압구정숙성회"는 이제 추천하지 않는다: 압구정 키워드의 내 순위가 41위·300위 밖이고, 숙성회는 지역 하나만 권한다)
     assert.deepEqual(cardOf(restaurant, 'rival:test-r2', food).find(([title]) => title === '이 매장과 낱말이 겹치는 추천 키워드'),
-        ['이 매장과 낱말이 겹치는 추천 키워드', ["강남구청숙성회〔'숙성회'〕", "압구정숙성회〔'숙성회'〕"]]);
+        ['이 매장과 낱말이 겹치는 추천 키워드', ["강남구청숙성회〔'숙성회'〕"]]);
     // 추천 키워드: '추천한 이유'(받는 쪽)와 '이유로 추천한 키워드'(주는 쪽)가 한 카드에 섞이지 않는다
     assert.deepEqual(cardOf(restaurant, 'kw:강남횟집', food), [
         ['이 키워드를 추천한 이유', ["강남구청횟집〔'횟집'〕", "압구정횟집〔'횟집'〕", '횟집〔블로그 30개〕']],
@@ -601,8 +609,31 @@ test('순위에는 누구 것인지 적는다: 한 카드에 같은 키워드의
     // 순위를 조회하지 않은 키워드에는 순위를 지어내지 않는다
     const unranked = linkOf(restaurant, 'rival:test-r3', 'registers', 'kw:강남횟집');
     assert.deepEqual([unranked.badge, 'rank' in unranked, unranked.why], ['순위 조회 전', false, "'시험논현어시장'이 '강남횟집'을 대표키워드로 등록했습니다(내 매장은 등록하지 않음)."]);
+    // 지역 이름이 없는 등록 키워드는 자동 순위 조회에서 빼므로 "조회 전"이 아니라 "조회 안 함"이다. 내 매장·경쟁 매장 조각에 같은 말을 쓴다
+    // (전에는 내 매장 조각에 값이 없어 내 매장 점의 값 = 업종 이름 '약국'이 순위 자리에 나왔다)
     const pharmacy = graphOf(PHARMACY);
-    assert.equal('badge' in linkOf(pharmacy, 'store', 'registers', 'kw:일반의약품'), false); // 순위를 조회하지 않은 내 키워드
+    assert.deepEqual([linkOf(pharmacy, 'store', 'registers', 'kw:일반의약품').badge, 'rank' in linkOf(pharmacy, 'store', 'registers', 'kw:일반의약품')], ['지역 없어 조회 안 함', false]);
+    assert.equal(linkOf(pharmacy, 'rival:13247713', 'registers', 'kw:일반의약품').badge, '지역 없어 조회 안 함');
+    assert.deepEqual(cardOf(pharmacy, 'kw:일반의약품').find(([title]) => title === '이 키워드를 등록한 매장'),
+        ['이 키워드를 등록한 매장', ['메가헬스팜약국〔지역 없어 조회 안 함〕', '오송메가파워약국〔지역 없어 조회 안 함〕']]);
+    // 지역 이름이 있는데 아직 조회하지 않은 내 키워드는 "순위 조회 전"
+    const notYet = graphOf(RESTAURANT, { ranks: RESTAURANT.ranks.filter((row) => row.keyword !== '압구정회식') });
+    assertSound(notYet, '등록 키워드 하나를 아직 조회하지 않은 음식점');
+    assert.equal(linkOf(notYet, 'store', 'registers', 'kw:압구정회식').badge, '순위 조회 전');
+    // 모든 견본의 모든 카드: 매장 조각(내 매장·경쟁 매장)의 값에 업종 이름이 나오지 않는다
+    for (const [name, sample] of [...SAMPLES, ['순위 조회 전 약국', { ...PHARMACY, ranks: [] }], ['순위 조회 전 미용실', { ...SALON, ranks: [] }]]) {
+        const graph = graphOf(sample);
+        const categories = new Set([sample.place.category, ...sample.ranks.flatMap((row) => row.result?.top || []).map((top) => top.category)].filter(Boolean));
+        for (const node of graph.nodes) {
+            for (const [title, chips] of cardOf(graph, node.id, ontologyFor(sample.place))) {
+                for (const chip of chips) {
+                    const [, label, value] = chip.match(/^(.*)〔(.+)〕$/) || [];
+                    const shop = graph.nodes.find((other) => other.label === label && ['store', 'rival'].includes(other.type));
+                    if (shop && value) assert.equal(categories.has(value), false, `${name} ${node.id} ▸ ${title}: ${chip}`);
+                }
+            }
+        }
+    }
 
     // 순위는 조회했는데 상위 목록에 그 매장이 없으면 "○위 밖"까지만 적는다(상위 목록에 든 곳까지만 안다)
     const apgujeong = RESTAURANT.ranks.find((row) => row.keyword === '압구정횟집'); // 상위 3곳: 시험압구정수산 · 시험로데오횟집 · 시험바다횟집, 내 매장 41위
@@ -645,7 +676,8 @@ test('묶음과 도착지: 카드 머리의 묶음과 버튼이 가는 구역이
             assert.equal(node.go.includes(label) || words.some((word) => node.go.includes(word)), true, `${name}: ${node.id} 묶음 '${label}' 과 버튼 '${node.go}'`);
         }
     }
-    assert.equal(checked, 111 + 165 + 134);
+    // 음식점은 쓸모 관문(주력 갈래 밖 곁들임·순위가 나쁜 지역)으로 추천 키워드가 11개에서 8개로 줄어 165 → 162
+    assert.equal(checked, 111 + 162 + 134);
 });
 
 test('기존 id 를 그대로 내고(본문 카드의 data-node 와 이어짐), 이름은 label·값은 sub 로 나눠 적는다', () => {
@@ -899,7 +931,7 @@ test('같은 수치를 두 번 적지 않는다: 견본 3종의 모든 점에서
             assert.equal(labels.length <= 4 && new Set(labels).size === labels.length, true, `${name} ${node.id}: facts`);
         }
     }
-    assert.equal(checked, 111 + 165 + 134);
+    assert.equal(checked, 111 + 162 + 134);
 
     // 값(sub)이 없는 점은 값이라 할 것이 없는 종류뿐이다: 묶음 점 일부, 할 일(제목이 곧 내용), 편의시설·좌석 이름, AI 브리핑 문장
     const valueless = new Set();
@@ -938,7 +970,7 @@ test('글자 역할의 보기: 이름은 label, 핵심 값은 sub, 다른 수치
     assert.deepEqual(shape('pos:menu'), ['주간 인기 메뉴', '5개', ['가장 많이 주문한 메뉴 소금김밥 · 주문의 12%'], '최근 일주일 동안 주문이 많았던 메뉴를 많은 순서로 놓은 것입니다.']);
     // 경쟁 매장: 키워드별 순위는 연결의 값으로만 보인다
     assert.deepEqual(shape('rival:test-r1'), ['시험바다횟집', '키워드 4개에서 내 위', ['방문자 리뷰 1,840개', '블로그 리뷰 310개', '평점 4.61점'], '업종은 생선회, 지역은 논현동입니다. 순위를 조회한 키워드의 검색 결과 맨 위 열 곳 안에 나온 매장입니다.']);
-    assert.deepEqual(shape('region:강남구청'), ["지역 이름 '강남구청'", '역 주변', ['등록 키워드에 쓴 횟수 3개', '이 지역 이름을 쓴 키워드 10개'], '키워드 앞에 붙여 "지역 + 업종" 조합을 만드는 지역 이름입니다. 매장 주소·가까운 역·등록한 키워드에서 읽었습니다.']);
+    assert.deepEqual(shape('region:강남구청'), ["지역 이름 '강남구청'", '역 주변', ['등록 키워드에 쓴 횟수 3개', '이 지역 이름을 쓴 키워드 9개'], '키워드 앞에 붙여 "지역 + 업종" 조합을 만드는 지역 이름입니다. 매장 주소·가까운 역·등록한 키워드에서 읽었습니다.']);
     // 미용실: 낱말이 '시술'로 바뀐다
     const salon = graphOf(SALON);
     assert.deepEqual([nodeOf(salon, 'ops:menu').sub, nodeOf(salon, 'ops:menu').facts.map((fact) => `${fact.label} ${fact.value}`), nodeOf(salon, 'ops:menu').detail],
@@ -1023,7 +1055,9 @@ test('추천 이유: 등록 키워드·손님이 고른 좋은 점·리뷰·예�
     };
     assert.deepEqual(reason(pharmacy, 'vote:제품 종류가 다양해요', 'kw:청주대형약국'), ["'청주대형약국' 추천 이유: 손님이 고른 좋은 점 '제품 종류가 다양해요' 27명.", '손님 27명']);
     assert.deepEqual(reason(pharmacy, 'bm:대형약국', 'kw:청주대형약국'), ["'청주대형약국'의 낱말 '대형약국'이 블로그 후기 11개 중 10개에 나옵니다.", '블로그 10개']);
-    assert.deepEqual(reason(pharmacy, 'kw:일반의약품', 'kw:청주일반의약품'), ["'청주일반의약품'은 등록 키워드 '일반의약품'에 지역 이름 '청주'를 붙인 조합입니다.", '지역 이름 붙임']);
+    // 등록 키워드에 지역 이름을 붙인 조합(약국의 "일반의약품"은 이제 분류 이름이라 지역을 붙여 권하지 않아, 미용실의 "댄디컷"으로 본다)
+    assert.equal(nodeOf(pharmacy, 'kw:청주일반의약품'), undefined);
+    assert.deepEqual(reason(graphOf(SALON), 'kw:댄디컷', 'kw:강남역댄디컷'), ["'강남역댄디컷'은 등록 키워드 '댄디컷'에 지역 이름 '강남역'을 붙인 조합입니다.", '지역 이름 붙임']);
     // 어느 연결에도 한쪽 점의 종류를 말하는 '대표키워드' 배지는 없다
     for (const [name, sample] of SAMPLES) assert.equal(graphOf(sample).links.some((link) => link.badge === '대표키워드'), false, name);
     // 추천 이유는 추천 키워드로만 간다(등록 키워드·조회한 키워드에는 붙지 않음)
@@ -1040,14 +1074,20 @@ test('추천 이유: 등록 키워드·손님이 고른 좋은 점·리뷰·예�
     assert.equal(nodeOf(restaurant, 'kw:강남회식'), undefined);
     assert.equal(reason(restaurant, 'kw:강남구청횟집', 'kw:강남횟집')[0], "'강남횟집'은 등록 키워드 '강남구청횟집'의 낱말 '횟집'에 지역 이름 '강남'을 붙인 조합입니다.");
     assert.deepEqual(subjectsOf(restaurant, 'kw:강남횟집', 'supports'), ['kw:강남구청횟집', 'kw:압구정횟집', 'bm:횟집']);
+    // 메뉴판·소식에 되풀이해 나오는 낱말("대방어")은 그 메뉴와 잇는다
+    assert.deepEqual(reason(restaurant, 'menu:대방어 정식', 'kw:강남구청대방어'), ["'강남구청대방어' 추천 이유: 메뉴 '대방어 정식'.", '등록 메뉴']);
     // 결제 단말의 메뉴 이름("대물볼락구이")은 매장 이름이 앞에 붙어 추천 낱말("볼락구이")과 다르다.
-    // 추천 낱말을 만들 때와 같은 규칙으로 다듬어 "주간 인기 메뉴" 이유를 그 메뉴와 잇는다(전에는 이 이유만 연결이 없었다)
-    assert.deepEqual(reason(restaurant, 'pmenu:대물볼락구이', 'kw:강남구청볼락구이'),
+    // 추천 낱말을 만들 때와 같은 규칙으로 다듬어 "주간 인기 메뉴" 이유를 그 메뉴와 잇는다(전에는 이 이유만 연결이 없었다).
+    // 횟집에서는 볼락구이가 주력 갈래(회) 밖 곁들임이라 추천하지 않으므로, 업종이 '생선구이'인 같은 매장으로 본다
+    assert.equal(nodeOf(restaurant, 'kw:강남구청볼락구이'), undefined);
+    const GRILL = { ...RESTAURANT, place: { ...RESTAURANT.place, category: '생선구이' } };
+    const grill = graphOf(GRILL);
+    assert.deepEqual(reason(grill, 'pmenu:대물볼락구이', 'kw:강남구청볼락구이'),
         ["'강남구청볼락구이'의 낱말 '볼락구이'는 주간 인기 메뉴 3위 '대물볼락구이'에서 나온 말입니다.", '주간 인기 3위']);
-    assert.deepEqual(subjectsOf(restaurant, 'kw:강남구청볼락구이', 'supports'), ['rmenu:볼락구이', 'pmenu:대물볼락구이']);
+    assert.deepEqual(subjectsOf(grill, 'kw:강남구청볼락구이', 'supports'), ['rmenu:볼락구이', 'pmenu:대물볼락구이']);
     // 추천 이유에 "주간 인기 메뉴"가 있는 추천 키워드는 모두 결제 메뉴 점과 이어진다
     let posReasons = 0;
-    for (const [name, sample] of SAMPLES) {
+    for (const [name, sample] of [...SAMPLES, ['생선구이집', GRILL]]) {
         const input = graphInput(sample);
         const graph = build(input, name);
         for (const item of input.recommendation.items) {
@@ -1099,9 +1139,20 @@ test('키워드 속 손님 말: 블로그에 나온 낱말 → 그 낱말이 들
             assert.equal(fromBlog.length <= 1, true, `${name} ${id}: ${fromBlog}`);
         }
     }
-    // 등록한 낱말보다 블로그 후기에서 더 많이 쓰는 말로 만든 조합은 '대신 써 볼 키워드'
-    assert.equal(linkOf(pharmacy, 'kw:청주영양제', 'alternativeTo', 'kw:건강기능식품').why, "블로그 후기 언급은 '건강기능식품' 0개, '영양제' 4개입니다. 손님이 더 많이 쓰는 말로 만든 조합이 '청주영양제'입니다.");
-    assert.deepEqual(pharmacy.links.filter((link) => link.rel === 'alternativeTo').map((link) => `${link.source}>${link.target}`), ['kw:청주영양제>kw:건강기능식품', 'kw:청주동물약국>kw:동물의약품']);
+    // 손님이 검색할 때 쓰는 말로 만든 조합은 '대신 써 볼 키워드'. 약·제품 분류 이름("일반의약품"·"건강기능식품")은 블로그 수가 아니라
+    // 분류 이름이라는 것이 이유다(블로그 수로 고르는 경우는 tests/place-keywords.test.mjs 의 등록 키워드 진단에서 본다)
+    assert.equal(linkOf(pharmacy, 'kw:청주영양제', 'alternativeTo', 'kw:건강기능식품').why, "'건강기능식품'은 약·제품을 나누는 분류 이름이라, 손님이 검색할 때 쓰는 말 '영양제'로 만든 조합이 '청주영양제'입니다.");
+    assert.equal(linkOf(pharmacy, 'kw:청주약국', 'alternativeTo', 'kw:일반의약품').why, "'일반의약품'은 약·제품을 나누는 분류 이름이라, 손님이 검색할 때 쓰는 말 '약국'으로 만든 조합이 '청주약국'입니다.");
+    assert.deepEqual(pharmacy.links.filter((link) => link.rel === 'alternativeTo').map((link) => `${link.source}>${link.target}`),
+        ['kw:청주약국>kw:일반의약품', 'kw:청주영양제>kw:건강기능식품', 'kw:청주동물약국>kw:동물의약품', 'kw:청주약국>kw:상비약']);
+    // 블로그 수로 고른 경우의 문장(분류 이름이 아닌 등록 키워드)
+    const cafePlace = {
+        placeId: 'c1', name: '시험카페', category: '카페', address: '서울 강남구 테헤란로 1', jibunAddress: '서울 강남구 역삼동 1', keywords: ['케이크'],
+        reviewVotes: [], reviewMenus: [], reviewThemes: [], conveniences: [], detail: { menus: [] },
+    };
+    const cafeActivity = { mentions: { blogTotal: 20, terms: [{ term: '케이크', count: 1 }, { term: '디저트', count: 9 }] } };
+    const cafe = build(graphInput({ place: cafePlace, activity: cafeActivity, rivalPool: [] }));
+    assert.equal(linkOf(cafe, 'kw:강남디저트', 'alternativeTo', 'kw:케이크').why, "블로그 후기 언급은 '케이크' 1개, '디저트' 9개입니다. 손님이 더 많이 쓰는 말로 만든 조합이 '강남디저트'입니다.");
 });
 
 /* ───────── 경쟁 매장 ───────── */
@@ -1225,10 +1276,11 @@ test('같은 낱말을 쓰는 매장: 낱말이 업종 이름 그 자체면 연�
     const generic = linkOf(pharmacy, 'rival:2021608686', 'sharesTerm', 'kw:오창약국');
     assert.deepEqual([generic.strength, generic.badge, generic.why], [0.2, "'약국'", "'메가타운약국 청주점'이 대표키워드 '청주약국'에 '약국'을 씁니다. '약국'은 업종 이름입니다."]);
     // 업종 이름이 아닌 낱말은 보통 굵기다
-    // (전에는 "청주심야약국"·"오창대형약국"으로 확인했는데, 21시에 닫는 매장의 "심야약국"과 지역만 바꾼 "오창대형약국"은 이제 추천하지 않는다)
-    const otc = linkOf(pharmacy, 'rival:13247713', 'sharesTerm', 'kw:청주일반의약품');
-    assert.deepEqual([otc.strength, otc.badge, otc.why], [0.55, "'일반의약품'", "'오송메가파워약국'이 '일반의약품'을 대표키워드로 등록했습니다."]);
+    // (21시에 닫는 매장의 "심야약국"과 분류 이름 "일반의약품"은 이제 추천하지 않는다. "오창대형약국"은 오창 키워드의 내 순위(2위)가 좋아 다시 권한다)
+    const big = linkOf(pharmacy, 'rival:2021608686', 'sharesTerm', 'kw:오창대형약국');
+    assert.deepEqual([big.strength, big.badge, big.why], [0.55, "'대형약국'", "'메가타운약국 청주점'이 대표키워드 '청주대형약국'에 '대형약국'을 씁니다."]);
     assert.equal(nodeOf(pharmacy, 'kw:청주심야약국'), undefined);
+    assert.equal(nodeOf(pharmacy, 'kw:청주일반의약품'), undefined);
     assert.equal(subjectsOf(pharmacy, 'kw:청원약국', 'sharesTerm').length, 2); // 키워드마다 2곳까지(상위 4곳이 '약국'을 쓰지만 둘만 잇는다)
     for (const [name, sample] of SAMPLES) {
         const input = graphInput(sample);
@@ -1270,8 +1322,9 @@ test('이름이 같음 / 이름에 들어 있음: 리뷰에 나온 메뉴 · 주
     assert.ok(linkOf(graph, 'rmenu:갈치조림', 'namedIn', 'pmenu:대물 순살갈치조림'));
     assert.ok(linkOf(graph, 'rmenu:볼락구이', 'namedIn', 'pmenu:대물볼락구이'));
     assert.ok(linkOf(graph, 'rmenu:보쌈', 'namedIn', 'menu:맛보기보쌈(100g)'));
-    // 등록한 메뉴 34개 가운데 리뷰·결제와 이어지는 메뉴부터 보여 준다
-    assert.deepEqual(ids(graph, 'menu:'), ['menu:소금김밥', 'menu:(한정)대물 순살 갈치조림', 'menu:해물돌판짜파게티', 'menu:대물 숙성회 정식(광어)', 'menu:맛보기보쌈(100g)', 'menu:1% 대광어 숙성회']);
+    // 등록한 메뉴 34개 가운데 결제·추천 이유·리뷰와 이어지는 메뉴부터 보여 준다
+    // ("대방어 정식"은 추천 키워드 "강남구청대방어"의 이유라 들어오고, 남는 자리를 채우던 대표 메뉴 "1% 대광어 숙성회"가 빠졌다)
+    assert.deepEqual(ids(graph, 'menu:'), ['menu:소금김밥', 'menu:(한정)대물 순살 갈치조림', 'menu:해물돌판짜파게티', 'menu:대방어 정식', 'menu:대물 숙성회 정식(광어)', 'menu:맛보기보쌈(100g)']);
     // 이름이 맞지 않으면 잇지 않는다('광어'는 메뉴 이름의 끝말도 낱말도 아님, '갈치'는 '갈치조림'의 앞부분일 뿐)
     assert.deepEqual(menuLinks('rmenu:광어'), []);
     assert.deepEqual(menuLinks('rmenu:갈치'), []);
@@ -1587,12 +1640,14 @@ test('같은 입력이면 순서까지 같은 출력을 내고, 입력을 바꾸
 
 test('견본 그래프의 크기(묶음·관계 종류)', () => {
     // 추천 키워드가 쓸모 관문을 거치면서 약국의 키워드 점이 22 → 17개로 줄었다(추천 12 → 9개, 조회만 한 키워드 2개가 추천 안으로).
-    // 음식점·미용실은 추천이 12개 그대로라 점 수는 같고, 지역만 바꾼 조합에 달렸던 연결이 줄었다.
+    // 그 뒤(2026-11-17 4차): 약국은 분류 이름 조합(청주일반의약품 등) 대신 내 순위가 좋은 오창 조합이 들어와 점 수는 그대로이고
+    // 분류 이름 → 손님 말 조합('대신 써 볼 키워드') 연결이 2개 늘었다(229 → 232, 내 매장 조각 값은 연결 수와 무관).
+    // 음식점은 주력 갈래(회) 밖 곁들임(갈치·볼락구이)과 순위가 나쁜 압구정 조합이 빠지고 대방어가 들어와 추천 11 → 8개(165 → 162).
     assert.deepEqual(summarizeGraph(graphOf(PHARMACY)).groups, { store: 1, search: 17, rival: 16, voice: 29, todo: 9, ops: 9, geo: 30 });
-    assert.deepEqual(summarizeGraph(graphOf(RESTAURANT)).groups, { store: 1, search: 21, rival: 10, voice: 50, pay: 21, todo: 6, ops: 26, geo: 30 });
+    assert.deepEqual(summarizeGraph(graphOf(RESTAURANT)).groups, { store: 1, search: 18, rival: 10, voice: 50, pay: 21, todo: 6, ops: 26, geo: 30 });
     assert.deepEqual(summarizeGraph(graphOf(SALON)).groups, { store: 1, search: 21, rival: 6, voice: 53, todo: 1, ops: 22, geo: 30 });
     const sizes = (sample) => { const s = summarizeGraph(graphOf(sample)); return [s.nodes, s.links, s.cross]; };
-    assert.deepEqual([sizes(PHARMACY), sizes(RESTAURANT), sizes(SALON)], [[111, 229, 119], [165, 314, 150], [134, 236, 103]]);
+    assert.deepEqual([sizes(PHARMACY), sizes(RESTAURANT), sizes(SALON)], [[111, 232, 122], [162, 300, 139], [134, 236, 103]]);
     const rels = (sample) => Object.keys(summarizeGraph(graphOf(sample)).rels).sort();
     assert.deepEqual(rels(RESTAURANT), ['answers', 'atTime', 'feeds', 'lagsOn', 'mentions', 'missingFor', 'namedIn', 'outranks', 'partOf', 'ranksIn', 'readFrom', 'registers', 'sameItem', 'sharesTerm', 'spokenIn', 'supports', 'targets', 'usesRegion', 'weakens']);
     assert.deepEqual(rels(PHARMACY), ['alternativeTo', 'answers', 'feeds', 'lagsOn', 'missingFor', 'outranks', 'partOf', 'ranksIn', 'registers', 'sharesTerm', 'spokenIn', 'suggests', 'supports', 'targets', 'usesRegion', 'weakens']);

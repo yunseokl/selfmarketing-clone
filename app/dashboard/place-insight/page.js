@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { createContext, Fragment, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
@@ -19,12 +19,15 @@ import { buildPlaceGraph, buildIdleGraph, ONTOLOGY, ontologyFor, itemWord, forma
 import styles from './page.module.css';
 import PlaceGraph from './PlaceGraph';
 import GeoAeoPanel from './GeoAeoPanel';
+import { Unfold, useUnfold, unfoldIn } from './unfold';
+import Prescription, { PrescriptionButton } from './Prescription';
 
 const MAX_KEYWORDS = 5;
 // 추천 키워드의 '순위 보기'로 순위 표에 덧붙일 수 있는 줄 수
 const RANK_ROWS_MAX = 10;
 const RECO_SHOWN = 6;
 const MENU_SHOWN = 8;
+const COUNT_SHOWN = 6;
 
 /* ───────── 표시 도우미 ───────── */
 
@@ -316,6 +319,7 @@ function SummaryRail({ place, placeInfo, activity, ranks, actions, saving, onSav
                     {placeInfo?.saved ? <BookmarkCheck size={16} aria-hidden="true" /> : <BookmarkPlus size={16} aria-hidden="true" />}
                     {placeInfo?.saved ? '내 매장으로 저장됨' : '내 매장으로 저장'}
                 </button>
+                <PrescriptionButton className={styles.secondaryBtn} />
                 <p className={styles.basis}>
                     {timeLabel(placeInfo?.fetchedAt)} 조회{placeInfo?.cached ? ' (같은 조회는 30분 동안 저장된 결과를 보여 줍니다)' : ''}.
                     {change
@@ -510,6 +514,7 @@ function TodoSection({ place, actions }) {
                 매장 화면·리뷰·소식에서 비어 있거나 오래된 항목입니다. 위에서부터 하면 됩니다.
                 {high > 0 && ` 먼저 할 일이 ${high}개 있습니다.`}
             </SectionHead>
+            <PrescriptionButton className={styles.secondaryBtn} block />
             <div className={styles.todoGrid}>
                 {actions.length === 0 ? (
                     <p className={`${styles.emptyPanel} ${styles.rise}`} style={{ '--d': 1 }}>
@@ -550,10 +555,56 @@ function slotState(entry, blogTotal) {
     return { tone: 'warn', text: ['지역 없음', blog].filter(Boolean).join(' · ') };
 }
 
+// 쓸모 관문의 규칙(lib/place-keywords.js recommendKeywords 의 rule)을 짧은 표시로 바꿉니다. 모르는 규칙은 '추천 제외'로 둡니다.
+const RULE_LABEL = {
+    broad: '넓은 업종 이름', extra: '추가 메뉴', vague: '뜻이 넓음', drink: '술·음료', otherBusiness: '다른 업종 낱말',
+    offMain: '주력 메뉴 아님', classification: '분류 이름', rank: '내 순위 낮은 지역',
+    condition: '조건 안 맞음', rivalOnly: '상위 매장만 씀', noBlog: '근거 부족', channel: '받는 방법', merged: '겹치는 낱말', region: '지역만 바꿈',
+};
+
+function ruleLabel(rule) {
+    return RULE_LABEL[rule] || '추천 제외';
+}
+
+// 접어 두는 한 줄(추천에서 뺀 키워드·등록 키워드에서 살펴볼 점). 누르면 아래에 목록이 펼쳐집니다.
+function Fold({ id, label, children }) {
+    const [open, setOpen] = useState(false);
+    return (
+        <div className={styles.fold}>
+            <button type="button" className={styles.foldBtn} aria-expanded={open} aria-controls={id} onClick={() => setOpen((prev) => !prev)}>
+                <ChevronDown size={16} aria-hidden="true" />
+                {label}
+            </button>
+            {open && <ul id={id} className={styles.foldList}>{children}</ul>}
+        </div>
+    );
+}
+
+// 등록한 대표키워드 가운데 쓸모 관문에 걸린 것: 이유와(있으면) 대신 써 볼 말
+function ConcernRow({ entry }) {
+    const { concern, spoken, suggest } = entry;
+    return (
+        <li>
+            <p className={styles.foldHead}>
+                <strong>{entry.keyword}</strong>
+                <span className={styles.ruleTag}>{ruleLabel(concern.rule)}</span>
+            </p>
+            <p>{concern.reason}</p>
+            {spoken?.keyword ? (
+                <p>대신 써 볼 말 <b>{spoken.keyword}</b> · 블로그 후기 언급 &lsquo;{entry.keyword}&rsquo; {entry.blog ?? 0}개, &lsquo;{spoken.term}&rsquo; {spoken.blog}개</p>
+            ) : suggest ? (
+                <p>대신 써 볼 말 <b>{suggest}</b></p>
+            ) : null}
+        </li>
+    );
+}
+
 function KeywordSlots({ keywords, diagnosis, blogTotal, onCopy }) {
     const list = keywords || [];
     const slots = Array.from({ length: Math.max(MAX_KEYWORDS, list.length) }, (_, index) => list[index] || null);
     const stateOf = new Map((diagnosis || []).map((entry) => [entry.keyword, slotState(entry, blogTotal)]));
+    const concerns = (diagnosis || []).filter((entry) => entry.concern && list.includes(entry.keyword));
+    const concernOf = new Map(concerns.map((entry) => [entry.keyword, entry.concern]));
     return (
         <div className={`${styles.slots} ${styles.rise}`} style={{ '--d': 1 }}>
             <div className={styles.slotsHead}>
@@ -572,14 +623,21 @@ function KeywordSlots({ keywords, diagnosis, blogTotal, onCopy }) {
                 <ol className={styles.slotRow}>
                     {slots.map((word, index) => {
                         const state = word ? stateOf.get(word) : null;
+                        const concern = word ? concernOf.get(word) : null;
                         return (
                             <li key={word || `empty-${index}`} data-empty={word ? undefined : 'true'} data-node={word ? `kw:${word}` : undefined} style={{ '--d': index }}>
                                 <span>{word || '빈 칸'}</span>
                                 {state && <small className={styles.slotState} data-tone={state.tone}>{state.text}</small>}
+                                {concern && <small className={styles.slotConcern}>살펴볼 점 · {ruleLabel(concern.rule)}</small>}
                             </li>
                         );
                     })}
                 </ol>
+            )}
+            {concerns.length > 0 && (
+                <Fold id="kw-concerns" label={`등록 키워드에서 살펴볼 점 ${concerns.length}개`}>
+                    {concerns.map((entry) => <ConcernRow key={entry.keyword} entry={entry} />)}
+                </Fold>
             )}
             {keywords !== null && list.length === 0 && (
                 <p className={styles.note}>
@@ -591,11 +649,68 @@ function KeywordSlots({ keywords, diagnosis, blogTotal, onCopy }) {
     );
 }
 
+// '지역만 바꾼 조합'은 지역 이름별로 묶어 짧게 보여 줍니다("압구정 + 점심 · 맛집 · 모임").
+function byRegion(entries) {
+    const groups = new Map();
+    for (const entry of entries) {
+        for (const keyword of entry.keywords || []) {
+            const region = keyword.endsWith(entry.term) ? keyword.slice(0, keyword.length - entry.term.length) : '';
+            if (!groups.has(region)) groups.set(region, []);
+            groups.get(region).push(region ? entry.term : keyword);
+        }
+    }
+    return [...groups];
+}
+
+// 추천에서 뺀 키워드: 낱말(내 순위가 낮은 지역은 지역 이름)마다 이유 한 문장.
+// 개수가 많은 '지역만 바꾼 조합'만 맨 아래에 한 줄로 묶습니다(펼침 줄의 개수 = 낱말 줄 수 + 묶음 안의 낱말 수).
+function ExcludedFold({ excluded }) {
+    if (!excluded?.length) return null;
+    const region = excluded.filter((entry) => entry.rule === 'region');
+    const single = excluded.filter((entry) => entry.rule !== 'region');
+    return (
+        <Fold id="kw-excluded" label={`추천에서 뺀 키워드 ${excluded.length}개`}>
+            {single.map((entry) => (
+                <li key={`${entry.rule}-${entry.term}`}>
+                    <p className={styles.foldHead}>
+                        <strong>{entry.term}</strong>
+                        <span className={styles.ruleTag}>{ruleLabel(entry.rule)}</span>
+                    </p>
+                    <p>{entry.reason}</p>
+                    {entry.keywords?.length > 0 && (
+                        <p className={styles.foldMuted}>{entry.rule === 'rank' ? '만들지 않은 조합' : '뺀 조합'} 예: {entry.keywords.join(' · ')}</p>
+                    )}
+                </li>
+            ))}
+            {region.length > 0 && (
+                <li>
+                    <p className={styles.foldHead}>
+                        <strong>지역만 바꾼 조합</strong>
+                        <span className={styles.ruleTag}>낱말 {region.length}개</span>
+                    </p>
+                    <p>같은 낱말로 이미 등록했거나 추천한 조합이 있어, 지역 이름만 바꾼 조합은 더 권하지 않았습니다.</p>
+                    {byRegion(region).map(([name, words]) => (
+                        <p key={name || 'etc'} className={styles.foldWords}>
+                            {name && <b>{name} +</b>}
+                            <span>{words.join(' · ')}</span>
+                        </p>
+                    ))}
+                </li>
+            )}
+        </Fold>
+    );
+}
+
 // 추천 키워드: 지역 + 업종(메뉴·서비스) 조합과 근거. 누르면 그 키워드의 순위를 순위 표에 덧붙여 조회합니다.
 function KeywordReco({ recommendation, ranks, rankPick, comparing, ranking, unavailable, canCompare, onRank, onRankAll, onCompare, onCopy }) {
     const [more, setMore] = useState(false);
+    // 그래프에서 고른 추천 키워드가 '더 보기' 뒤에 접혀 있으면 펼칩니다.
+    useUnfold(
+        (id) => !more && id.startsWith('kw:') && (recommendation?.items || []).findIndex((item) => `kw:${item.keyword}` === id) >= RECO_SHOWN,
+        () => setMore(true),
+    );
     if (!recommendation) return null;
-    const { regions, items, registered, rivalCount } = recommendation;
+    const { regions, items, registered, rivalCount, excluded } = recommendation;
     const shown = more ? items : items.slice(0, RECO_SHOWN);
     const rankOf = new Map(ranks.map((row) => [row.keyword, row]));
     const unranked = items.filter((item) => !rankOf.has(item.keyword)).slice(0, MAX_KEYWORDS);
@@ -618,7 +733,7 @@ function KeywordReco({ recommendation, ranks, rankPick, comparing, ranking, unav
                     <MapPin size={14} aria-hidden="true" />
                     <span>읽은 지역</span>
                     {regions.map((region) => (
-                        <span key={`${region.scope}-${region.term}`} className={styles.word}>
+                        <span key={`${region.scope}-${region.term}`} className={styles.word} data-node={`region:${region.term}`}>
                             {region.term}<small>{region.label}</small>
                         </span>
                     ))}
@@ -718,6 +833,7 @@ function KeywordReco({ recommendation, ranks, rankPick, comparing, ranking, unav
                     )}
                 </div>
             )}
+            {regions.length > 0 && <ExcludedFold excluded={excluded} />}
             <p className={styles.note}>
                 {rivalCount > 0
                     ? `상위 매장 ${rivalCount}곳이 등록한 대표키워드와 비교한 결과입니다. `
@@ -798,8 +914,9 @@ function RankTable({ result, origin }) {
                         // 행정구역의 마지막 낱말(동·읍·면)만 보여 줍니다.
                         const town = row.area ? row.area.split(' ').pop() : null;
                         const sub = [row.category, town].filter(Boolean).join(' · ');
+                        // 상위 매장 줄은 그래프의 경쟁 매장 점(rival:매장번호)과 잇습니다. 그 점에서 내려오면 이 줄도 함께 강조됩니다.
                         return (
-                            <tr key={row.placeId} className={row.isTarget ? styles.myRow : undefined} style={{ '--d': index }}>
+                            <tr key={row.placeId} className={row.isTarget ? styles.myRow : undefined} data-node={row.isTarget ? undefined : `rival:${row.placeId}`} style={{ '--d': index }}>
                                 <td className={styles.numCell}>{row.rank}</td>
                                 <th scope="row">
                                     <span className={styles.shopName}>{row.name}</span>
@@ -948,15 +1065,24 @@ function CommonKeywords({ mine, items }) {
 
 /* ───────── 리뷰 · 활동 ───────── */
 
-function CountList({ title, items, unit = '회', d = 0, node }) {
-    if (!items?.length) return null;
-    const max = Math.max(...items.map((item) => item.count));
+// prefix: 줄마다 붙는 그래프 점 id 의 앞말(lib/place-graph.js addCountList 의 prefix 와 같게. 예: vote → 'vote:친절해요')
+function CountList({ title, items, unit = '회', d = 0, node, prefix }) {
+    const [more, setMore] = useState(false);
+    const list = items || [];
+    // 그래프에서 고른 낱개가 접힌 줄에 있으면 펼칩니다.
+    useUnfold(
+        (id) => !more && Boolean(prefix) && list.findIndex((item) => `${prefix}:${item.label}` === id) >= COUNT_SHOWN,
+        () => setMore(true),
+    );
+    if (!list.length) return null;
+    const max = Math.max(...list.map((item) => item.count));
+    const shown = more ? list : list.slice(0, COUNT_SHOWN);
     return (
         <div className={`${styles.countList} ${styles.rise}`} data-node={node} style={{ '--d': d }}>
             <h3>{title}</h3>
             <ul>
-                {items.slice(0, 6).map((item, index) => (
-                    <li key={item.label} style={{ '--d': d + index * 0.6 }}>
+                {shown.map((item, index) => (
+                    <li key={item.label} data-node={prefix ? `${prefix}:${item.label}` : undefined} style={{ '--d': d + Math.min(index, COUNT_SHOWN) * 0.6 }}>
                         <span className={styles.countLabel}>{item.label}</span>
                         <span className={styles.countTrack} aria-hidden="true">
                             <span className={styles.fill} style={{ '--w': item.count / max }} />
@@ -965,6 +1091,12 @@ function CountList({ title, items, unit = '회', d = 0, node }) {
                     </li>
                 ))}
             </ul>
+            {list.length > COUNT_SHOWN && (
+                <button type="button" className={styles.toggleBtn} onClick={() => setMore((prev) => !prev)} aria-expanded={more}>
+                    <ChevronDown size={16} aria-hidden="true" />
+                    {more ? '접기' : `${list.length - COUNT_SHOWN}개 더 보기`}
+                </button>
+            )}
         </div>
     );
 }
@@ -1015,16 +1147,17 @@ function ReviewSection({ place, briefing, mentions, unmentioned = [] }) {
                 <div className={styles.countLists}>
                     {hasCounts ? (
                         <>
-                            <CountList title="손님이 고른 좋은 점" items={place.reviewVotes} unit="명" d={2} node="rv:vote" />
-                            <CountList title="많이 언급된 주제" items={place.reviewThemes} d={3} node="rv:theme" />
-                            <CountList title={`많이 언급된 ${itemWord(place)}`} items={place.reviewMenus} d={4} node="rv:menu" />
-                            <CountList title="예약 많은 스타일" items={styleItems} unit="건" d={5} node="ops:style" />
+                            <CountList title="손님이 고른 좋은 점" items={place.reviewVotes} unit="명" d={2} node="rv:vote" prefix="vote" />
+                            <CountList title="많이 언급된 주제" items={place.reviewThemes} d={3} node="rv:theme" prefix="theme" />
+                            <CountList title={`많이 언급된 ${itemWord(place)}`} items={place.reviewMenus} d={4} node="rv:menu" prefix="rmenu" />
+                            <CountList title="예약 많은 스타일" items={styleItems} unit="건" d={5} node="ops:style" prefix="style" />
                             <CountList
                                 title={`블로그 후기에 나온 낱말${mentions?.blogTotal ? ` (전체 ${formatNumber(mentions.blogTotal)}개 중)` : ''}`}
                                 items={mentionItems}
                                 unit="개"
                                 d={6}
                                 node="rv:mention"
+                                prefix="bm"
                             />
                         </>
                     ) : (
@@ -1044,7 +1177,10 @@ function ReviewSection({ place, briefing, mentions, unmentioned = [] }) {
                         리뷰를 바탕으로 매장 화면에 보여 주는 요약입니다. 손님이 내 매장을 어떻게 기억하는지 확인하세요.
                     </figcaption>
                     <blockquote>
-                        {briefing.map((sentence) => <p key={sentence}>{sentence}</p>)}
+                        {/* 문장마다 그래프의 브리핑 점(brief:순서)과 잇습니다. 순서는 그래프와 같게 빈 문장을 뺀 뒤 셉니다. */}
+                        {briefing.map((sentence) => String(sentence).trim()).filter(Boolean).map((sentence, index) => (
+                            <p key={sentence} data-node={`brief:${index}`}>{sentence}</p>
+                        ))}
                     </blockquote>
                 </figure>
             )}
@@ -1166,7 +1302,7 @@ function PosSection({ pos }) {
                         <h3>주간 인기 메뉴 (주문 점유율)</h3>
                         <ul>
                             {pos.popularMenus.map((menu, index) => (
-                                <li key={menu.name} style={{ '--d': 5 + index * 0.6 }}>
+                                <li key={menu.name} data-node={`pmenu:${menu.name}`} style={{ '--d': 5 + index * 0.6 }}>
                                     <span className={styles.countLabel}>{menu.name}</span>
                                     <span className={styles.countTrack} aria-hidden="true">
                                         <span className={styles.fill} style={{ '--w': Math.max(0.04, (menu.share || 0) / maxShare) }} />
@@ -1189,7 +1325,7 @@ function PosSection({ pos }) {
                         <h3>시간대별 1회 평균 결제</h3>
                         <ul>
                             {prices.map(([key, label], index) => (
-                                <li key={key} style={{ '--d': 6 + index * 0.6 }}>
+                                <li key={key} data-node={`pos:slot:${key}`} style={{ '--d': 6 + index * 0.6 }}>
                                     <span className={styles.countLabel}>{label}</span>
                                     <span className={styles.countTrack} aria-hidden="true">
                                         <span className={styles.fill} style={{ '--w': price[key] / maxPrice }} />
@@ -1215,7 +1351,7 @@ function PosSection({ pos }) {
                             </thead>
                             <tbody>
                                 {pos.weekly.map((day, row) => (
-                                    <tr key={day.key}>
+                                    <tr key={day.key} data-node={`pos:peak:${day.key}`}>
                                         <th scope="row" title={day.peakHour !== null ? `${day.day}요일 가장 붐비는 시간 ${day.peakHour}시` : undefined}>{day.day}</th>
                                         {hours.map((hour, col) => {
                                             const value = day.hours[hour] || 0;
@@ -1259,6 +1395,11 @@ function Fact({ label, node, children }) {
 function MenuBoard({ place }) {
     const [open, setOpen] = useState(false);
     const menus = place.detail?.menus || [];
+    // 그래프에서 고른 메뉴가 '더 보기' 뒤에 접혀 있으면 펼칩니다.
+    useUnfold(
+        (id) => !open && id.startsWith('menu:') && menus.findIndex((menu) => `menu:${menu.name}` === id) >= MENU_SHOWN,
+        () => setOpen(true),
+    );
     if (menus.length === 0) return null;
     const total = place.menuCount || menus.length;
     const unpriced = place.menuPricedCount === null || place.menuPricedCount === undefined ? null : total - place.menuPricedCount;
@@ -1280,7 +1421,7 @@ function MenuBoard({ place }) {
             </div>
             <ul className={styles.menuList} data-photo={photoKnown ? 'true' : undefined}>
                 {shown.map((menu, index) => (
-                    <li key={`${menu.name}-${index}`}>
+                    <li key={`${menu.name}-${index}`} data-node={`menu:${menu.name}`}>
                         <span className={styles.menuName}>
                             {menu.name}
                             {menu.recommended && <span className={styles.tagMuted}>대표</span>}
@@ -1303,15 +1444,32 @@ function MenuBoard({ place }) {
     );
 }
 
+// 낱말 목록을 쉼표로 이어 쓰되, 낱말마다 그래프의 같은 점(prefix:낱말)과 잇습니다.
+function NodeWords({ words, prefix }) {
+    return words.map((word, index) => (
+        <Fragment key={word}>
+            {index > 0 && ', '}
+            <span className={styles.factWord} data-node={`${prefix}:${word}`}>{word}</span>
+        </Fragment>
+    ));
+}
+
 function OpsSection({ place }) {
     const detail = place.detail;
     const { hours, photos, tools, parking } = detail;
-    const seats = detail.seats || [];
-    const seatText = [
-        seats.length > 0 ? seats.join(', ') : null,
+    const seats = (detail.seats || []).map((word) => String(word).trim()).filter(Boolean);
+    const seatExtra = [
         detail.rental === true ? '대관 가능' : null,
         detail.corkage === true ? '콜키지 가능' : null,
-    ].filter(Boolean).join(' · ');
+    ].filter(Boolean);
+    // 편의시설은 그래프와 같게 매장 요약의 편의 정보와 정보 탭의 시설을 겹치지 않게 합칩니다.
+    const seenConv = new Set();
+    const conveniences = [...(place.conveniences || []), ...(detail.facilities || [])].map((word) => String(word).trim()).filter((word) => {
+        const key = word.replace(/\s+/g, '').toLowerCase();
+        if (!key || seenConv.has(key)) return false;
+        seenConv.add(key);
+        return true;
+    });
     const themes = detail.themes || [];
     const externalSites = detail.externalSites || [];
     // 메뉴판 사진 수는 메뉴를 올리는 업종에서만 뜻이 있어, 메뉴나 메뉴판 사진이 하나라도 있을 때만 보여 줍니다.
@@ -1358,7 +1516,12 @@ function OpsSection({ place }) {
                             {[detail.stylistCount > 0 ? `디자이너 ${formatNumber(detail.stylistCount)}명` : null, ...themes].filter(Boolean).join(' · ')}
                         </Fact>
                     )}
-                    {seatText && <Fact label="좌석·대관" node="ops:seat">{seatText}</Fact>}
+                    {(seats.length > 0 || seatExtra.length > 0) && (
+                        <Fact label="좌석·대관" node="ops:seat">
+                            <NodeWords words={seats} prefix="seat" />
+                            {seatExtra.length > 0 && `${seats.length > 0 ? ' · ' : ''}${seatExtra.join(' · ')}`}
+                        </Fact>
+                    )}
                     {typeof detail.hasAiBriefing === 'boolean' && (
                         <Fact label="네이버 AI 브리핑">{detail.hasAiBriefing ? '매장 화면에 노출 중' : '아직 노출되지 않음'}</Fact>
                     )}
@@ -1367,7 +1530,12 @@ function OpsSection({ place }) {
                             {parking.available ? `가능${parking.free === true ? ' (무료)' : parking.free === false ? ' (유료)' : ''}${parking.valet ? ' · 발레파킹' : ''}` : '정보 없음'}
                         </Fact>
                     )}
-                    {detail.facilities.length > 0 && <Fact label="편의시설" node="ops:conv">{detail.facilities.join(', ')}{detail.pet === true ? ' · 반려동물 동반' : ''}</Fact>}
+                    {conveniences.length > 0 && (
+                        <Fact label="편의시설" node="ops:conv">
+                            <NodeWords words={conveniences} prefix="conv" />
+                            {detail.pet === true ? ' · 반려동물 동반' : ''}
+                        </Fact>
+                    )}
                     {detail.links.length > 0 && <Fact label="연결 채널" node="ops:links">{detail.links.join(', ')}</Fact>}
                     {externalSites.length > 0 && <Fact label="함께 보이는 서비스">{externalSites.join(', ')}</Fact>}
                     {detail.subway && (
@@ -1448,6 +1616,9 @@ export default function PlaceInsightPage() {
     const indexRef = useRef(null);
     // 그래프 ↔ 카드 연결 상태(렌더와 무관해 ref 로 둠): 지금 가리킨 카드, '그래프' 버튼을 누른 자리, 강조 해제 타이머
     const linkState = useRef({ card: null, pin: null, pinTimer: 0, flashTimer: 0 });
+    // 본문의 접히는 목록(더 보기·탭)이 등록하는 곳(unfold.js). 그래프에서 고른 줄이 접혀 있으면 펼칠 때 씁니다.
+    const unfoldRef = useRef(null);
+    if (!unfoldRef.current) unfoldRef.current = new Set();
 
     const fetchMeta = useCallback(async () => {
         try {
@@ -1746,8 +1917,8 @@ export default function PlaceInsightPage() {
     const unavailable = !meta.enabled || paused;
     const myKeywordKeys = new Set((place?.keywords || []).map((word) => word.replace(/\s+/g, '').toLowerCase()));
     const recommendation = useMemo(
-        () => (place ? recommendKeywords({ place, activity, rivals: rivalPool }) : null),
-        [place, activity, rivalPool],
+        () => (place ? recommendKeywords({ place, activity, rivals: rivalPool, ranks }) : null),
+        [place, activity, rivalPool, ranks],
     );
     const actions = useMemo(() => (place ? buildActionItems(place, activity, { recommendation }) : []), [place, activity, recommendation]);
     // 상위 매장과 비교할 수 있는 순위 결과(내 매장 말고 두 곳 이상 나온 첫 키워드)
@@ -1871,39 +2042,65 @@ export default function PlaceInsightPage() {
         graphRef.current?.focus(null);
     };
 
+    // 본문에 그려진 같은 id 의 카드(요약 칸의 숫자와, 숨은 탭 속처럼 화면에 그려지지 않은 것은 뺍니다)
+    const bodyCards = (id) => cardsOf(id).filter((el) => !el.closest('#sec-summary') && el.getClientRects().length > 0);
+
+    // 본문에서 자기 카드가 없는 점의 가장 가까운 윗단계 카드
+    const bodyHostOf = (id) => {
+        for (let current = parentOf.get(id), hop = 0; current && current !== 'store' && hop < 4; current = parentOf.get(current), hop += 1) {
+            if (bodyCards(current).length > 0) return current;
+        }
+        return null;
+    };
+
     // 이동한 자리의 카드를 잠깐 강조해 그래프에서 고른 항목이 어디인지 알려 줍니다.
     // 화면이 그 자리에 도착한 뒤에 시작합니다(이동하는 동안 시작하면 도착했을 때는 강조가 이미 끝나 있습니다).
-    const flash = (id) => {
+    // find: 점 id(같은 id 의 카드를 모두 강조) 또는 강조할 요소들을 돌려주는 함수
+    const flash = (find) => {
         const state = linkState.current;
         clearTimeout(state.flashTimer);
         state.flashWait?.();
         sheetRef.current?.querySelectorAll('[data-flash]').forEach((el) => el.removeAttribute('data-flash'));
         state.flashWait = afterScroll(() => {
-            const cards = cardsOf(id);
+            const cards = typeof find === 'function' ? find() : cardsOf(find);
             cards.forEach((el) => el.setAttribute('data-flash', 'true'));
             state.flashTimer = setTimeout(() => cards.forEach((el) => el.removeAttribute('data-flash')), 2200);
         });
     };
 
-    // 그래프 점·요약 숫자 → 본문: 같은 id 의 카드(없으면 구역)로 이동합니다.
+    // 카드로 화면 이동: 화면 높이의 60%보다 큰 카드는 머리가 보이게 위에 맞추고, 작은 카드는 가운데에 둡니다.
+    const scrollToCard = (card) => {
+        const tall = card.getBoundingClientRect().height > window.innerHeight * 0.6;
+        card.scrollIntoView({ behavior: reducedMotion() ? 'auto' : 'smooth', block: card.id.startsWith('sec-') || tall ? 'start' : 'center' });
+    };
+
+    // 그래프 점·요약 숫자 → 본문: 같은 id 의 카드로 이동합니다. 카드가 없으면 fallback 자리(구역)로 가서 그 구역을 강조합니다.
     const jumpTo = (id, fallback) => {
-        const card = cardsOf(id).find((el) => !el.closest('#sec-summary'));
+        const card = id ? bodyCards(id)[0] : null;
         if (card) {
-            card.scrollIntoView({ behavior: reducedMotion() ? 'auto' : 'smooth', block: card.id.startsWith('sec-') ? 'start' : 'center' });
-        } else if (fallback) {
-            scrollTo(fallback);
+            scrollToCard(card);
+            flash(id);
+            return;
         }
-        flash(id);
+        const spot = fallback ? document.getElementById(fallback) : null;
+        if (!spot) return;
+        scrollTo(fallback);
+        flash(() => [spot.closest('[data-node]') || spot]);
     };
 
     // 본문 → 그래프: 구역 머리의 '그래프' 버튼. 위로 올라가 같은 점을 밝히고 고리를 한 번 퍼뜨립니다.
+    // 살펴보기 카드가 열려 있으면 카드가 고른 점이 그래프를 차지하고 있어 밝히기만 해서는 보이지 않습니다.
+    // 그때는 카드를 닫고 누른 구역의 묶음을 밝힙니다. 묶음 카드를 새로 열면 폰에서는 카드가 그래프를 70% 넘게 가려
+    // 밝힌 점이 거의 안 보입니다(fix6 측정). 카드가 닫혀 있으면 밝히기만 합니다.
     const graphLink = useMemo(() => ({
         showInGraph(id, event) {
             const state = linkState.current;
             state.pin = { x: event?.clientX ?? 0, y: event?.clientY ?? 0 };
             state.card = null;
             scrollToId('sec-graph');
-            graphRef.current?.focus(id);
+            const graph = graphRef.current;
+            if (graph?.state?.().openId) graph.open(null);
+            graph?.focus(id);
             setTimeout(() => graphRef.current?.ping(id), reducedMotion() ? 0 : 520);
             clearTimeout(state.pinTimer);
             state.pinTimer = setTimeout(() => {
@@ -1916,12 +2113,27 @@ export default function PlaceInsightPage() {
     // 순위 표의 한 줄을 펼치고 그 줄로 갑니다.
     // 펼침을 먼저 화면에 반영(flushSync)한 뒤에 이동해야 합니다. 열려 있던 다른 줄이 접히면 그 아래 줄들이 접힌 높이만큼
     // 올라오는데, 접히기 전의 자리를 향해 이동하면 꼭 그만큼 지나쳐서 고른 줄이 화면 위로 사라집니다.
-    const openRank = (keyword) => {
+    // also: 그 줄과 함께 강조할 점 id(경쟁 매장 점에서 왔을 때, 펼친 줄 안에 그 매장의 줄이 있으면 같이 밝힙니다).
+    const openRank = (keyword, also) => {
         const index = ranks.findIndex((row) => row.keyword === keyword);
         if (index < 0) return;
         if (ranks[index].state === 'done') flushSync(() => setOpenKeyword(keyword));
         scrollTo(`rank-row-${index}`);
-        flash(`kw:${keyword}`);
+        flash(also ? () => [...cardsOf(`kw:${keyword}`), ...bodyCards(also)] : `kw:${keyword}`);
+    };
+
+    // 경쟁 매장·경쟁 매장 키워드는 상위 매장 대표키워드를 읽어 둔 순위 줄을 펼쳐야 본문에 보입니다.
+    // 그 매장(rival:…)이나 낱말(rk:…)이 든 줄을 펼칩니다(지금 펼친 줄이 맞으면 그대로).
+    const openRivalRow = (id) => {
+        const word = id.startsWith('rk:') ? id.slice(3) : null;
+        const holds = (row) => {
+            const items = row.state === 'done' ? rivals[row.keyword]?.items : null;
+            if (!items?.length) return false;
+            if (id.startsWith('rival:')) return items.some((item) => `rival:${item.placeId}` === id);
+            return !word || items.some((item) => (item.keywords || []).some((kw) => kw.replace(/\s+/g, '').toLowerCase() === word));
+        };
+        const row = ranks.find((entry) => entry.keyword === openKeyword && holds(entry)) || ranks.find(holds);
+        if (row && row.keyword !== openKeyword) flushSync(() => setOpenKeyword(row.keyword));
     };
 
     const selectNode = (node) => {
@@ -1931,22 +2143,35 @@ export default function PlaceInsightPage() {
         }
         if (node.id === 'store') return;
         if (node.keyword && ranks.some((row) => row.keyword === node.keyword)) {
-            openRank(node.keyword);
+            openRank(node.keyword, node.type === 'rival' ? node.id : null);
             return;
         }
-        // 자기 카드가 없는 점: 점이 가리키는 자리(target)가 구역보다 좁으면 그곳으로, 아니면 가장 가까운 윗단계 카드로 갑니다.
-        const host = hostOf(node.id);
-        if (host !== node.id && node.target && !node.target.startsWith('sec-') && document.getElementById(node.target)) {
+        if (node.group === 'rival') openRivalRow(node.id);
+        // 고른 줄이 '더 보기'나 탭 뒤에 접혀 있으면 펼치고(그려진 다음에) 그 줄로 갑니다.
+        flushSync(() => {
+            unfoldIn(unfoldRef.current, node.id);
+        });
+        if (bodyCards(node.id).length > 0) {
+            jumpTo(node.id);
+            return;
+        }
+        // 자기 카드가 없는 점: 가장 가까운 윗단계 카드로 갑니다. 다만 점이 가리키는 자리(target)가 구역보다 좁고
+        // 윗단계 카드가 그 자리 밖에 있으면(구역 전체 등) 그 자리로 가서 그 자리를 강조합니다(강조가 화면 밖에 생기지 않게).
+        const host = bodyHostOf(node.id);
+        const spot = node.target && !node.target.startsWith('sec-') ? document.getElementById(node.target) : null;
+        if (spot && !(host && spot.contains(bodyCards(host)[0]))) {
             scrollTo(node.target);
-            flash(host);
+            flash(() => [spot]);
             return;
         }
-        jumpTo(host || node.id, node.target || 'sec-summary');
+        if (host) jumpTo(host);
+        else jumpTo(null, node.target || 'sec-summary');
     };
 
     return (
         <DashboardLayout>
             <GraphLink.Provider value={graphLink}>
+            <Unfold.Provider value={unfoldRef.current}>
             <div ref={sheetRef} className={styles.sheet} onPointerOver={onSheetOver} onPointerLeave={onSheetLeave}>
                 <header className={styles.top}>
                     <div className={styles.title}>
@@ -2213,18 +2438,20 @@ export default function PlaceInsightPage() {
                                                                     <p className={styles.rankPending}><Loader2 size={16} className={styles.spin} aria-hidden="true" /> 상위 매장 대표키워드 조회 중</p>
                                                                 )}
                                                                 {rival?.items && (
-                                                                    <div className={styles.rivals}>
+                                                                    <div className={styles.rivals} data-node="hub:rival">
                                                                         <h4>상위 매장이 등록한 대표키워드</h4>
                                                                         <ul>
                                                                             {rival.items.map((item, itemIndex) => (
-                                                                                <li key={item.placeId} style={{ '--d': itemIndex }}>
+                                                                                <li key={item.placeId} data-node={`rival:${item.placeId}`} style={{ '--d': itemIndex }}>
                                                                                     <span className={styles.rivalName}>{item.name}</span>
                                                                                     <span className={styles.rivalWords}>
                                                                                         {item.keywords.length === 0 && <em>등록 안 함</em>}
                                                                                         {item.keywords.map((word) => {
-                                                                                            const mine = myKeywordKeys.has(word.replace(/\s+/g, '').toLowerCase());
+                                                                                            const key = word.replace(/\s+/g, '').toLowerCase();
+                                                                                            const mine = myKeywordKeys.has(key);
+                                                                                            // 내 매장이 등록하지 않은 낱말은 그래프의 '경쟁 매장 키워드' 점(rk:낱말)과 잇습니다.
                                                                                             return (
-                                                                                                <span key={word} className={mine ? styles.wordMine : styles.word}>
+                                                                                                <span key={word} className={mine ? styles.wordMine : styles.word} data-node={mine ? undefined : `rk:${key}`}>
                                                                                                     {word}{mine && <small> 내 매장도 사용</small>}
                                                                                                 </span>
                                                                                             );
@@ -2262,6 +2489,7 @@ export default function PlaceInsightPage() {
 
                         {place.detail?.pos && <PosSection pos={place.detail.pos} />}
                         {place.detail && <OpsSection place={place} />}
+                        <Prescription place={place} activity={activity} ranks={ranks} recommendation={recommendation} actions={actions} fetchedAt={placeInfo?.fetchedAt} />
                     </>
                 )}
 
@@ -2274,6 +2502,7 @@ export default function PlaceInsightPage() {
                     </span>
                 </p>
             </div>
+            </Unfold.Provider>
             </GraphLink.Provider>
         </DashboardLayout>
     );

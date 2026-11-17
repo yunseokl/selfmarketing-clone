@@ -53,7 +53,10 @@ export function attachGestures(canvas, E, on) {
         // 마우스 포인터가 점의 원판 안에 있으면 그 점이 먼저입니다. 다른 점의 이름표가 그 위에 걸쳐 있어도, 점을 잡고 끄는 것이 회전으로 바뀌지 않게.
         // 손가락은 이름표가 먼저입니다(톡 해서 띄운 이름표는 점들 위에 놓이므로, 그 이름표를 누를 때 밑에 깔린 점이 잡히면 안 됩니다).
         const inside = !touch && Boolean(p) && Math.hypot(x - p.sx, y - p.sy) <= p.rr;
-        const named = inside ? null : E.pickLabel(x, y, touch ? 6 : 2);
+        let named = inside ? null : E.pickLabel(x, y, touch ? 6 : 2);
+        // 손가락이 점의 원판 위에 있고 이름표는 상자 둘레의 여유(6px)로만 걸린 경우에는 점이 먼저입니다
+        // (이름표 바로 옆의 이름 꺼진 점을 톡 했는데 그 이름표의 카드가 열리지 않게).
+        if (touch && named && p && named !== p && Math.hypot(x - p.sx, y - p.sy) <= p.rr + 1 && !E.pickLabel(x, y, 0)) named = null;
         if (named) return { node: named, grab: false, label: true, line: null };
         const onDisc = Boolean(p) && Math.hypot(x - p.sx, y - p.sy) <= p.rr + 4;
         if (onDisc) return { node: p, grab: pullable(p), label: false, line: null };

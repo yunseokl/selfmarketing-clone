@@ -39,9 +39,10 @@ function Delta({ value }) {
     );
 }
 
-function Tile({ label, hint, go, onClick, children }) {
+// node: 그래프에서 같은 항목을 가리키는 점의 id(본문 카드와 그래프 점을 서로 밝힐 때 씀)
+function Tile({ label, hint, go, onClick, node, children }) {
     return (
-        <li>
+        <li data-node={node}>
             <button type="button" className={styles.tile} onClick={onClick}>
                 <span className={styles.tileLabel}>{label}</span>
                 <span className={styles.tileValue}>{children}</span>
@@ -52,9 +53,9 @@ function Tile({ label, hint, go, onClick, children }) {
     );
 }
 
-function ScoreTile({ label, hint, score, onClick }) {
+function ScoreTile({ label, hint, score, onClick, node }) {
     return (
-        <Tile label={label} hint={hint} go="세부 항목 보기" onClick={onClick}>
+        <Tile label={label} hint={hint} go="세부 항목 보기" onClick={onClick} node={node}>
             {score.score === null || score.score === undefined ? '-' : <CountUp value={score.score} />}
             <small>점</small>
             <span className={`${styles.badge} ${styles[toneOf(score.score)]}`}>{score.label}</span>
@@ -83,8 +84,8 @@ export function GeoStatus({ question, geo, aeo, som, today, onGo }) {
                 <p>손님이 AI에게 <q>{question}</q>을 물을 때 내 매장이 답에 나오는지 봅니다.</p>
             </div>
             <ul className={styles.tiles} aria-label="GEO·AEO 요약">
-                <ScoreTile label="GEO · 추천 목록에 들 준비" hint="AI가 추천 목록을 만들 때 쓸 재료(리뷰·출처·기본 정보)" score={geo} onClick={() => onGo('diagnosis')} />
-                <ScoreTile label="AEO · 질문에 바로 답할 준비" hint="주차·가격·영업시간 같은 세부 질문에 답할 재료" score={aeo} onClick={() => onGo('diagnosis')} />
+                <ScoreTile label="GEO · 추천 목록에 들 준비" hint="AI가 추천 목록을 만들 때 쓸 재료(리뷰·출처·기본 정보)" score={geo} onClick={() => onGo('diagnosis')} node="geo:score" />
+                <ScoreTile label="AEO · 질문에 바로 답할 준비" hint="주차·가격·영업시간 같은 세부 질문에 답할 재료" score={aeo} onClick={() => onGo('diagnosis')} node="aeo:score" />
                 <Tile label="AI 답변 점유율 · 실제 결과" hint={somHint(som)} go={som ? '다시 재기' : '지금 재기'} onClick={() => onGo('measure')}>
                     {som ? <><CountUp value={som.overall} /><small>%</small><Delta value={som.delta} /></> : '-'}
                     {som?.due && <span className={`${styles.badge} ${styles.fair}`}>다시 잴 때</span>}

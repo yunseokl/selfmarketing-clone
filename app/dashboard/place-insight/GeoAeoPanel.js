@@ -24,6 +24,14 @@ import { GEO_TABS, GeoStatus, GeoTabPanel, GeoTabs } from './GeoSections';
 import QuickGeoPanel from './QuickGeoPanel';
 import SomTracker from './SomTracker';
 import { useSomHistory } from './somStore';
+import { useUnfold } from './unfold';
+
+// 그래프의 AI 검색 점이 본문에서 들어 있는 탭: 진단(세부 항목·AI별 준비도), 초안(AI가 나눠 묻는 질문)
+function geoTabOf(id) {
+    if (id.startsWith('gf:') || id.startsWith('ai:')) return 'diagnosis';
+    if (id === 'geo:fanout' || id.startsWith('fq:')) return 'drafts';
+    return null;
+}
 
 const STATUS = {
     good: { label: '좋음', cls: 'sGood' },
@@ -138,7 +146,7 @@ function FactorList({ title, factors, actions }) {
                         : null;
                     const partial = factor.pct !== null && factor.max < factor.fullWeight;
                     return (
-                        <li key={factor.key}>
+                        <li key={factor.key} data-node={factor.key === 'fanout' ? undefined : `gf:${factor.key}`}>
                             <div className={styles.factorHead}>
                                 <span className={styles.factorLabel}>{factor.label}</span>
                                 <Bar value={factor.pct} />
@@ -184,7 +192,7 @@ function Overview({ analysis, progress }) {
             <h3 className={styles.subTitle}>AI별 종합 준비도 — 재료(매장 정보) + 통로(그 AI가 읽는 곳)</h3>
             <ul className={styles.platforms}>
                 {progress.map((platform) => (
-                    <li key={platform.key}>
+                    <li key={platform.key} data-node={`ai:${platform.key}`}>
                         <div className={styles.platformHead}>
                             <strong>{platform.label}</strong>
                             <span className={styles.platformScore}>{scoreText(platform.overall)}<small>점 · {platform.overallGrade}</small></span>
@@ -487,11 +495,11 @@ function AnswerCard({ analysis }) {
                 </p>
             )}
 
-            <ul className={styles.fanout}>
+            <ul className={styles.fanout} data-node="geo:fanout">
                 {fanout.map((item) => {
                     const status = FANOUT_STATUS[item.status] || FANOUT_STATUS.unknown;
                     return (
-                        <li key={item.key}>
+                        <li key={item.key} data-node={`fq:${item.key}`}>
                             <div className={styles.fanoutHead}>
                                 <status.Icon size={16} aria-hidden="true" className={styles[status.cls]} />
                                 <strong>{item.question}</strong>
@@ -840,6 +848,15 @@ export default function GeoAeoPanel({ place, activity, ranks, unavailable }) {
         setTab(key);
         setOpened((prev) => (prev.includes(key) ? prev : [...prev, key]));
     }, []);
+
+    // 그래프에서 고른 점(세부 항목·AI·세부 질문)이 다른 탭에 있으면 그 탭을 엽니다.
+    useUnfold(
+        (id) => {
+            const key = geoTabOf(id);
+            return Boolean(key) && key !== tab;
+        },
+        (id) => showTab(geoTabOf(id)),
+    );
 
     // 요약 줄·안내 버튼으로 다른 탭에 갈 때는 그 탭으로 화면과 초점을 옮깁니다(탭을 직접 누를 때는 옮기지 않음).
     const goTab = useCallback((key) => {

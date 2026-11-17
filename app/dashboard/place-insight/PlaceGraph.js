@@ -55,6 +55,14 @@ const PlaceGraph = forwardRef(function PlaceGraph(
     const hand = useRef({ live: false, loading: false, act: null });
     const hoverCb = useRef(onHover);
     hoverCb.current = onHover;
+    // 본문 카드에서 가리킨 점 쪽으로 돌리기를 잠깐 미뤄 두는 타이머(focus 참고)
+    const turnTimer = useRef(0);
+    // 바깥에서 부르는 open()·state() 가 늘 최신 상태를 보도록 담아 둡니다(렌더마다 아래에서 채움).
+    const outer = useRef({ live: false, openId: null, sheet: false, inspect: () => {} });
+    useEffect(() => {
+        const timer = turnTimer;
+        return () => clearTimeout(timer.current);
+    }, []);
     const live = mode === 'live';
 
     const [ready, setReady] = useState(false);
@@ -161,17 +169,44 @@ const PlaceGraph = forwardRef(function PlaceGraph(
 
     useImperativeHandle(ref, () => ({
         // 'group:search' 처럼 넘기면 점 하나가 아니라 그 묶음 전체를 밝힙니다.
+        // 밝히기는 바로 합니다. 그 점이 뇌 뒤쪽에 있으면, 본문 카드에 포인터를 올려 둔 경우에만(0.45초) 보이는 쪽으로 잠깐 돌려 보여 주고,
+        // 포인터가 카드를 떠나면 원래 보던 각도로 되돌립니다. 다른 곳으로 가는 길에 카드 위를 스치기만 해서는 장면이 돌지 않고,
+        // 끌지 않았는데 장면이 돌아간 채로 남는 일도 없습니다(카드가 열려 있거나 걸러 보는 중에는 아예 돌리지 않습니다 — 엔진의 turnTo 참고).
         focus(id) {
             const groupId = typeof id === 'string' && id.startsWith('group:') ? id.slice(6) : null;
+            const nodeId = !groupId && id && nodeById.has(id) ? id : null;
             setLinkedGroup(groupId);
-            setLinked(!groupId && id && nodeById.has(id) ? id : null);
-            if (!groupId && id) engineRef.current?.turnTo(id);
+            setLinked(nodeId);
+            clearTimeout(turnTimer.current);
+            // 카드에서 옆 카드로 건너가는 사이(잠깐 아무 카드도 아닌 곳)에는 되돌리기를 시작하지 않게 조금 기다립니다.
+            turnTimer.current = setTimeout(() => {
+                turnTimer.current = 0;
+                if (nodeId) engineRef.current?.turnTo(nodeId, true);
+                else engineRef.current?.turnBack();
+                engineRef.current?.invalidate?.();
+            }, nodeId ? 450 : 280);
         },
         ping(id) {
             if (id && nodeById.has(id)) {
                 engineRef.current?.ping(id);
                 engineRef.current?.invalidate?.();
             }
+        },
+        // 그 점의 살펴보기 카드를 엽니다(점을 누른 것과 같음). 다른 카드가 열려 있으면 바꾸고, open(null) 은 닫습니다.
+        // 없는 id·자리 표시 점·불러오는 중에는 아무 일도 하지 않습니다. 키보드 초점은 옮기지 않습니다.
+        open(id) {
+            if (id == null) {
+                setPicked(null);
+                return;
+            }
+            const node = nodeById.get(id);
+            if (!node || node.ghost || !outer.current.live) return;
+            setPeek(null);
+            outer.current.inspect(id, null, false);
+        },
+        // 지금 열려 있는 카드의 점 id(없으면 null)와, 이 화면에서 카드가 아래 시트로 뜨는지
+        state() {
+            return { openId: outer.current.openId, sheet: outer.current.sheet };
         },
     }), [nodeById]);
 
@@ -265,8 +300,8 @@ const PlaceGraph = forwardRef(function PlaceGraph(
                     lab.vis = visibleNow;
                     el.style.visibility = visibleNow ? 'visible' : 'hidden';
                 }
-                // 톡 해서 띄운 이름은 잡은 점의 이름처럼 쪽지 모양으로 그립니다(빽빽한 점들 위에서도 읽히게).
-                const state = lab.loose || p.id === E.peekId ? 'held' : p.id === E.selfId || p.id === E.selectedId ? 'self' : p.tHot ? 'hot' : '';
+                // (톡 해서 띄운 이름 쪽지의 모양은 React 가 data-note 로 붙입니다. 쪽지의 크기를 재서 자리를 잡아야 하기 때문입니다.)
+                const state = lab.loose ? 'held' : p.id === E.selfId || p.id === E.selectedId ? 'self' : p.tHot ? 'hot' : '';
                 if (state !== lab.state) {
                     lab.state = state;
                     el.dataset.state = state;
@@ -275,11 +310,14 @@ const PlaceGraph = forwardRef(function PlaceGraph(
                 if (!lead) continue;
                 const leadNow = visibleNow && lab.lead;
                 if (leadNow) {
+                    // 쪽지의 지시선은 실선으로 또렷하게(쪽지가 어느 점의 이름인지 바로 보이게)
+                    const note = p.id === E.peekId;
+                    if (lead.dataset.state !== (note ? 'held' : '')) lead.dataset.state = note ? 'held' : '';
                     lead.setAttribute('x1', lab.ax.toFixed(1));
                     lead.setAttribute('y1', lab.ay.toFixed(1));
                     lead.setAttribute('x2', lab.bx.toFixed(1));
                     lead.setAttribute('y2', lab.by.toFixed(1));
-                    lead.style.opacity = (lab.a * (1 - 0.6 * p.dim) * (p.level <= 1 ? 0.5 : 0.36)).toFixed(3);
+                    lead.style.opacity = (lab.a * (1 - 0.6 * p.dim) * (note ? 0.8 : p.level <= 1 ? 0.5 : 0.36)).toFixed(3);
                 }
                 if (leadNow !== lab.leadVis) {
                     lab.leadVis = leadNow;
@@ -540,6 +578,11 @@ const PlaceGraph = forwardRef(function PlaceGraph(
         E.invalidate?.();
     }, [self, group, activeRelation, activeKlass, keyFocus, peekId]);
 
+    // 쪽지는 이름만 적어 보통 이름표보다 작습니다. 쪽지가 뜨거나 꺼질 때 이름표 크기를 다시 재 둡니다(그 크기로 점 곁에 자리를 잡음).
+    useLayout(() => {
+        measure();
+    }, [peekId, measure]);
+
     // 카드를 열거나 걸러 보기를 바꾸면 톡 해서 띄운 이름은 지웁니다.
     useEffect(() => {
         setPeek(null);
@@ -663,6 +706,7 @@ const PlaceGraph = forwardRef(function PlaceGraph(
     };
     // 무대의 손짓은 graph/gesture.js 가 받습니다(위의 attachGestures). 누르기만 한 경우 여기 act 로 옵니다.
     hand.current = { live, loading: mode === 'loading', act, peek: peekId };
+    outer.current = { live, openId: selectedId, sheet, inspect };
 
     const onKey = (event, node) => {
         const E = engineRef.current;
@@ -735,7 +779,8 @@ const PlaceGraph = forwardRef(function PlaceGraph(
     const klassItem = activeKlass ? classList.find((item) => item.type === activeKlass) : null;
     // 띠에 쓰는 수: 종류 칩의 합과 같게(묶음 중심 점은 세지 않음)
     const filterCount = filterGroup ? classList.reduce((sum, item) => sum + item.count, 0) || nodes.filter((node) => node.group === filterGroup && node.level >= 2).length : 0;
-    const selectedInFilter = selectedNode && filterGroup && !activeRelation && selectedNode.group === filterGroup ? selectedNode : null;
+    // (묶음 중심 점을 고른 경우는 뺍니다. 띠에 '키워드 순위 › 키워드 순위' 처럼 같은 말이 두 번 적히므로, 그때는 '○○만 보는 중' 그대로 둡니다.)
+    const selectedInFilter = selectedNode && filterGroup && !activeRelation && selectedNode.group === filterGroup && selectedNode.level >= 2 ? selectedNode : null;
     // 걸러 보는 묶음 밖의 점을 고른 경우(카드의 연결된 항목으로 건너감, 매장 점을 고름): 띠에 그 점의 이름을 함께 적습니다.
     const selectedOutside = selectedNode && filterGroup && !activeRelation && selectedNode.group !== filterGroup ? selectedNode : null;
     // 손가락으로 톡 해서 이름만 띄워 둔 점을 아래 줄이 읽어 주는 중인지
@@ -747,6 +792,14 @@ const PlaceGraph = forwardRef(function PlaceGraph(
         measure();
     }, [compact, measure]);
     const heldNode = pullNode || (afterPull ? nodeById.get(afterPull) || null : null);
+    // 위 띠에 쓰는 짧은 이름: 이름표의 이름(label)을 씁니다. 그 이름도 문장이면(말줄임으로 끝나거나 긴 이름) 종류 이름으로 대신합니다
+    // (예: 'AI 검색 › AI 브리핑 문장 살펴보는 중'). 문장 전체는 카드 제목에서 읽습니다.
+    const bandName = (node) => {
+        const name = node.label || node.full || '';
+        if (name.length <= 12 && !name.endsWith('…')) return name;
+        const kind = ontology?.classes?.[node.type];
+        return kind && !kind.quiet && kind.label ? kind.label : name;
+    };
 
     // 조작 안내: 마우스와 손가락은 하는 법이 달라서 따로 씁니다.
     // (어느 쪽이든 아래 줄의 높이는 같습니다. 입력 방식이 바뀌어도 무대가 밀리지 않게 CSS 에서 높이를 고정해 둡니다.)
@@ -815,13 +868,13 @@ const PlaceGraph = forwardRef(function PlaceGraph(
                             <i aria-hidden="true" />
                             {/* 줄이 넘어갈 때 "중" 한 글자만 떨어지지 않게, 끝말은 한 덩어리(keep)로 묶어 둡니다. */}
                             {relationItem && selectedNode ? (
-                                <span><strong>{relationItem.name}</strong> <b aria-hidden="true">›</b> <strong>{selectedNode.full || selectedNode.label}</strong> <span className={styles.keep}>살펴보는 중</span></span>
+                                <span><strong>{relationItem.name}</strong> <b aria-hidden="true">›</b> <strong>{bandName(selectedNode)}</strong> <span className={styles.keep}>살펴보는 중</span></span>
                             ) : relationItem ? (
                                 <span><strong>{relationItem.name}</strong> <span className={styles.keep}>연결만 보는 중</span> <span className={styles.keep}>· 연결 {relationItem.count}</span></span>
                             ) : selectedInFilter ? (
-                                <span><strong>{groupLabels.get(filterGroup)}</strong> <b aria-hidden="true">›</b> <strong>{selectedInFilter.full || selectedInFilter.label}</strong> <span className={styles.keep}>살펴보는 중</span></span>
+                                <span><strong>{groupLabels.get(filterGroup)}</strong> <b aria-hidden="true">›</b> <strong>{bandName(selectedInFilter)}</strong> <span className={styles.keep}>살펴보는 중</span></span>
                             ) : selectedOutside ? (
-                                <span><span className={styles.keep}><strong>{groupLabels.get(filterGroup)}</strong>만 보는 중</span> · <strong>{selectedOutside.full || selectedOutside.label}</strong> <span className={styles.keep}>살펴보는 중</span></span>
+                                <span><span className={styles.keep}><strong>{groupLabels.get(filterGroup)}</strong>만 보는 중</span> · <strong>{bandName(selectedOutside)}</strong> <span className={styles.keep}>살펴보는 중</span></span>
                             ) : klassItem ? (
                                 <span><strong>{groupLabels.get(filterGroup)}</strong> <b aria-hidden="true">›</b> <strong>{klassItem.label}</strong> <span className={styles.keep}>· 항목 {klassItem.count}</span></span>
                             ) : (
@@ -956,6 +1009,7 @@ const PlaceGraph = forwardRef(function PlaceGraph(
                                     className={styles.label}
                                     data-level={Math.min(3, node.level)}
                                     data-ghost={node.ghost ? 'true' : undefined}
+                                    data-note={node.id === peekId ? 'true' : undefined}
                                     style={{ '--c': colorOf(node.group).hex }}
                                 >
                                     <b>{node.label}</b>
@@ -1139,18 +1193,29 @@ const PlaceGraph = forwardRef(function PlaceGraph(
                         <strong>{pullNode.full || pullNode.label}</strong>
                         <span className={styles.readoutText}>당기는 중 · 놓으면 제자리로{pulling.touch ? '' : ' · Shift 누른 채 놓으면 고정'}</span>
                     </>
+                ) : readNode && peekShown ? (
+                    // 톡 해서 이름(쪽지)만 띄운 동안: 이 줄 전체가 그 항목의 카드를 여는 단추입니다(쪽지를 한 번 더 눌러도 같음).
+                    <button
+                        type="button"
+                        className={styles.readoutPeek}
+                        onClick={() => {
+                            const id = readNode.id;
+                            setPeek(null);
+                            if (live && nodeById.has(id)) inspect(id);
+                        }}
+                    >
+                        <i className={styles.readoutDot} style={{ '--c': colorOf(readNode.group).hex }} aria-hidden="true" />
+                        <strong>{readNode.label || readNode.full}</strong>
+                        {readNode.sub && <span className={styles.readoutValue}>{readNode.sub}</span>}
+                        <span className={styles.readoutText}>이 줄이나 이름을 누르면 살펴봅니다</span>
+                    </button>
                 ) : readNode ? (
                     <>
                         <i className={styles.readoutDot} style={{ '--c': colorOf(readNode.group).hex }} aria-hidden="true" />
                         <strong>{readNode.full || readNode.label}</strong>
                         {/* 이름 · 값 — 설명 (값은 이름표의 sub 와 같은 글자) */}
                         {readNode.sub && <span className={styles.readoutValue}>{readNode.sub}</span>}
-                        {/* 톡 해서 이름만 띄운 동안에는 설명 대신 다음에 할 일을 적습니다(설명 전문은 카드에서 봅니다). */}
-                        {peekShown ? (
-                            <span className={styles.readoutText}>이름을 한 번 더 누르면 살펴봅니다</span>
-                        ) : (
-                            readNode.detail && <span className={styles.readoutText}>{readNode.detail}</span>
-                        )}
+                        {readNode.detail && <span className={styles.readoutText}>{readNode.detail}</span>}
                     </>
                 ) : live ? (
                     <span className={styles.readoutHint}>{guide}</span>

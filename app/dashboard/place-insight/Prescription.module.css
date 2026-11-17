@@ -1,0 +1,913 @@
+/*
+ * 플레이스 처방전 — A4 세로 인쇄용 문서와 저장 버튼.
+ * 문서는 body 바로 아래(포털)에 있고 화면에서는 감춥니다. 인쇄할 때만 문서를 보이고 나머지 화면은 숨깁니다.
+ * 문서답게: 흰 바탕, 검은 글자, 가는 줄, 강조색 하나(--rx-accent). 그림자·그라데이션·장식은 쓰지 않습니다.
+ * 글자 크기는 인쇄물 기준(pt)입니다. 본문 10.5pt, 덧붙이는 글 9.5pt, 표 머리·꼬리 고지 9pt.
+ * 1쪽(처방 요약)은 한 쪽에 들어가고, 상세는 다음 쪽부터 시작합니다.
+ */
+
+/* ───────── 저장 버튼(화면) ───────── */
+
+.save {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 10px;
+    min-width: 0;
+}
+
+/* 구역 머리 아래에 한 줄로 놓을 때 */
+.save[data-block='true'] {
+    display: flex;
+    margin-bottom: 10px;
+}
+
+/* 화면의 보조 버튼(page.module.css 의 secondaryBtn)과 같은 모양. className 을 넘기지 않았을 때 씁니다. */
+.saveBtn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    min-height: 32px;
+    padding: 0 11px;
+    font: inherit;
+    font-size: 13px;
+    font-weight: 700;
+    white-space: nowrap;
+    color: var(--ink, #15191E);
+    background: var(--sunk, #E3E6EA);
+    border-radius: var(--r, 4px);
+    cursor: pointer;
+    transition: transform 0.15s ease, background-color 0.15s ease;
+}
+
+.saveBtn:hover {
+    background: var(--rule, #D5DAE0);
+}
+
+.saveBtn:active {
+    transform: translateY(1px) scale(0.97);
+}
+
+.saveBtn:focus-visible {
+    outline: 2px solid var(--ink, #15191E);
+    outline-offset: 2px;
+}
+
+.saveHint {
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--ink-3, #5F6873);
+}
+
+/* 처방전을 만들지 못했을 때 버튼 옆 한 줄 */
+.saveError {
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 1.5;
+    color: var(--danger, #B42318);
+}
+
+/* 손가락으로 쓰는 화면: 누르는 높이 44px 이상 */
+@media (pointer: coarse), (max-width: 768px) {
+    .saveBtn {
+        min-height: 44px;
+        padding: 0 14px;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .saveBtn {
+        transition: none;
+    }
+}
+
+/* ───────── 문서: 화면에서는 감춤 ───────── */
+
+.doc {
+    display: none;
+}
+
+/* 처방전 쪽에만 쓰는 종이 설정(이름 붙인 쪽). 이 화면을 거친 뒤 다른 화면을 인쇄해도 영향을 주지 않습니다.
+ * 쪽 번호는 여백 상자를 그리는 브라우저(크롬 계열)에서만 나옵니다. */
+@page prescription {
+    size: A4;
+    margin: 12mm 14mm 14mm;
+
+    @bottom-left {
+        content: '혼잘마 · 플레이스 처방전';
+        font-family: 'Pretendard', 'Apple SD Gothic Neo', 'Malgun Gothic', 'Noto Sans KR', sans-serif;
+        font-size: 8.5pt;
+        color: #555;
+    }
+
+    @bottom-right {
+        content: counter(page) ' / ' counter(pages);
+        font-family: 'Pretendard', 'Apple SD Gothic Neo', 'Malgun Gothic', 'Noto Sans KR', sans-serif;
+        font-size: 8.5pt;
+        color: #555;
+    }
+}
+
+/* printRoot 는 문서가 화면에 올라와 있는 동안만 <html> 에 붙습니다(Prescription.js).
+ * 그래서 아래 규칙은 처방전이 있을 때만 듣고, 분석 전이나 다른 화면의 인쇄는 그대로 둡니다. */
+@media print {
+    /* 앱의 어두운 바탕과 화면 높이 고정을 풉니다. */
+    .printRoot,
+    .printRoot :global(body) {
+        height: auto;
+        overflow: visible;
+        background: #fff;
+    }
+
+    /* 문서 말고는 모두 숨깁니다(사이드바·그래프·본문·알림). */
+    .printRoot :global(body) > :not(.doc) {
+        display: none !important;
+    }
+
+    .printRoot .doc {
+        display: block;
+    }
+}
+
+/* ───────── 문서 모양 ─────────
+ * 여백 초기화는 앱 전역(globals.css 의 * { margin: 0; padding: 0 })을 그대로 따릅니다. */
+
+.doc {
+    --rx-ink: #111;
+    --rx-ink-2: #444;
+    --rx-rule: #B9B9B9;
+    --rx-hair: #DADADA;
+    --rx-accent: #0B5D3B;
+
+    page: prescription;
+    font-family: 'Pretendard', 'Apple SD Gothic Neo', 'Malgun Gothic', 'Noto Sans KR', sans-serif;
+    font-size: 10.5pt;
+    line-height: 1.42;
+    font-variant-numeric: tabular-nums;
+    color: var(--rx-ink);
+    background: #fff;
+    word-break: keep-all;
+    overflow-wrap: break-word;
+    /* 채운 표시(먼저)와 줄이 '배경 그래픽'을 끄고 인쇄해도 나오게 합니다. */
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+}
+
+.doc ul,
+.doc ol {
+    list-style: none;
+}
+
+.doc b,
+.doc strong {
+    font-weight: 700;
+}
+
+/* 머리 */
+.head {
+    padding-bottom: 2.4mm;
+    border-bottom: 1.2pt solid var(--rx-ink);
+}
+
+.headTop {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 6mm;
+}
+
+.headTop h1 {
+    font-size: 12pt;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    color: var(--rx-accent);
+}
+
+.brand {
+    font-size: 10.5pt;
+    font-weight: 700;
+}
+
+.storeName {
+    margin-top: 1mm;
+    font-size: 18pt;
+    font-weight: 700;
+    line-height: 1.25;
+    letter-spacing: -0.01em;
+}
+
+.storeMeta {
+    margin-top: 0.6mm;
+    font-size: 9.5pt;
+    color: var(--rx-ink-2);
+}
+
+.storeMeta span + span::before {
+    content: '·';
+    margin: 0 2mm;
+}
+
+/* 공통 글자 */
+.no {
+    color: var(--rx-accent);
+}
+
+.titleNote {
+    font-size: 9.5pt;
+    font-weight: 400;
+    color: var(--rx-ink-2);
+}
+
+.lead {
+    margin-top: 1.6mm;
+    font-size: 9.5pt;
+    color: var(--rx-ink-2);
+    break-after: avoid;
+    page-break-after: avoid;
+}
+
+.note {
+    margin-top: 1.2mm;
+    font-size: 9.5pt;
+    color: var(--rx-ink-2);
+}
+
+.sub {
+    font-size: 9.5pt;
+    color: var(--rx-ink-2);
+}
+
+.metricNote {
+    display: block;
+    font-size: 9pt;
+    font-weight: 400;
+    color: var(--rx-ink-2);
+}
+
+.box {
+    display: block;
+    flex-shrink: 0;
+    width: 3.6mm;
+    height: 3.6mm;
+    margin-top: 0.9mm;
+    border: 0.8pt solid var(--rx-ink);
+}
+
+.tag {
+    display: inline-block;
+    padding: 0 1.2mm;
+    font-size: 8.5pt;
+    font-weight: 400;
+    line-height: 1.5;
+    color: var(--rx-ink-2);
+    white-space: nowrap;
+    border: 0.5pt solid var(--rx-rule);
+}
+
+/* ───────── 1쪽: 처방 요약 ───────── */
+
+.page1 {
+    break-after: page;
+    page-break-after: always;
+}
+
+.pageLabel {
+    margin-top: 2mm;
+    font-size: 9.5pt;
+    font-weight: 700;
+    color: var(--rx-accent);
+}
+
+.block {
+    margin-top: 3mm;
+    break-inside: avoid;
+    page-break-inside: avoid;
+}
+
+.blockTitle {
+    display: flex;
+    align-items: baseline;
+    gap: 2mm;
+    padding-bottom: 1mm;
+    font-size: 12.5pt;
+    font-weight: 700;
+    border-bottom: 0.6pt solid var(--rx-ink);
+}
+
+.blockTitle .titleNote {
+    margin-left: auto;
+}
+
+/* ① 핵심 진단 */
+.diagnoses li {
+    display: grid;
+    grid-template-columns: 6mm 1fr;
+    gap: 0 1mm;
+    padding: 1.3mm 0;
+    border-bottom: 0.5pt solid var(--rx-hair);
+}
+
+.diagNo {
+    font-weight: 700;
+    color: var(--rx-accent);
+}
+
+.diagText {
+    font-size: 11pt;
+    font-weight: 700;
+    line-height: 1.4;
+}
+
+/* ② 이번 주 할 일 */
+.week li {
+    display: grid;
+    grid-template-columns: 4.6mm 5mm 1fr;
+    gap: 0 1.5mm;
+    padding: 1.3mm 0;
+    border-bottom: 0.5pt solid var(--rx-hair);
+}
+
+.weekNo {
+    font-weight: 700;
+    text-align: right;
+}
+
+.weekNo::after {
+    content: '.';
+}
+
+.weekTitle {
+    display: flex;
+    align-items: baseline;
+    gap: 3mm;
+    font-size: 11pt;
+}
+
+.weekTime {
+    margin-left: auto;
+    font-size: 10pt;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+/* 왜(왼쪽) · 하는 곳(오른쪽) 한 줄 */
+.weekMeta {
+    display: flex;
+    align-items: baseline;
+    gap: 4mm;
+    font-size: 9.5pt;
+    color: var(--rx-ink-2);
+}
+
+.weekWhere {
+    margin-left: auto;
+    text-align: right;
+}
+
+/* ③ 5칸 · ④ 다시 볼 숫자 */
+.colNo {
+    width: 7mm;
+}
+
+.colSlot {
+    width: 44mm;
+}
+
+.colAct {
+    width: 15mm;
+}
+
+.colMetric {
+    width: 34mm;
+}
+
+.colBlank {
+    width: 26mm;
+}
+
+/* A. 비교 대상 칸은 키워드 칸(rowspan) 다음이라 줄마다 첫 칸이 아닐 수 있어 들여쓰기를 고정합니다. */
+.table td.lineLabel {
+    padding-left: 2mm;
+}
+
+.num {
+    font-weight: 700;
+    color: var(--rx-ink-2);
+}
+
+.rankTag {
+    margin-left: 1.5mm;
+    font-size: 9pt;
+    font-weight: 400;
+    color: var(--rx-ink-2);
+}
+
+.act {
+    display: inline-block;
+    padding: 0 1.4mm;
+    font-size: 9pt;
+    font-weight: 700;
+    line-height: 1.5;
+    white-space: nowrap;
+    border: 0.6pt solid var(--rx-rule);
+    color: var(--rx-ink-2);
+}
+
+.act[data-action='replace'],
+.act[data-action='fill'] {
+    color: #fff;
+    background: var(--rx-accent);
+    border-color: var(--rx-accent);
+}
+
+.blank {
+    border-left: 0.5pt solid var(--rx-hair);
+}
+
+.page1Foot {
+    margin-top: 3mm;
+    font-size: 9.5pt;
+    color: var(--rx-ink-2);
+}
+
+/* ───────── 2쪽부터: 상세 ───────── */
+
+.section {
+    margin-top: 4.4mm;
+}
+
+.section:first-of-type {
+    margin-top: 0;
+}
+
+.title {
+    display: flex;
+    align-items: baseline;
+    gap: 2.5mm;
+    padding-bottom: 1.2mm;
+    font-size: 13pt;
+    font-weight: 700;
+    border-bottom: 0.6pt solid var(--rx-ink);
+    break-after: avoid;
+    page-break-after: avoid;
+}
+
+.part {
+    margin-top: 3.2mm;
+}
+
+/* 짧은 묶음은 제목과 내용이 다른 쪽으로 갈라지지 않게 통째로 둡니다. */
+.keep {
+    break-inside: avoid;
+    page-break-inside: avoid;
+}
+
+.partTitle {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0 2.5mm;
+    font-size: 11pt;
+    font-weight: 700;
+    break-after: avoid;
+    page-break-after: avoid;
+}
+
+.partTitle span {
+    font-size: 9.5pt;
+    font-weight: 400;
+    color: var(--rx-ink-2);
+}
+
+/* 표 */
+.table {
+    width: 100%;
+    margin-top: 1.4mm;
+    border-collapse: collapse;
+    border-top: 0.6pt solid var(--rx-ink);
+}
+
+/* 표가 다음 쪽으로 넘어가면 머리 줄을 되풀이합니다. */
+.table thead {
+    display: table-header-group;
+}
+
+.table th,
+.table td {
+    padding: 1mm 2mm;
+    text-align: left;
+    vertical-align: top;
+    border-bottom: 0.5pt solid var(--rx-hair);
+}
+
+.table th:first-child,
+.table td:first-child {
+    padding-left: 0;
+}
+
+.table thead th {
+    font-size: 9pt;
+    font-weight: 700;
+    color: var(--rx-ink-2);
+    border-bottom: 0.5pt solid var(--rx-rule);
+}
+
+.table tbody th {
+    font-weight: 700;
+}
+
+.table tr {
+    break-inside: avoid;
+    page-break-inside: avoid;
+}
+
+/* 구역 제목 바로 아래에 붙는 표: 제목의 밑줄이 표의 윗줄을 대신합니다. */
+.tableFlush {
+    margin-top: 0;
+    border-top: 0;
+}
+
+.tableTight th,
+.tableTight td {
+    padding-top: 0.7mm;
+    padding-bottom: 0.7mm;
+}
+
+.colWord {
+    width: 34mm;
+}
+
+.colState {
+    width: 40mm;
+}
+
+.colCount {
+    width: 24mm;
+    text-align: right !important;
+}
+
+.colScore {
+    width: 15mm;
+    text-align: right !important;
+}
+
+.colMenu {
+    width: 52mm;
+}
+
+.colPrice {
+    width: 22mm;
+}
+
+.colSwap {
+    width: 48mm;
+}
+
+.colWhere {
+    width: 44mm;
+}
+
+.numCell {
+    text-align: right !important;
+    white-space: nowrap;
+}
+
+/* A. 경쟁 매장: 키워드 하나(1위·중간값·내 매장)를 한 묶음으로 쪽에서 가르지 않습니다. */
+.group {
+    break-inside: avoid;
+    page-break-inside: avoid;
+}
+
+.group tr[data-kind='mine'] td {
+    border-bottom-color: var(--rx-rule);
+}
+
+.group tr:not(:last-child) td {
+    border-bottom-style: dotted;
+}
+
+.findings {
+    margin-top: 1.6mm;
+}
+
+.findings li {
+    position: relative;
+    padding-left: 3.5mm;
+    font-weight: 700;
+}
+
+.findings li::before {
+    content: '–';
+    position: absolute;
+    left: 0;
+    font-weight: 400;
+}
+
+/* B. 처방 상세 */
+.task {
+    margin-top: 2.6mm;
+    padding-bottom: 2.4mm;
+    border-bottom: 0.5pt solid var(--rx-rule);
+}
+
+.taskHead {
+    display: flex;
+    align-items: baseline;
+    gap: 2mm;
+    break-after: avoid;
+    page-break-after: avoid;
+}
+
+.taskHead .box {
+    align-self: flex-start;
+}
+
+.actionNo {
+    font-weight: 700;
+}
+
+.actionNo::after {
+    content: '.';
+}
+
+.taskTitle {
+    font-size: 11.5pt;
+}
+
+.taskMeta {
+    margin-left: auto;
+    padding-left: 3mm;
+    font-size: 9.5pt;
+    text-align: right;
+    color: var(--rx-ink-2);
+}
+
+.level {
+    flex-shrink: 0;
+    padding: 0 1.6mm;
+    font-size: 8.5pt;
+    font-weight: 700;
+    line-height: 1.55;
+    color: var(--rx-ink);
+    border: 0.6pt solid var(--rx-ink);
+}
+
+.level[data-level='high'] {
+    color: #fff;
+    background: var(--rx-accent);
+    border-color: var(--rx-accent);
+}
+
+.level[data-level='low'] {
+    color: var(--rx-ink-2);
+    border-color: var(--rx-rule);
+}
+
+.advice {
+    display: grid;
+    grid-template-columns: 14mm 1fr;
+    gap: 0.8mm 1.5mm;
+    margin-top: 1mm;
+    padding-left: 6.1mm;
+}
+
+.advice dt {
+    padding-top: 0.25mm;
+    font-size: 9.5pt;
+    font-weight: 700;
+    color: var(--rx-ink-2);
+}
+
+.advice dd > p + p {
+    margin-top: 0.4mm;
+}
+
+.steps li {
+    display: grid;
+    grid-template-columns: 4.5mm 1fr;
+}
+
+.steps li > span {
+    font-weight: 700;
+    color: var(--rx-accent);
+}
+
+/* 초안: 가는 줄로 두른 칸(장식 없음) */
+.draft {
+    margin: 1.6mm 0 0 6.1mm;
+    padding: 1.6mm 2.6mm 2mm;
+    border: 0.6pt solid var(--rx-rule);
+}
+
+.draftMark {
+    font-size: 9pt;
+    font-weight: 700;
+    color: var(--rx-accent);
+    break-after: avoid;
+    page-break-after: avoid;
+}
+
+.draftItem {
+    margin-top: 1.2mm;
+    break-inside: avoid;
+    page-break-inside: avoid;
+}
+
+.draftLabel {
+    font-size: 9pt;
+    font-weight: 700;
+    color: var(--rx-ink-2);
+}
+
+.draftText {
+    white-space: pre-line;
+}
+
+.draftText b {
+    margin-right: 1.5mm;
+    font-size: 9.5pt;
+    color: var(--rx-ink-2);
+}
+
+/* 지켜야 할 정책 한 줄(굵게, 색 없이) */
+.caution {
+    font-size: 9.5pt;
+    font-weight: 700;
+}
+
+.restList {
+    margin-top: 1.2mm;
+    border-top: 0.6pt solid var(--rx-ink);
+}
+
+.restList li {
+    display: grid;
+    grid-template-columns: 4.6mm 1fr;
+    gap: 0 1.5mm;
+    padding: 1.2mm 0;
+    border-bottom: 0.5pt solid var(--rx-hair);
+    break-inside: avoid;
+    page-break-inside: avoid;
+}
+
+/* C. 추천에서 뺀 키워드: 이유(짧은 표시) — 낱말 */
+.excluded {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0 6mm;
+    margin-top: 1.4mm;
+    border-top: 0.6pt solid var(--rx-ink);
+}
+
+.excluded > div {
+    display: grid;
+    grid-template-columns: 30mm 1fr;
+    gap: 0 2mm;
+    padding: 1.1mm 0;
+    font-size: 10pt;
+    border-bottom: 0.5pt solid var(--rx-hair);
+    break-inside: avoid;
+    page-break-inside: avoid;
+}
+
+.excluded dt {
+    font-size: 9.5pt;
+    color: var(--rx-ink-2);
+}
+
+.excluded dd {
+    font-weight: 700;
+}
+
+/* D. AI 검색 준비 */
+.scores {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0 8mm;
+    margin-top: 1.6mm;
+}
+
+.scores b {
+    font-size: 12pt;
+}
+
+.plainList {
+    margin-top: 1.2mm;
+}
+
+.plainList li {
+    position: relative;
+    padding-left: 3.5mm;
+}
+
+.plainList li::before {
+    content: '–';
+    position: absolute;
+    left: 0;
+}
+
+/* E. 4주 실행표 */
+.planTable th.colWeek {
+    width: 16mm;
+    color: var(--rx-accent);
+}
+
+.planTable tr {
+    break-inside: avoid;
+    page-break-inside: avoid;
+}
+
+.checks li {
+    display: grid;
+    grid-template-columns: 4.6mm 1fr;
+    gap: 0 1.5mm;
+    padding: 0.4mm 0;
+}
+
+.repeat {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.repeat th,
+.repeat td {
+    padding: 0.5mm 0;
+    text-align: left;
+    vertical-align: middle;
+    border: 0;
+}
+
+.repeat thead th {
+    font-size: 9pt;
+    font-weight: 700;
+    color: var(--rx-ink-2);
+}
+
+.colTick {
+    width: 11mm;
+    text-align: center !important;
+}
+
+.colTick .box {
+    display: inline-block;
+    margin-top: 0;
+}
+
+.recheck {
+    margin-top: 2.4mm;
+    padding: 1.6mm 2.6mm 2.2mm;
+    border: 0.6pt solid var(--rx-ink);
+    break-inside: avoid;
+    page-break-inside: avoid;
+}
+
+.writeLine {
+    display: flex;
+    align-items: flex-end;
+    gap: 2mm;
+    margin-top: 2mm;
+    font-size: 10pt;
+    white-space: nowrap;
+}
+
+.writeLine span {
+    display: inline-block;
+    width: 32mm;
+    border-bottom: 0.5pt solid var(--rx-ink);
+}
+
+.writeLine span.wide {
+    flex: 1;
+}
+
+.writeLine span.wider {
+    flex: 1;
+}
+
+/* 꼬리: 사실 고지 */
+.foot {
+    margin-top: 2.8mm;
+    padding-top: 1.4mm;
+    border-top: 0.6pt solid var(--rx-ink);
+}
+
+/* 고지는 줄 단위로 쪽을 넘길 수 있게 둡니다(고지 몇 줄만으로 빈 쪽이 생기지 않게). */
+.foot li {
+    break-inside: avoid;
+    page-break-inside: avoid;
+}
+
+.foot li {
+    position: relative;
+    padding-left: 3mm;
+    font-size: 9pt;
+    line-height: 1.4;
+    color: var(--rx-ink-2);
+}
+
+.foot li::before {
+    content: '·';
+    position: absolute;
+    left: 0;
+}
