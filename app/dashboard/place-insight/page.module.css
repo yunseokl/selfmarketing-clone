@@ -437,12 +437,14 @@
     to { transform: translateX(310%); }
 }
 
-/* 요약 칸이 더 길면 그래프 칸도 같은 높이로 늘어납니다 */
+/* 요약 칸이 더 길면 그래프 칸도 같은 높이로 늘어납니다. 3D 뇌 그래프가 칸 높이에 맞춰 커지므로 넉넉히 잡습니다. */
 .graphPane {
     display: flex;
     min-width: 0;
-    min-height: 572px;
+    min-height: clamp(620px, 70vh, 800px);
     border-right: 1px solid var(--hair);
+    /* '그래프' 버튼으로 내려올 때 위에 붙는 목차에 가리지 않게 */
+    scroll-margin-top: 64px;
 }
 
 .rail {
@@ -885,16 +887,17 @@
     max-width: 520px;
     margin: 0 auto;
     padding: 12px 14px;
-    color: var(--ink);
-    background: var(--raised);
+    /* 어두운 그래프 무대 위에 뜨므로 무대와 같은 어두운 카드 색을 씁니다(혼자 흰 카드가 되지 않게). */
+    color: #F3EDE0;
+    background: #13161D;
     border-radius: var(--r);
-    box-shadow: 0 0 0 1px var(--rule), 0 18px 32px -20px rgba(21, 25, 30, 0.5);
+    box-shadow: 0 0 0 1px rgba(214, 222, 235, 0.22), 0 18px 32px -20px rgba(0, 0, 0, 0.7);
     animation: rise 0.4s var(--ease) backwards;
 }
 
 .loading > svg {
     margin-top: 1px;
-    color: var(--good-ink);
+    color: #9BDDB4;
 }
 
 .loadingText strong {
@@ -905,7 +908,7 @@
 .loadingText p {
     margin-top: 1px;
     font-size: 13px;
-    color: var(--ink-2);
+    color: #B4BAC4;
 }
 
 .loadingText ul {
@@ -921,8 +924,8 @@
     font-size: 12px;
     font-weight: 600;
     line-height: 22px;
-    color: var(--ink-2);
-    background: var(--sunk);
+    color: #B4BAC4;
+    background: rgba(214, 222, 235, 0.09);
     border-radius: 999px;
     animation: reading 1.75s ease-in-out infinite;
     animation-delay: calc(var(--d, 0) * 350ms);
@@ -930,19 +933,19 @@
 
 @keyframes reading {
     0%, 55%, 100% {
-        color: var(--ink-2);
-        background: var(--sunk);
+        color: #B4BAC4;
+        background: rgba(214, 222, 235, 0.09);
     }
     18%, 36% {
-        color: var(--good-ink);
-        background: var(--good-wash);
+        color: #B9EBCB;
+        background: rgba(96, 196, 138, 0.2);
     }
 }
 
 .loadingTime {
     font-size: 13px;
     font-weight: 700;
-    color: var(--ink-2);
+    color: #B4BAC4;
 }
 
 /* 스켈레톤: 왼쪽에서 오른쪽으로 빛이 지나가고, 블록마다 조금씩 늦게 시작합니다 */
@@ -3228,13 +3231,59 @@
 
 /* ───────── 줄어든 화면 ───────── */
 
+/* 요약 칸과 나란히 두면 그래프 칸이 760px 보다 좁아지는 폭(약 1535px 이하)에서는
+   그래프를 위에 가로 전체로 두고 요약 칸을 그 아래로 내립니다(3D 뇌 그래프가 화면의 주인공이 되도록).
+   그래프 칸 높이는 화면 높이의 3분의 2쯤으로 잡습니다. */
+@media (max-width: 1535px) {
+    .stage {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .graphPane {
+        height: clamp(520px, 66vh, 720px);
+        min-height: 0;
+        border-right: 0;
+        border-bottom: 1px solid var(--hair);
+    }
+
+    .rail {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+        align-items: start;
+        gap: 14px 24px;
+    }
+
+    .rail > .railHead,
+    .rail > .railFoot,
+    .rail > .idleTitle,
+    .rail > .idleList {
+        grid-column: 1 / -1;
+    }
+
+    .rail > .kpiGrid {
+        grid-row: span 2;
+    }
+
+    .idleList {
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    }
+
+    .idleList > div + div {
+        border-top: 0;
+    }
+
+    .railFoot {
+        margin-top: 0;
+    }
+}
+
 @media (max-width: 1320px) {
     .stage {
         grid-template-columns: minmax(0, 1fr);
     }
 
     .graphPane {
-        height: 520px;
+        height: clamp(520px, 66vh, 720px);
         min-height: 0;
         border-right: 0;
         border-bottom: 1px solid var(--hair);
@@ -3379,8 +3428,8 @@
         width: 100%;
     }
 
+    /* 휴대폰: 그래프가 먼저, 요약 칸이 바로 아래에 이어집니다. */
     .rail {
-        order: -1;
         grid-template-columns: minmax(0, 1fr);
         padding: 14px;
     }
@@ -3389,19 +3438,14 @@
         grid-row: auto;
     }
 
+    /* 휴대폰: 제목 줄·범례 한 줄·안내 두 줄을 빼고도 그래프 무대가 440px 이상 남도록 잡습니다(화면 높이의 72% 안팎).
+       살펴보기 시트가 이 무대 안에서 올라오므로, 무대가 낮으면 카드 본문이 들어갈 자리가 없습니다. */
     .graphPane {
-        height: 500px;
-        border-bottom: 0;
-        border-top: 1px solid var(--hair);
+        height: clamp(520px, 72vh, 640px);
     }
 
     .index[data-stuck='true'] .indexHome {
         max-width: 132px;
-    }
-
-    /* 손가락으로 쓰는 화면에는 '올리면' 안내가 맞지 않아 뺍니다 */
-    .hintWide {
-        display: none;
     }
 
     .loading {

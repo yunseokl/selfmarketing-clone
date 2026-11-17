@@ -1,15 +1,22 @@
-/* 연결 그래프는 밝은 페이지 안에 놓인 어두운 '관측 창'입니다. 점·선·빛은 캔버스(PlaceGraph.js)가 그리고,
-   여기서는 머리 줄·범례·아래 읽기 줄과 캔버스가 뜨기 전 자리 표시만 다룹니다. */
+/* 연결 그래프: 밝은 페이지 안에 놓인 어두운 '표본 관찰 창'입니다. 뇌 껍질·연결선·뉴런은 WebGL 캔버스(graph/)가 그리고,
+   여기서는 그 위에 얹는 글자(라벨·범례·띠)와 단추, 살펴보기 카드가 놓이는 자리를 다룹니다(카드 안쪽은 graph/Inspector.module.css).
+   색 원칙: 무대는 잉크색 한 톤, 글자는 상아색, 묶음 색(--c)은 가는 눈금·테두리에만 씁니다. 번지는 빛·유리 효과는 쓰지 않습니다.
+   글자 크기: 넓은 화면은 12px 아래로, 폰(720px 이하)은 13px 아래로 내려가지 않습니다. */
 .panel {
-    --g-bg: #070B13;
-    --g-bg-edge: #05080F;
-    --g-bg-mid: #111D30;
-    --g-raised: rgba(148, 178, 220, 0.09);
-    --g-hair: rgba(148, 178, 220, 0.14);
-    --g-text: #EAF1F8;
-    --g-text-2: #AEBCCB;
-    --g-text-3: #8394A6;
-    --g-cyan: #00E5FF;
+    --g-bg: #0B0D12;
+    --g-bg-edge: #07080B;
+    --g-bg-lift: #12151C;
+    --g-card: #13161D;
+    --g-card-2: #1A1E26;
+    --g-hair: rgba(214, 222, 235, 0.12);
+    --g-hair-2: rgba(214, 222, 235, 0.22);
+    --g-text: #F3EDE0;
+    --g-text-2: #B4BAC4;
+    /* 작은 회색 글자도 어두운 바탕에서 읽히는 밝기로 둡니다. */
+    --g-text-3: #A7AEBA;
+    --g-ease: cubic-bezier(0.16, 1, 0.3, 1);
+    --f: transparent;
+    position: relative;
     display: flex;
     flex: 1;
     flex-direction: column;
@@ -18,9 +25,15 @@
     min-height: 0;
     color: var(--g-text-2);
     background: var(--g-bg);
+    font-variant-numeric: tabular-nums;
 }
 
-/* ───────── 머리: 제목 + 범례(누르면 그 묶음만 밝힘) ───────── */
+.panel :focus-visible {
+    outline: 2px solid var(--g-text);
+    outline-offset: 2px;
+}
+
+/* ───────── 머리: 제목·한 줄 요약·개수 + 범례(누르면 그 묶음만 가까이 봄) ───────── */
 
 .head {
     display: flex;
@@ -28,110 +41,266 @@
     align-items: center;
     justify-content: space-between;
     gap: 6px 16px;
-    padding: 10px 14px 10px 16px;
+    /* 긴 한 줄 요약이 칸을 밀어 넓히지 않게 합니다. */
+    min-width: 0;
+    padding: 9px 12px 9px 16px;
     border-bottom: 1px solid var(--g-hair);
 }
 
+/* 한 줄 요약이 잘리지 않도록 제목 줄이 제 폭을 먼저 차지하고, 자리가 모자라면 범례가 다음 줄로 내려갑니다. */
 .headTitle {
     display: flex;
+    flex: 1 1 auto;
     align-items: baseline;
-    gap: 8px;
+    gap: 10px;
+    min-width: 0;
     font-size: 13px;
-    white-space: nowrap;
 }
 
 .headTitle strong {
+    flex-shrink: 0;
     font-weight: 700;
     color: var(--g-text);
+    white-space: nowrap;
 }
 
-.headTitle span {
+/* 지금 이 매장에서 먼저 볼 것(한 문장) */
+.headline {
+    min-width: 0;
+    overflow: hidden;
+    font-weight: 500;
+    color: var(--g-text);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.counts {
+    flex-shrink: 0;
     font-size: 12px;
     color: var(--g-text-3);
-    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
 }
 
 .legend {
     display: flex;
     flex-wrap: wrap;
-    gap: 2px;
+    gap: 4px;
     list-style: none;
 }
 
-/* --c: 묶음 색(스크립트가 그래프 점과 같은 값을 넣어 줍니다) */
+/* --c: 묶음 색(스크립트가 그래프와 같은 값을 넣어 줍니다). --mx·--my: 포인터 자리 */
 .legend button {
-    --c: #90A4AE;
+    --c: #A5ACB8;
+    --mx: 50%;
+    --my: 50%;
+    position: relative;
     display: inline-flex;
     align-items: center;
     gap: 7px;
-    height: 26px;
-    padding: 0 9px;
+    height: 28px;
+    padding: 0 10px 0 9px;
     font: inherit;
     font-size: 12px;
     font-weight: 600;
     white-space: nowrap;
     color: var(--g-text-2);
-    background: transparent;
+    background-color: transparent;
     border: 0;
-    border-radius: 13px;
+    border-radius: 4px;
+    box-shadow: inset 0 0 0 1px transparent;
     cursor: pointer;
-    transition: background-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease, transform 0.1s ease;
+    transition: color 0.16s ease, background-color 0.16s ease, box-shadow 0.2s ease, transform 0.12s var(--g-ease);
+}
+
+/* 묶음 표시는 번지는 점이 아니라 도판의 눈금 같은 짧은 세로 막대입니다. 고르면 막대가 길어집니다. */
+.legend button i,
+.modeText i,
+.pullName i {
+    flex-shrink: 0;
+    width: 3px;
+    height: 10px;
+    border-radius: 1px;
+    background: var(--c);
+    transition: height 0.24s var(--g-ease), background-color 0.2s ease;
 }
 
 .legend button:active {
-    transform: scale(0.95);
-}
-
-/* 범례 점: 그래프 점처럼 같은 색 빛이 번집니다 */
-.legend button::before {
-    content: '';
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: var(--c);
-    box-shadow: 0 0 6px 0 var(--c);
-    transition: transform 0.2s cubic-bezier(0.2, 1.5, 0.4, 1), box-shadow 0.2s ease;
+    transform: scale(0.97);
 }
 
 .legend button[aria-pressed='true'] {
     color: var(--g-text);
-    background: var(--g-raised);
+    background-color: var(--g-card-2);
     box-shadow: inset 0 0 0 1px var(--c);
 }
 
-.legend button[aria-pressed='true']::before {
-    transform: scale(1.3);
-    box-shadow: 0 0 10px 1px var(--c);
+.legend button[aria-pressed='true'] i {
+    height: 14px;
+    background: var(--cv, var(--c));
 }
 
-.legend button:focus-visible {
-    color: var(--g-text);
-    outline: 2px solid var(--g-text);
-    outline-offset: 1px;
-}
-
-/* 올렸을 때의 표시는 마우스가 있는 기기에만 둡니다(터치 화면에서는 누른 뒤에도 남아 보이므로). */
+/* 올렸을 때: 포인터가 있는 자리에서 묶음 색이 옅게 번져 따라다닙니다(마우스가 있는 기기에서만). */
 @media (hover: hover) {
     .legend button:hover {
         color: var(--g-text);
-        background: var(--g-raised);
+        background-image: radial-gradient(72px circle at var(--mx) var(--my), color-mix(in srgb, var(--c) 26%, transparent), transparent 72%);
+        box-shadow: inset 0 0 0 1px var(--g-hair-2);
     }
 
-    .legend button:hover::before {
-        transform: scale(1.3);
-        box-shadow: 0 0 10px 1px var(--c);
+    .legend button[aria-pressed='true']:hover {
+        box-shadow: inset 0 0 0 1px var(--c);
     }
+
+    .legend button:hover i {
+        height: 14px;
+    }
+}
+
+/* ───────── 걸러 보는 중 띠(무대 위에 겹치지 않고 따로 한 줄) ───────── */
+
+.modebar {
+    display: flex;
+    align-items: center;
+    gap: 8px 10px;
+    min-width: 0;
+    min-height: 40px;
+    padding: 5px 8px 5px 16px;
+    font-size: 12.5px;
+    color: var(--g-text-2);
+    background: var(--g-card);
+    border-bottom: 1px solid var(--g-hair);
+    /* 지금 걸러 보는 묶음의 색을 왼쪽 가장자리에 가는 띠로 */
+    box-shadow: inset 3px 0 0 var(--f);
+}
+
+.modeText {
+    display: flex;
+    flex: 0 1 auto;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+}
+
+.modeText i {
+    --c: var(--f);
+    height: 12px;
+}
+
+.modeText > span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* 줄이 넘어갈 때 떨어지면 안 되는 끝말("살펴보는 중", "· 항목 20") */
+.keep {
+    white-space: nowrap;
+}
+
+.modeText strong {
+    font-weight: 700;
+    color: var(--g-text);
+}
+
+.modeText b {
+    font-weight: 400;
+    color: var(--g-text-3);
+}
+
+/* 걸러 보는 묶음 안의 항목 종류(누르면 그 종류만). 한 줄에 다 들어가지 않으면 두 줄로 접습니다(잘리거나 숨는 칩이 없게).
+   폰에서는 아래 미디어 규칙에서 한 줄로 두고 옆으로 넘겨 봅니다. */
+.kinds {
+    display: flex;
+    flex: 1 1 0;
+    flex-wrap: wrap;
+    gap: 4px;
+    min-width: 0;
+    padding: 0 1px;
+    list-style: none;
+    scrollbar-width: none;
+}
+
+.kinds::-webkit-scrollbar {
+    display: none;
+}
+
+.kinds li {
+    flex-shrink: 0;
+}
+
+.kinds button {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 28px;
+    padding: 0 10px;
+    font: inherit;
+    font-size: 12px;
+    font-weight: 500;
+    white-space: nowrap;
+    color: var(--g-text-2);
+    background: transparent;
+    border: 0;
+    border-radius: 4px;
+    box-shadow: inset 0 0 0 1px var(--g-hair);
+    cursor: pointer;
+    transition: color 0.15s ease, background-color 0.15s ease;
+}
+
+.kinds button[aria-pressed='true'] {
+    color: var(--g-text);
+    background: var(--g-card-2);
+    box-shadow: inset 0 0 0 1px var(--f);
+}
+
+.modeClose {
+    position: relative;
+    display: inline-flex;
+    flex-shrink: 0;
+    align-items: center;
+    gap: 4px;
+    height: 28px;
+    margin-left: auto;
+    padding: 0 9px;
+    font: inherit;
+    font-size: 12px;
+    font-weight: 600;
+    white-space: nowrap;
+    color: var(--g-text);
+    background: var(--g-card-2);
+    border: 0;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.kinds em,
+.relationToggle em,
+.relationCols em,
+.pinned em {
+    font-style: normal;
+    font-weight: 500;
+    color: var(--g-text-3);
 }
 
 /* ───────── 그래프 칸 ───────── */
 
-/* 바탕은 캔버스가 그리는 바탕과 같은 색이라, 캔버스가 뜨기 전후로 화면이 번쩍이지 않습니다. */
 .wrap {
     position: relative;
     flex: 1;
     min-height: 0;
     overflow: hidden;
-    background: radial-gradient(ellipse 72% 78% at 50% 50%, var(--g-bg-mid) 0%, #0A1322 52%, var(--g-bg-edge) 100%);
+    background: radial-gradient(ellipse 62% 70% at 50% 46%, var(--g-bg-lift) 0%, var(--g-bg) 58%, var(--g-bg-edge) 100%);
+    /* 한 묶음만 보는 동안에는 창 테두리가 그 묶음 색으로 바뀝니다(지금 걸러 보고 있다는 표시). */
+    box-shadow: inset 0 0 0 1px var(--f);
+    transition: box-shadow 0.3s ease;
+}
+
+/* 끌어당기는 동안에는 글자가 선택되지 않게 합니다. */
+.wrap[data-pulling] {
+    user-select: none;
+    -webkit-user-select: none;
 }
 
 .canvas {
@@ -141,12 +310,17 @@
     width: 100%;
     height: 100%;
     opacity: 0;
-    /* 빈 곳을 쓸면 페이지가 위아래로 넘어가고, 점 위에서 시작한 터치만 스크립트가 끌기로 받습니다. */
+    /* 빈 곳은 기본 화살표. 점·밝혀진 연결 위에서는 스크립트가 손 모양(grab)으로, 끄는 동안에는 쥔 손(grabbing)으로 바꿉니다. */
+    cursor: default;
+    /* 세로로 쓸면 페이지가 넘어가고, 가로로 끄는 손짓만 스크립트가 받아 뇌를 돌립니다.
+       점을 길게 누른 뒤의 끌기는 스크립트가 터치 이동을 막아서 받습니다(graph/gesture.js). */
     touch-action: pan-y;
+    /* 길게 누를 때 iOS 가 띄우는 메뉴·돋보기를 막습니다. */
+    -webkit-touch-callout: none;
     user-select: none;
     -webkit-user-select: none;
     -webkit-tap-highlight-color: transparent;
-    transition: opacity 0.45s ease;
+    transition: opacity 0.5s ease;
 }
 
 .wrap[data-ready='true'] .canvas {
@@ -157,14 +331,14 @@
     cursor: progress;
 }
 
-/* 캔버스가 준비되기 전: 매장이 놓일 가운데에서 불빛이 뜁니다 */
+/* 캔버스가 준비되기 전: 매장이 놓일 가운데에서 상아색 점이 숨 쉽니다 */
 .placeholder {
     position: absolute;
     inset: 0;
     display: grid;
     place-items: center;
     pointer-events: none;
-    transition: opacity 0.3s ease, visibility 0.3s;
+    transition: opacity 0.4s ease, visibility 0.4s;
 }
 
 .wrap[data-ready='true'] .placeholder {
@@ -173,26 +347,175 @@
 }
 
 .placeholder span {
-    position: relative;
-    width: 14px;
-    height: 14px;
+    width: 12px;
+    height: 12px;
     border-radius: 50%;
-    background: var(--g-cyan);
-    box-shadow: 0 0 22px 4px rgba(0, 229, 255, 0.45);
-    animation: placeholderBeat 1.9s ease-in-out infinite;
+    background: var(--g-text);
+    animation: breathe 2.4s ease-in-out infinite;
 }
 
-.placeholder span::after {
-    content: '';
+@keyframes breathe {
+    0%, 100% { transform: scale(0.8); opacity: 0.45; }
+    50% { transform: scale(1.1); opacity: 0.95; }
+}
+
+/* ───────── 라벨(과학 도해의 주석처럼: 가는 지시선 + 또렷한 글자) ─────────
+   글자는 포인터를 받지 않습니다. 글자를 누르면 그 점을 고르는 판정은 캔버스 쪽(graph/gesture.js)이 이름표 상자로 합니다. */
+
+.leads,
+.labels {
     position: absolute;
-    inset: -14px;
-    border: 1px solid rgba(0, 229, 255, 0.5);
-    border-radius: 50%;
-    animation: placeholderRing 1.9s ease-out infinite;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    pointer-events: none;
 }
 
-/* 키보드·화면 낭독기용 버튼: 눈에는 보이지 않고 포인터도 받지 않습니다(자리는 스크립트가 점에 맞춥니다).
-   초점이 들어오면 캔버스가 그 점에 흰 고리를 그립니다. */
+/* 지시선은 데이터 연결과 헷갈리지 않게 가는 점선으로 긋습니다(주석이라는 표시). */
+.leads > line {
+    stroke: #E6EBF3;
+    stroke-width: 1;
+    stroke-dasharray: 1.5 3;
+    stroke-linecap: round;
+    visibility: hidden;
+}
+
+/* 손가락으로 당길 때 손가락과 점을 잇는 가는 선(실선) */
+.leads > line.tether {
+    stroke: rgba(243, 237, 224, 0.62);
+    stroke-dasharray: none;
+}
+
+/* 고정해 둔 점: 원래 자리에 옅은 빈 고리, 지금 자리까지 가는 선 */
+.pinMark {
+    visibility: hidden;
+}
+
+.pinMark circle {
+    fill: none;
+    stroke: rgba(230, 235, 243, 0.5);
+    stroke-width: 1;
+    stroke-dasharray: 2 2.4;
+}
+
+.pinMark line {
+    stroke: rgba(230, 235, 243, 0.34);
+    stroke-width: 1;
+}
+
+.label {
+    --c: #A5ACB8;
+    position: absolute;
+    top: 0;
+    left: 0;
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    visibility: hidden;
+    white-space: nowrap;
+    line-height: 1.3;
+    color: var(--g-text-2);
+    /* 글자 뒤로 점이 비칠 때를 위한 어두운 테(번지는 빛이 아니라 바탕색 그림자) */
+    text-shadow: 0 0 2px var(--g-bg), 0 0 4px var(--g-bg), 0 0 7px var(--g-bg), 0 0 11px var(--g-bg), 0 1px 1px var(--g-bg);
+    will-change: transform, opacity;
+}
+
+.label b {
+    font-size: 12.5px;
+    font-weight: 500;
+    transition: color 0.18s ease;
+}
+
+.label span {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--g-text-2);
+}
+
+.label[data-level='0'],
+.label[data-level='1'] {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 1px;
+    padding-left: 8px;
+    border-left: 2px solid var(--c);
+}
+
+.label[data-level='0'] {
+    border-left-color: var(--g-text);
+}
+
+.label[data-level='0'] b {
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    color: var(--g-text);
+}
+
+.label[data-level='1'] b {
+    font-size: 13px;
+    font-weight: 650;
+    color: var(--g-text);
+}
+
+.label[data-ghost='true'] b {
+    font-weight: 500;
+    color: var(--g-text-2);
+}
+
+.label[data-state='hot'] b,
+.label[data-state='self'] b,
+.label[data-state='held'] b {
+    color: #FFFFFF;
+}
+
+.label[data-state='self'] b,
+.label[data-state='held'] b {
+    font-weight: 700;
+}
+
+/* 끌어당기는 점의 이름·값: 포인터 옆에 붙어 다니는 작은 쪽지(크기는 그대로 두고 바탕만 깝니다) */
+.label[data-state='held'] {
+    background: var(--g-card);
+    border-radius: 2px;
+    outline: 5px solid var(--g-card);
+    box-shadow: 0 0 0 6px var(--g-hair-2);
+    text-shadow: none;
+}
+
+/* 관계 이름표: 고른 점에서 뻗은 연결 위에 붙는 작은 글자(관계의 이름) */
+.tag {
+    position: absolute;
+    top: 0;
+    left: 0;
+    visibility: hidden;
+    padding: 1px 6px 2px;
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1.35;
+    white-space: nowrap;
+    color: var(--g-text);
+    background: var(--g-bg);
+    border-radius: 3px;
+    box-shadow: inset 0 0 0 1px var(--g-hair-2);
+    will-change: transform, opacity;
+}
+
+/* 자리가 없어 띄우지 못한 관계 이름표의 수("연결 종류 +3"). 고른 점의 이름 옆에 조용히 적습니다. */
+.tagMore {
+    font-weight: 500;
+    color: var(--g-text-2);
+    box-shadow: inset 0 0 0 1px var(--g-hair);
+}
+
+/* 폰에서 여럿을 걸러 볼 때: 항목 이름표는 이름만(값은 카드에서 봅니다). */
+.wrap[data-compact='true'] .label[data-level='2'] span,
+.wrap[data-compact='true'] .label[data-level='3'] span {
+    display: none;
+}
+
+/* 키보드·화면 낭독기용 버튼: 눈에는 보이지 않고 포인터도 받지 않습니다. 초점이 들어오면 캔버스가 그 점에 고리를 그립니다. */
 .keys {
     position: absolute;
     inset: 0;
@@ -213,23 +536,487 @@
     pointer-events: none;
 }
 
-/* ───────── 아래 줄: 가리킨 점의 값 ───────── */
+.keys button:focus-visible {
+    outline: none;
+}
 
-.readout {
+/* Esc 로 그래프에서 나왔을 때 초점이 놓이는 자리 */
+.exit {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+}
+
+.exit:focus {
+    outline: none;
+}
+
+/* ───────── 끌어당기기(손가락) ───────── */
+
+/* 고른 점의 손잡이: 44px 고리. 여기서 시작한 끌기는 페이지 스크롤로 넘어가지 않고 바로 그 점을 당깁니다. */
+.handle {
+    position: absolute;
+    top: 0;
+    left: 0;
+    z-index: 1;
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    box-shadow: inset 0 0 0 1.5px rgba(243, 237, 224, 0.78);
+    touch-action: none;
+    -webkit-touch-callout: none;
+    -webkit-tap-highlight-color: transparent;
+    cursor: grab;
+    will-change: transform;
+}
+
+/* 손잡이임을 알리는 작은 눈금 네 개(위·아래·왼쪽·오른쪽) */
+.handle::before {
+    content: '';
+    position: absolute;
+    inset: -4px;
+    border-radius: 50%;
+    background:
+        linear-gradient(var(--g-text), var(--g-text)) top / 1.5px 5px no-repeat,
+        linear-gradient(var(--g-text), var(--g-text)) bottom / 1.5px 5px no-repeat,
+        linear-gradient(var(--g-text), var(--g-text)) left / 5px 1.5px no-repeat,
+        linear-gradient(var(--g-text), var(--g-text)) right / 5px 1.5px no-repeat;
+    opacity: 0.7;
+}
+
+.wrap[data-pulling='touch'] .handle {
+    opacity: 0;
+}
+
+/* 손가락 둘레의 가는 고리(반지름 38px): 손가락이 어디를 잡고 있는지 보입니다. 번지는 빛이 아닙니다. */
+.touchRing {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 76px;
+    height: 76px;
+    border-radius: 50%;
+    box-shadow: inset 0 0 0 1px rgba(243, 237, 224, 0.55);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.15s ease;
+    will-change: transform;
+}
+
+.touchRing[data-on='true'] {
+    opacity: 1;
+}
+
+/* 손가락에 가려도 무엇을 당기는지 알 수 있게, 무대 맨 위 가운데에 이름을 씁니다. */
+.pullName {
+    position: absolute;
+    top: 10px;
+    left: 50%;
+    z-index: 3;
     display: flex;
     align-items: center;
     gap: 8px;
-    min-height: 38px;
-    padding: 8px 16px;
-    font-size: 13px;
+    max-width: calc(100% - 24px);
+    padding: 7px 12px;
+    font-size: 14px;
+    white-space: nowrap;
+    color: var(--g-text-2);
+    background: var(--g-card);
+    border-radius: 4px;
+    box-shadow: 0 0 0 1px var(--g-hair-2);
+    transform: translateX(-50%);
+    pointer-events: none;
+}
+
+.pullName i {
+    --c: #A5ACB8;
+    height: 14px;
+}
+
+.pullName strong {
+    min-width: 0;
+    overflow: hidden;
+    font-weight: 700;
+    color: var(--g-text);
+    text-overflow: ellipsis;
+}
+
+/* ───────── 보기 조절(확대·축소·처음으로) ───────── */
+
+/* 살펴보기 카드가 오른쪽에 뜨므로 단추는 왼쪽 아래에 둡니다. */
+.tools {
+    position: absolute;
+    bottom: 12px;
+    left: 12px;
+    z-index: 2;
+    display: flex;
+    flex-direction: column;
+    background: var(--g-card);
+    border-radius: 4px;
+    box-shadow: 0 0 0 1px var(--g-hair);
+    overflow: hidden;
+}
+
+.tools button {
+    display: grid;
+    place-items: center;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    color: var(--g-text-2);
+    background: transparent;
+    border: 0;
+    cursor: pointer;
+    transition: color 0.15s ease, background-color 0.15s ease;
+}
+
+.tools button + button {
+    border-top: 1px solid var(--g-hair);
+}
+
+.tools button svg {
+    transition: transform 0.4s var(--g-ease);
+}
+
+.tools button:active svg {
+    transform: scale(0.82);
+}
+
+/* '처음으로'는 보기를 바꾼 뒤에만 또렷해지고, 누르면 아이콘이 한 바퀴 되감깁니다. */
+.tools button[data-on='false'] {
+    color: var(--g-text-3);
+}
+
+.tools button[data-on='true'] {
+    color: var(--g-text);
+}
+
+.tools button[data-on]:active svg {
+    transform: rotate(-150deg);
+}
+
+.tools button:focus-visible {
+    outline-offset: -2px;
+}
+
+/* ───────── 연결 종류(고르면 그 연결만 밝힘) · 고정 풀기 ─────────
+   확대 단추 바로 옆(왼쪽 아래)에 둡니다. 오른쪽에 뜨는 살펴보기 카드에 가려지지 않습니다. */
+
+.relations {
+    --dock: 52px;
+    position: absolute;
+    bottom: 12px;
+    left: var(--dock);
+    z-index: 2;
+    display: grid;
+    grid-template-rows: minmax(0, 1fr) auto;
+    grid-template-columns: auto auto;
+    align-items: end;
+    justify-content: start;
+    gap: 6px;
+    max-width: calc(100% - var(--dock) - 12px);
+    max-height: calc(100% - 24px);
+    /* 상자 자체는 누름을 받지 않습니다(안의 단추·목록만). 폰에서는 이 상자의 왼쪽 여백이 확대 단추 줄 위에 걸칩니다. */
+    pointer-events: none;
+}
+
+.relations > * {
+    pointer-events: auto;
+}
+
+.relationToggle,
+.pinned {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 32px;
+    padding: 0 11px;
+    font: inherit;
+    font-size: 12px;
+    font-weight: 600;
+    white-space: nowrap;
+    color: var(--g-text-2);
+    background: var(--g-card);
+    border: 0;
+    border-radius: 4px;
+    box-shadow: 0 0 0 1px var(--g-hair);
+    cursor: pointer;
+    transition: color 0.15s ease, background-color 0.15s ease;
+}
+
+.relationToggle[aria-expanded='true'] {
+    color: var(--g-text);
+    background: var(--g-card-2);
+}
+
+.pinned {
+    color: var(--g-text);
+}
+
+.relationList {
+    grid-column: 1 / -1;
+    width: min(440px, 100%);
+    min-height: 0;
+    max-height: 100%;
+    padding: 10px 8px 14px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+    background: var(--g-card);
+    border-radius: 6px;
+    box-shadow: 0 0 0 1px var(--g-hair-2), 0 16px 30px -18px rgba(0, 0, 0, 0.85);
+    /* 목록이 넘칠 때 아래쪽이 흐려져 더 있다는 것을 알립니다(넘치지 않으면 아래 여백만 흐려져 티가 나지 않습니다). */
+    mask-image: linear-gradient(#000 calc(100% - 14px), transparent);
+}
+
+.relationHelp {
+    padding: 0 6px 8px;
+    font-size: 12px;
     line-height: 1.4;
+    color: var(--g-text-2);
+    word-break: keep-all;
+}
+
+.relationCols {
+    column-count: 2;
+    column-gap: 10px;
+}
+
+.relationCols section {
+    margin-bottom: 8px;
+    break-inside: avoid;
+}
+
+.relationCols section > p {
+    padding: 3px 6px 2px;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--g-text-3);
+}
+
+/* 구조 연결(소속 등)은 조용히 맨 아래에 둡니다. */
+.relationCols section[data-quiet='true'] {
+    opacity: 0.72;
+}
+
+.relationCols ul {
+    list-style: none;
+}
+
+.relationCols button {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    min-height: 30px;
+    padding: 3px 6px;
+    font: inherit;
+    font-size: 12.5px;
+    text-align: left;
+    color: var(--g-text-2);
+    background: transparent;
+    border: 0;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: color 0.15s ease, background-color 0.15s ease;
+}
+
+.relationCols button span {
+    flex: 1;
+    min-width: 0;
+    word-break: keep-all;
+}
+
+.relationCols button[aria-pressed='true'] {
+    color: var(--g-text);
+    background: var(--g-card-2);
+    box-shadow: inset 0 0 0 1px var(--g-hair-2);
+}
+
+/* 선 무늬 견본: 그래프의 선과 같은 무늬입니다(graph/shaders.js 의 무늬 번호와 맞춥니다).
+   근거 = 두 줄, 경쟁 = 긴 점선, 할 일 = 짧은 점선, 같은 것 = 긴 줄·점, AI = 긴 줄·점·점, 등록 = 실선, 구조 = 가는 실선 */
+.relationCols button i {
+    flex-shrink: 0;
+    width: 34px;
+    height: 6px;
+    color: var(--g-text);
+    background: linear-gradient(currentColor, currentColor) center / 100% 2px no-repeat;
+}
+
+.relationCols button[data-family='structure'] i {
+    background-size: 100% 1px;
+    opacity: 0.6;
+}
+
+.relationCols button[data-family='evidence'] i {
+    background:
+        linear-gradient(currentColor, currentColor) top / 100% 1.5px no-repeat,
+        linear-gradient(currentColor, currentColor) bottom / 100% 1.5px no-repeat;
+}
+
+.relationCols button[data-family='competition'] i {
+    background: repeating-linear-gradient(90deg, currentColor 0 9px, transparent 9px 14px) center / 100% 2px no-repeat;
+}
+
+.relationCols button[data-family='action'] i {
+    background: repeating-linear-gradient(90deg, currentColor 0 4px, transparent 4px 8px) center / 100% 2px no-repeat;
+}
+
+.relationCols button[data-family='same'] i {
+    background: repeating-linear-gradient(90deg, currentColor 0 9px, transparent 9px 12px, currentColor 12px 14px, transparent 14px 17px) center / 100% 2px no-repeat;
+}
+
+.relationCols button[data-family='ai'] i {
+    background: repeating-linear-gradient(90deg, currentColor 0 8px, transparent 8px 11px, currentColor 11px 13px, transparent 13px 16px, currentColor 16px 18px, transparent 18px 21px) center / 100% 2px no-repeat;
+}
+
+@media (hover: hover) {
+    .tools button:hover,
+    .relationCols button:hover,
+    .relationToggle:hover,
+    .pinned:hover,
+    .kinds button:hover {
+        color: var(--g-text);
+        background: var(--g-card-2);
+    }
+}
+
+/* ───────── 살펴보기 카드가 놓이는 자리(카드 안쪽은 graph/Inspector.module.css) ───────── */
+
+.inspectorSlot {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    bottom: 12px;
+    z-index: 3;
+    display: flex;
+    align-items: flex-start;
+    /* 그래프 칸이 좁은 데스크톱(요약 칸과 나란히 놓일 때 약 580px)에서는 카드도 좁아집니다. */
+    width: clamp(236px, 44%, 300px);
+    pointer-events: none;
+}
+
+/* 큰 모니터에서는 카드를 조금 넓혀, 연결된 항목 조각이 한 줄에 둘씩 들어가게 합니다(값에 "이 매장 1위"처럼 주인이 붙어 길어졌습니다). */
+@media (min-width: 1536px) {
+    .inspectorSlot {
+        width: clamp(236px, 44%, 348px);
+    }
+}
+
+.inspectorSlot > * {
+    pointer-events: auto;
+}
+
+/* 폰의 아래 시트: 무대 위쪽 120px 는 늘 그래프가 보이게 남기고, 그 아래 영역 안에서 카드가 내용만큼 올라옵니다
+   (카드는 내용 높이 + max-height: 100%. 가려지는 영역은 자리가 아니라 카드의 실제 상자로 잽니다). */
+.inspectorSlot[data-sheet='true'] {
+    /* 무대가 아주 낮을 때(360 폭에서 걸러 보는 중: 무대 325px)는 시트가 232px 을 쓰도록 띠를 조금 줄입니다.
+       그보다 높은 무대(352px 이상)에서는 늘 120px 입니다. */
+    top: min(120px, calc(100% - 232px));
+    right: 0;
+    bottom: 0;
+    left: 0;
+    width: auto;
+    max-width: none;
+    height: auto;
+    align-items: flex-end;
+}
+
+/* 손가락으로 점을 당기는 동안에는 시트가 제목 한 줄로 접혀 당길 자리를 내줍니다. */
+.inspectorSlot[data-sheet='true'][data-collapsed='true'] {
+    top: auto;
+    height: 56px;
+    overflow: hidden;
+    align-items: flex-start;
+}
+
+/* 카드가 열려 있음을 알리는 표식(확인 스크립트가 이 이름으로 찾습니다). 모양은 없습니다. */
+.inspector {
+    isolation: auto;
+}
+
+/* ───────── WebGL 을 쓸 수 없을 때의 목록 ───────── */
+
+.fallback {
+    position: absolute;
+    inset: 0;
+    padding: 16px;
+    overflow-y: auto;
+    font-size: 13px;
+}
+
+.fallback > p {
+    color: var(--g-text-3);
+}
+
+.fallback > ul {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+    align-items: start;
+    gap: 14px 18px;
+    margin-top: 14px;
+    list-style: none;
+}
+
+.fallback > ul > li {
+    --c: #A5ACB8;
+    padding-left: 10px;
+    border-left: 2px solid var(--c);
+}
+
+.fallback ul ul {
+    margin-top: 4px;
+    list-style: none;
+}
+
+.fallback button {
+    display: flex;
+    gap: 8px;
+    align-items: baseline;
+    width: 100%;
+    min-height: 26px;
+    padding: 2px 0;
+    font: inherit;
+    text-align: left;
+    color: var(--g-text-2);
+    background: none;
+    border: 0;
+    cursor: pointer;
+}
+
+.fallback button strong {
+    font-weight: 700;
+    color: var(--g-text);
+}
+
+.fallback button span {
+    color: var(--g-text-3);
+}
+
+/* ───────── 아래 줄: 올린 점의 설명(없으면 조작 안내) ───────── */
+
+.readout {
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    /* 높이는 늘 같습니다: 올린 점의 설명 ↔ 조작 안내, 마우스용 ↔ 손가락용 문구가 바뀌어도 무대가 밀리지 않게. */
+    height: 44px;
+    padding: 0 16px;
+    overflow: hidden;
+    font-size: 13px;
+    line-height: 1.36;
     color: var(--g-text-2);
     border-top: 1px solid var(--g-hair);
     transition: background-color 0.2s ease;
 }
 
 .readout[data-on='true'] {
-    background: var(--g-raised);
+    background: var(--g-card);
 }
 
 .readout strong {
@@ -240,13 +1027,27 @@
 }
 
 .readoutDot {
-    --c: #90A4AE;
+    --c: #A5ACB8;
     flex-shrink: 0;
-    width: 9px;
-    height: 9px;
-    border-radius: 50%;
+    width: 3px;
+    height: 12px;
+    border-radius: 1px;
     background: var(--c);
-    box-shadow: 0 0 8px 0 var(--c);
+}
+
+/* 올린 점의 값(예: 323개, 3위) */
+.readoutValue {
+    flex-shrink: 0;
+    font-weight: 600;
+    color: var(--g-text);
+    white-space: nowrap;
+}
+
+.readoutValue::before {
+    content: '·';
+    margin-right: 8px;
+    font-weight: 400;
+    color: var(--g-text-3);
 }
 
 .readoutText {
@@ -254,93 +1055,297 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-variant-numeric: tabular-nums;
 }
 
-.readoutGo {
-    flex-shrink: 0;
-    margin-left: auto;
-    padding-left: 12px;
-    font-size: 12px;
-    font-weight: 600;
+.readoutText::before {
+    content: '— ';
     color: var(--g-text-3);
-    white-space: nowrap;
 }
 
-@keyframes placeholderBeat {
-    0%, 100% { transform: scale(0.9); opacity: 0.7; }
-    12% { transform: scale(1.15); opacity: 1; }
-    30% { transform: scale(1.06); opacity: 0.95; }
+/* 조작 안내: 넓으면 한 줄, 좁으면 두 줄까지(위의 고정 높이 안에 두 줄이 들어갑니다). */
+.readoutHint {
+    display: -webkit-box;
+    min-width: 0;
+    overflow: hidden;
+    word-break: keep-all;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
 }
 
-@keyframes placeholderRing {
-    0% { transform: scale(0.5); opacity: 0.8; }
-    100% { transform: scale(2.6); opacity: 0; }
-}
-
-/* 손가락으로 누르는 화면: 범례 버튼은 보이는 크기를 그대로 두고 누르는 영역만 위아래로 넓힙니다(높이 44px).
-   줄이 바뀔 때 넓힌 영역끼리 겹치지 않도록 줄 간격도 그만큼 벌립니다. */
+/* 손가락으로 누르는 화면: 누르는 영역을 44px 로 넓힙니다(보이는 크기는 36px, 그 둘레 4px 까지 눌림). */
 @media (pointer: coarse), (max-width: 768px) {
-    .legend {
-        row-gap: 18px;
+    .legend button,
+    .kinds button,
+    .modeClose {
+        height: 36px;
     }
 
-    .legend button {
-        position: relative;
-    }
-
-    .legend button::after {
+    .legend button::after,
+    .kinds button::after,
+    .modeClose::after {
         content: '';
         position: absolute;
-        inset: -9px 0;
+        inset: -4px 0;
+    }
+
+    .legend {
+        row-gap: 8px;
+    }
+
+    .kinds {
+        row-gap: 6px;
+    }
+
+    .modebar {
+        min-height: 46px;
+    }
+
+    .tools button {
+        width: 44px;
+        height: 44px;
+    }
+
+    .relations {
+        --dock: 64px;
+    }
+
+    .relationToggle,
+    .pinned {
+        height: 44px;
+        padding: 0 13px;
+    }
+
+    .relationCols button {
+        min-height: 44px;
     }
 }
 
 @media (max-width: 720px) {
+    /* 폰: 제목 줄(제목·개수 + 한 줄 요약 두 줄까지, 64px 안) 아래에 범례 한 줄(44px).
+       왼쪽 여백은 앱의 왼쪽 위 메뉴 단추(화면에 고정)에 제목이 가리지 않게 둡니다. */
     .head {
+        flex-direction: column;
         flex-wrap: nowrap;
-        padding: 9px 4px 9px 12px;
+        align-items: stretch;
+        gap: 0;
+        padding: 8px 0 0 28px;
     }
 
-    /* 좁은 화면에서는 범례가 줄을 늘리지 않고 옆으로 넘깁니다.
-       옆으로 넘기는 상자는 위아래도 잘라내므로, 넓힌 누르는 영역이 잘리지 않게 안쪽 여백을 주고 같은 만큼 당깁니다. */
+    .headTitle {
+        flex: none;
+        flex-wrap: wrap;
+        gap: 1px 8px;
+        padding-right: 12px;
+        font-size: 14px;
+        line-height: 18px;
+    }
+
+    /* 한 줄 요약은 폰에서 두 줄까지 넘어갑니다. */
+    .headline {
+        display: -webkit-box;
+        order: 3;
+        flex-basis: 100%;
+        font-size: 13px;
+        font-weight: 500;
+        line-height: 1.35;
+        color: var(--g-text-2);
+        white-space: normal;
+        word-break: keep-all;
+        -webkit-box-orient: vertical;
+        -webkit-line-clamp: 2;
+    }
+
+    .counts {
+        margin-left: auto;
+        font-size: 13px;
+    }
+
+    /* 범례는 한 줄로 두고 옆으로 넘겨 봅니다. 오른쪽 끝을 흐리게 해서(다음 칩이 반쯤 걸쳐 보임) 더 있다는 것을 알리고,
+       '할 일'을 맨 앞에 둡니다. */
     .legend {
         flex-wrap: nowrap;
+        align-items: center;
+        gap: 2px;
         min-width: 0;
-        padding-block: 9px;
-        margin-block: -9px;
+        height: 44px;
+        margin-left: -8px;
+        padding-right: 30px;
         overflow-x: auto;
+        overflow-y: hidden;
         scrollbar-width: none;
+        mask-image: linear-gradient(90deg, #000 calc(100% - 36px), transparent);
     }
 
     .legend::-webkit-scrollbar {
         display: none;
     }
 
-    .headTitle span {
+    .legend li {
+        flex-shrink: 0;
+    }
+
+    .legend li[data-group='todo'] {
+        order: -1;
+    }
+
+    .legend button {
+        padding: 0 9px 0 8px;
+        font-size: 13px;
+    }
+
+    /* 걸러 보는 동안에는 범례 자리를 띠가 대신합니다(무대 높이가 줄지 않게). 다른 묶음은 '전체 보기'로 돌아가 고릅니다. */
+    .panel[data-filter='true'] .legend {
         display: none;
     }
 
+    .panel[data-filter='true'] .head {
+        padding-bottom: 6px;
+    }
+
+    .modebar {
+        flex-wrap: wrap;
+        gap: 0 8px;
+        min-height: 44px;
+        padding: 0 8px 0 12px;
+        font-size: 13px;
+    }
+
+    .modeText {
+        flex: 1 1 0;
+    }
+
+    /* 띠 글자는 두 줄까지 넘어갑니다(말줄임으로 뒷말이 잘리지 않게). */
+    .modeText {
+        padding-block: 4px;
+    }
+
+    /* 낱말 단위로 줄을 바꾸고, 두 줄의 길이를 비슷하게 맞춥니다(한 글자·한 낱말만 둘째 줄에 남지 않게). */
+    .modeText > span {
+        display: -webkit-box;
+        line-height: 1.3;
+        white-space: normal;
+        word-break: keep-all;
+        text-wrap: balance;
+        -webkit-box-orient: vertical;
+        -webkit-line-clamp: 3;
+    }
+
+    .kinds {
+        order: 3;
+        flex: 0 0 100%;
+        flex-wrap: nowrap;
+        height: 44px;
+        align-items: center;
+        padding: 0 30px 0 1px;
+        overflow-x: auto;
+        overflow-y: hidden;
+        /* 오른쪽 끝을 흐리게 해서 더 있다는 것을 알립니다. */
+        mask-image: linear-gradient(90deg, #000 calc(100% - 30px), transparent);
+    }
+
+    .kinds button,
+    .modeClose {
+        font-size: 13px;
+    }
+
+    /* '전체 보기'는 눌리는 높이를 44px 로 */
+    .modeClose {
+        height: 44px;
+    }
+
+    .modeClose::after {
+        inset: 0;
+    }
+
+    .label b,
+    .label span {
+        font-size: 13px;
+    }
+
+    .label[data-level='1'] b {
+        font-size: 14px;
+    }
+
+    .label[data-level='0'] b {
+        font-size: 16px;
+    }
+
+    .tag,
+    .relationHelp,
+    .relationCols section > p,
+    .relationCols button,
+    .relationToggle,
+    .pinned {
+        font-size: 13px;
+    }
+
+    /* 무대가 낮으므로 확대 단추는 가로로 눕혀 아래 가장자리만 차지하게 합니다. */
+    .tools {
+        flex-direction: row;
+    }
+
+    .tools button + button {
+        border-top: 0;
+        border-left: 1px solid var(--g-hair);
+    }
+
+    .relations {
+        --dock: 12px;
+        right: 12px;
+        max-width: none;
+        /* 단추 줄은 확대 단추(132px) 오른쪽에서 시작하고, 목록은 무대 폭 전체를 씁니다. */
+        padding-left: 140px;
+    }
+
+    .relationList {
+        width: calc(100% + 140px);
+        margin-left: -140px;
+    }
+
+    .relationCols button i {
+        width: 26px;
+    }
+
+    /* 조작 안내는 두 줄까지(48px 고정) */
     .readout {
-        padding: 8px 12px;
+        height: 48px;
+        padding: 0 12px;
+        line-height: 1.38;
     }
 
-    .readoutGo {
-        display: none;
+    .readoutHint {
+        -webkit-line-clamp: 2;
+    }
+
+    /* 점을 톡 했을 때: 첫 줄에 이름·값, 둘째 줄에 설명(폭 전체를 써서 한 줄에 더 많이 읽히게). 높이는 그대로 48px. */
+    .readout[data-on='true'] {
+        flex-wrap: wrap;
+        align-content: center;
+        gap: 0 8px;
+    }
+
+    .readoutText {
+        flex: 0 0 100%;
+    }
+
+    .readoutText::before {
+        content: none;
     }
 }
 
-/* 움직임 줄이기: 캔버스는 스크립트가 멈춘 그림 한 장으로 그리고, 여기서는 남은 CSS 움직임을 끕니다. */
+/* 움직임 줄이기: 캔버스는 스크립트가 멈춘 그림으로 그리고, 여기서는 남은 CSS 움직임을 끕니다. */
 @media (prefers-reduced-motion: reduce) {
-    .placeholder span,
-    .placeholder span::after {
+    .placeholder span {
         animation: none;
     }
 
     .canvas,
     .placeholder,
     .legend button,
-    .legend button::before {
+    .legend button i,
+    .tools button svg,
+    .inspectorSlot[data-sheet='true'],
+    .touchRing {
         transition: none;
     }
 }

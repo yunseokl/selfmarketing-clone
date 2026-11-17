@@ -1,1162 +1,163 @@
 'use client';
 
-import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
+// 매장을 한가운데 핵으로 두고 키워드·순위·리뷰·결제·할 일 데이터를 뇌의 뉴런처럼 잇는 3D 그래프입니다.
+// 뇌 껍질·연결선·뉴런은 WebGL2 캔버스 한 장에 그리고(graph/ 아래), 글자(라벨·살펴보기 카드·범례)는 그 위의 DOM 으로 올립니다.
+// 그리기는 requestAnimationFrame 으로 돌며 React 렌더를 거치지 않고, 화면 밖이거나 탭이 숨으면 멈춥니다.
+// 바깥(요약·카드)에서는 ref.focus(id)·ref.ping(id) 로 같은 점을 밝히고, onHover 로 지금 보고 있는 점을 받습니다.
+// 점이나 이름을 누르면 살펴보기 카드가 열리고, 카드의 버튼을 눌러야 onSelect 로 본문 이동을 요청합니다.
+// 점을 잡아 끌면 이어진 점들이 함께 당겨집니다(판정은 graph/gesture.js, 계산은 graph/pull.js).
+
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
+import { Minus, Plus, RotateCcw, X } from 'lucide-react';
 import styles from './PlaceGraph.module.css';
+import Inspector from './graph/Inspector';
+import { buildBrain } from './graph/brain';
+import { relationTitle } from './graph/card-model';
+import { createEngine, TAG_MAX } from './graph/engine';
+import { attachGestures } from './graph/gesture';
+import { createRenderer } from './graph/renderer';
+import { colorOf, TONES } from './graph/palette';
 
-const TAU = Math.PI * 2;
-// 단계별 점 크기(0: 매장, 1: 키워드·묶음, 2: 세부 값)와 점 가장자리에서 라벨까지의 거리
-const RADIUS = [21, 8.5, 4.8];
-const LABEL_OFFSET = [21, 8, 6];
-const LABEL_GAP = 4;
-// 라벨 자리를 잡을 때 그래프 칸 좌우에 남기는 여백(장면이 기울며 점이 밀리는 만큼의 여유)
-const EDGE = 10;
-const TEXT = [
-    { label: '700 15px', sub: '500 11.5px', lh: 18.5 },
-    { label: '600 12.5px', sub: '700 12px', lh: 15.5 },
-    { label: '500 11.5px', sub: '500 11px', lh: 14.5 },
-];
-// 깊이감: 카메라에서 화면까지의 거리와 점이 앞뒤로 놓이는 범위(px)
-const CAMERA = 820;
-const DEPTH = 105;
-const STEP = 1000 / 60;
-const BEAT_MS = 1900;
-// 새 점이 부모에서 뻗어 나오는 시간(ms, 단계별)
-const GROW_MS = [520, 680, 540];
-const TRAIL = 5;
-const ORB_PAD = 96 / 88;
+const GROUP_NAMES = { store: '매장', search: '검색', rival: '경쟁 매장', voice: '리뷰·활동', pay: '결제', todo: '할 일', ops: '운영', geo: 'AI 검색' };
+const ARROWS = { ArrowRight: [1, 0], ArrowLeft: [-1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
+// 연결의 갈래 이름과 순서(온톨로지가 families 를 주지 않을 때 씀)
+const FAMILY_NAMES = { evidence: '근거', competition: '경쟁', action: '할 일', ai: 'AI 검색', same: '같은 것', registration: '등록', structure: '구조' };
+const FAMILY_ORDER = ['evidence', 'competition', 'action', 'ai', 'same', 'registration', 'structure'];
+const TAG_SLOTS = Array.from({ length: TAG_MAX }, (_, i) => i);
+const PIN_SLOTS = [0, 1, 2, 3, 4, 5, 6, 7];
+// 서버에서 그릴 때는 화면 배치 단계가 없으므로 보통 effect 로 바꿔 씁니다.
+const useLayout = typeof window === 'undefined' ? useEffect : useLayoutEffect;
 
-const GROUP_COLOR = {
-    store: '#00E5FF',
-    search: '#00E676',
-    voice: '#FF9100',
-    pay: '#E040FB',
-    todo: '#FF5252',
-    ops: '#90A4AE',
-    geo: '#448AFF',
-};
-const TONE_COLOR = { good: '#00E676', warn: '#FFC400', bad: '#FF5252', ink: '#E4ECF5', muted: '#78909C', pending: '#90A4AE' };
-const SUB_COLOR = { good: '#69F0AE', warn: '#FFD54F', bad: '#FF8A80', ink: '#EAF1F8', muted: '#8C9DAF', pending: '#8C9DAF' };
-const INK = '#EAF1F8';
-const INK_2 = '#B7C4D3';
-const HALO = 'rgba(5, 9, 15, 0.9)';
-const BACK = '#0A1321';
-const DUST = '#8FB4E8';
-
-const SIDES = [
-    ['r', 0], ['br', Math.PI / 4], ['b', Math.PI / 2], ['bl', Math.PI * 0.75],
-    ['l', Math.PI], ['tl', -Math.PI * 0.75], ['t', -Math.PI / 2], ['tr', -Math.PI / 4],
-];
-
-function clamp(value, min, max) {
-    return Math.min(max, Math.max(min, value));
+function trackPointer(event) {
+    const box = event.currentTarget.getBoundingClientRect();
+    event.currentTarget.style.setProperty('--mx', `${event.clientX - box.left}px`);
+    event.currentTarget.style.setProperty('--my', `${event.clientY - box.top}px`);
 }
 
-function hashOf(text) {
-    let hash = 2166136261;
-    for (let i = 0; i < text.length; i += 1) hash = Math.imul(hash ^ text.charCodeAt(i), 16777619);
-    return hash >>> 0;
-}
-
-// 같은 입력에는 늘 같은 0~1 값을 돌려줍니다(점마다 박자·휘어짐을 다르게 주되 다시 그려도 그대로이게).
-function unit(seed, salt) {
-    let v = (seed ^ Math.imul(salt + 1, 0x9E3779B1)) >>> 0;
-    v = Math.imul(v ^ (v >>> 16), 0x85EBCA6B);
-    v = Math.imul(v ^ (v >>> 13), 0xC2B2AE35);
-    return ((v ^ (v >>> 16)) >>> 0) / 4294967296;
-}
-
-function angleGap(a, b) {
-    const gap = Math.abs(a - b) % TAU;
-    return gap > Math.PI ? TAU - gap : gap;
-}
-
-function channels(hex) {
-    const value = parseInt(hex.slice(1), 16);
-    return [(value >> 16) & 255, (value >> 8) & 255, value & 255];
-}
-
-function rgba(hex, alpha) {
-    const [r, g, b] = channels(hex);
-    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
-}
-
-function mix(hex, other, amount, alpha = 1) {
-    const a = channels(hex);
-    const b = channels(other);
-    return `rgba(${a.map((value, i) => Math.round(value + (b[i] - value) * amount)).join(', ')}, ${alpha})`;
-}
-
-function colorOf(node) {
-    return TONE_COLOR[node.tone] || GROUP_COLOR[node.group] || GROUP_COLOR.ops;
-}
-
-/* ───────── 미리 그려 두는 빛·구슬 그림 ─────────
-   shadowBlur 를 매 프레임 쓰면 느려서, 색마다 한 번만 그려 두고 프레임에서는 그림을 찍기만 합니다. */
-
-const SPRITES = new Map();
-
-const PAINT = {
-    glow(g, m, color) {
-        const halo = g.createRadialGradient(m, m, 0, m, m, m);
-        halo.addColorStop(0, rgba(color, 0.5));
-        halo.addColorStop(0.22, rgba(color, 0.26));
-        halo.addColorStop(0.55, rgba(color, 0.07));
-        halo.addColorStop(1, rgba(color, 0));
-        g.fillStyle = halo;
-        g.fillRect(0, 0, m * 2, m * 2);
-        g.shadowColor = color;
-        g.shadowBlur = m * 0.34;
-        g.fillStyle = rgba(color, 0.42);
-        g.beginPath();
-        g.arc(m, m, m * 0.13, 0, TAU);
-        g.fill();
-    },
-    orb(g, m, color) {
-        const r = m / ORB_PAD;
-        const body = g.createRadialGradient(m - r * 0.3, m - r * 0.34, r * 0.04, m, m, r);
-        body.addColorStop(0, '#FFFFFF');
-        body.addColorStop(0.24, mix(color, '#FFFFFF', 0.5));
-        body.addColorStop(0.66, color);
-        body.addColorStop(1, mix(color, '#03070D', 0.5));
-        g.fillStyle = body;
-        g.beginPath();
-        g.arc(m, m, r, 0, TAU);
-        g.fill();
-        g.lineWidth = 2;
-        g.strokeStyle = 'rgba(255, 255, 255, 0.28)';
-        g.beginPath();
-        g.arc(m, m, r - 1.2, 0, TAU);
-        g.stroke();
-    },
-    spark(g, m, color) {
-        const core = g.createRadialGradient(m, m, 0, m, m, m);
-        core.addColorStop(0, 'rgba(255, 255, 255, 1)');
-        core.addColorStop(0.16, mix(color, '#FFFFFF', 0.55, 0.95));
-        core.addColorStop(0.46, rgba(color, 0.34));
-        core.addColorStop(1, rgba(color, 0));
-        g.fillStyle = core;
-        g.fillRect(0, 0, m * 2, m * 2);
-    },
-};
-
-const SPRITE_SIZE = { glow: 160, orb: 96, spark: 48 };
-
-function sprite(kind, color) {
-    const key = `${kind}${color}`;
-    let image = SPRITES.get(key);
-    if (!image) {
-        image = document.createElement('canvas');
-        image.width = SPRITE_SIZE[kind];
-        image.height = SPRITE_SIZE[kind];
-        PAINT[kind](image.getContext('2d'), SPRITE_SIZE[kind] / 2, color);
-        SPRITES.set(key, image);
-    }
-    return image;
-}
-
-/* ───────── 장면 상태 ───────── */
-
-function createSim() {
-    return {
-        canvas: null, ctx: null, bg: null, family: 'sans-serif',
-        w: 0, h: 0, dpr: 1, cx: 0, cy: 0, rx: 0, ry: 0, r2: 0,
-        pos: new Map(), linkById: new Map(), keys: new Map(),
-        list: [], order: [], depth: [], links: [], sources: [], sparks: [], dust: [], pings: [],
-        center: null, hotSet: null, selfId: null, focusId: null, drag: null,
-        mode: 'live', reduced: false, coarse: false, lite: false, running: false,
-        last: 0, clock: 0, lag: 0, sway: 0,
-        tiltX: 0, tiltY: 0, aimX: 0, aimY: 0, cosX: 1, sinX: 0, cosY: 1, sinY: 0,
-        invalidate: null,
-    };
-}
-
-// React 가 넘긴 점·선을 장면에 맞춥니다. 이미 있던 점은 자리·움직임을 그대로 이어 갑니다.
-function syncGraph(sim, nodes, links) {
-    const now = performance.now();
-    const next = new Map();
-    const delays = new Map();
-    const nth = new Map();
-    let hubs = 0;
-    nodes.forEach((node, index) => {
-        const level = Math.min(node.level, 2);
-        let delay = 0;
-        if (level === 1) {
-            delay = 150 + hubs * 46;
-            hubs += 1;
-        } else if (level === 2) {
-            const order = nth.get(node.parent) || 0;
-            nth.set(node.parent, order + 1);
-            delay = (delays.get(node.parent) ?? 150) + 420 + order * 56;
-        }
-        delays.set(node.id, delay);
-        let p = sim.pos.get(node.id);
-        if (!p) {
-            const seed = hashOf(node.id);
-            p = {
-                id: node.id, seed, fresh: true, arrived: false, born: now + delay,
-                x: 0, y: 0, z: 0, vx: 0, vy: 0,
-                lx: 0, ly: 0, lz: 0, ox: 0, oy: 0, oz: 0, rest: 0, angle: 0, inner: false,
-                sx: 0, sy: 0, ss: 1, zn: 0, px: 0, py: 0, rr: 0, e: 0,
-                dim: 0, hot: 0, self: 0, fire: 0, calm: 1, labA: 0, tDim: 0, tHot: 0, tSelf: 0,
-                f1: 0.0006 + unit(seed, 1) * 0.0005, f2: 0.0009 + unit(seed, 2) * 0.0005, f3: 0.0005 + unit(seed, 3) * 0.0004,
-                a1: unit(seed, 4) * TAU, a2: unit(seed, 5) * TAU, a3: unit(seed, 6) * TAU,
-                held: false, lab: null, up: null, parent: null, kids: [],
-            };
-        }
-        const color = colorOf(node);
-        Object.assign(p, {
-            node, index, level, color,
-            r: RADIUS[level],
-            ghost: Boolean(node.ghost),
-            pending: node.tone === 'pending',
-            hollow: Boolean(node.ghost) || node.tone === 'pending',
-            glow: sprite('glow', color),
-            orb: sprite('orb', color),
-            parent: null, up: null, kids: [],
-        });
-        next.set(node.id, p);
-    });
-    for (const p of next.values()) {
-        const parent = p.node.parent ? next.get(p.node.parent) : null;
-        if (!parent) continue;
-        p.parent = parent;
-        parent.kids.push(p);
-    }
-    sim.pos = next;
-    sim.list = [...next.values()];
-    sim.order = [...sim.list].sort((a, b) => a.level - b.level || a.index - b.index);
-    sim.depth = [...sim.list];
-    sim.center = sim.order.find((p) => p.level === 0) || null;
-
-    const linkById = new Map();
-    sim.links = [];
-    for (const link of links) {
-        const a = next.get(link.source);
-        const b = next.get(link.target);
-        if (!a || !b) continue;
-        let line = sim.linkById.get(link.id);
-        if (!line) {
-            const seed = hashOf(link.id);
-            line = {
-                id: link.id, seed: unit(seed, 1) * TAU, turn: unit(seed, 2) < 0.5 ? -1 : 1, curl: unit(seed, 3), pace: 0.82 + unit(seed, 4) * 0.5,
-                x0: 0, y0: 0, cx: 0, cy: 0, qx: 0, qy: 0, x1: 0, y1: 0, len: 1, dim: 0, hot: 0, depthA: 1, depthS: 1,
-            };
-        }
-        const leaf = a.level >= 2;
-        Object.assign(line, {
-            a, b, dead: false,
-            bend: (leaf ? 0.12 + line.curl * 0.16 : 0.08 + line.curl * 0.12) * line.turn,
-            color: a.color,
-            near: rgba(a.color, leaf ? 0.52 : 0.8),
-            far: rgba(a.color, leaf ? 0.16 : 0.26),
-            lit: mix(a.color, '#FFFFFF', 0.55),
-            spark: sprite('spark', a.color),
-        });
-        if (!a.up) a.up = line;
-        linkById.set(link.id, line);
-        sim.links.push(line);
-    }
-    for (const [id, line] of sim.linkById) if (!linkById.has(id)) line.dead = true;
-    sim.linkById = linkById;
-    // 신호는 끝 점에서 출발해 묶음을 거쳐 매장으로 모입니다.
-    sim.sources = sim.links.filter((line) => line.a.kids.length === 0);
-}
-
-// 그래프 칸이 가로로 넓어서 1단계 점은 원이 아니라 타원 위에 놓습니다.
-// 딸린 점이 많은 묶음일수록 둘레를 넓게 차지하고, 검색 키워드는 위쪽에 모읍니다.
-function layout(sim) {
-    const { w, h } = sim;
-    const r2 = clamp(Math.min(w, h) * 0.125, 36, 60);
-    // 묶음(타원의 0.94배 자리)에서 딸린 점이 가장 멀리 뻗는 거리(r2 × 1.3)까지 그래프 칸 안에 들어오게 잡습니다.
-    // 넓은 화면은 옆에 세부 값 라벨 자리를 남기고, 좁은 화면은 그 자리까지 써서 점을 넓게 폅니다.
-    const room = w < 560 ? 14 : clamp(w * 0.11, 60, 100);
-    const rx = clamp((w / 2 - room - r2 * 1.3) / 0.94, 82, 280);
-    // 위아래로는 가장 먼 딸린 점 바깥에 라벨 한 줄이 들어갈 자리(34px)를 남깁니다.
-    const ry = clamp(Math.min(h / 2 - 52, (h / 2 - 34 - r2 * 1.3) / 0.94), 76, 220);
-    Object.assign(sim, { cx: w / 2, cy: h / 2, rx, ry, r2 });
-
-    const hubs = sim.order.filter((p) => p.level > 0 && (!p.parent || p.parent.level === 0));
-    const weight = (p) => 1.3 + p.kids.length * 0.42;
-    const total = hubs.reduce((sum, p) => sum + weight(p), 0) || 1;
-    const searchSpan = (hubs.filter((p) => p.node.group === 'search').reduce((sum, p) => sum + weight(p), 0) / total) * TAU;
-    let cursor = -Math.PI / 2 - searchSpan / 2;
-    for (const p of hubs) {
-        const span = (weight(p) / total) * TAU;
-        p.angle = cursor + span / 2;
-        p.inner = false;
-        cursor += span;
-    }
-    // 딸린 점 없는 점(키워드)이 촘촘하게 이어지면 한 칸씩 안쪽으로 들여 라벨 자리를 냅니다.
-    let run = [];
-    const stagger = () => {
-        if (run.length > 1) {
-            let tight = Infinity;
-            for (let i = 1; i < run.length; i += 1) {
-                tight = Math.min(tight, Math.hypot(
-                    (Math.cos(run[i].angle) - Math.cos(run[i - 1].angle)) * rx,
-                    (Math.sin(run[i].angle) - Math.sin(run[i - 1].angle)) * ry,
-                ));
-            }
-            if (tight < 124) run.forEach((p, i) => { p.inner = i % 2 === 1; });
-        }
-        run = [];
-    };
-    for (const p of hubs) {
-        if (p.kids.length === 0) run.push(p);
-        else stagger();
-    }
-    stagger();
-
-    if (sim.center) Object.assign(sim.center, { lx: 0, ly: 0, lz: 0 });
-    for (const p of hubs) {
-        const reach = p.kids.length ? 0.94 : p.inner ? 0.7 : 1;
-        p.lx = Math.cos(p.angle) * rx * reach;
-        p.ly = Math.sin(p.angle) * ry * reach;
-        p.lz = DEPTH * clamp(0.52 * Math.sin(p.angle + 0.7) + 0.36 * Math.sin(p.angle * 2 - 0.5) - (p.inner ? 0.28 : 0), -1, 1);
-    }
-    // 딸린 점은 부모에서 바깥쪽으로 부채꼴로 펼치고, 앞뒤로도 번갈아 놓습니다.
-    for (const p of sim.order) {
-        const count = p.kids.length;
-        if (p.level === 0 || count === 0) continue;
-        const out = Math.atan2(p.ly - (p.parent ? p.parent.ly : 0), p.lx - (p.parent ? p.parent.lx : 0));
-        const stepAngle = count > 1 ? Math.min(0.62, 1.9 / (count - 1)) : 0;
-        p.kids.forEach((kid, i) => {
-            const angle = out + (i - (count - 1) / 2) * stepAngle;
-            const reach = r2 * (count > 3 && i % 2 === 1 ? 1.3 : 1);
-            kid.lx = clamp(p.lx + Math.cos(angle) * reach, 14 - w / 2, w / 2 - 14);
-            kid.ly = clamp(p.ly + Math.sin(angle) * reach, 14 - h / 2, h / 2 - 14);
-            kid.lz = clamp(p.lz + DEPTH * 0.4 * (i % 2 ? 1 : -1) * (0.55 + 0.45 * unit(kid.seed, 7)), -DEPTH, DEPTH);
-        });
-    }
-    // lx·ly 는 가만히 있을 때 화면에 보일 자리입니다. 깊이(lz)만큼 원근이 걸리므로 실제 좌표는 거꾸로 계산해 둡니다.
-    for (const p of sim.order) {
-        const scale = CAMERA / (CAMERA - p.lz);
-        const wx = p.lx / scale;
-        const wy = p.ly / scale;
-        p.wx = wx;
-        p.wy = wy;
-        p.ox = wx - (p.parent ? p.parent.wx : 0);
-        p.oy = wy - (p.parent ? p.parent.wy : 0);
-        p.oz = p.lz - (p.parent ? p.parent.lz : 0);
-        p.rest = p.r * scale * (1 + 0.14 * (p.lz / DEPTH));
-        if (p.fresh || sim.reduced) {
-            Object.assign(p, { x: wx, y: wy, z: p.lz, vx: 0, vy: 0, fresh: false });
-        }
-    }
-}
-
-/* ───────── 라벨 ───────── */
-
-function measureLabels(sim) {
-    const ctx = sim.ctx;
-    for (const p of sim.list) {
-        const { label, sub, subTone } = p.node;
-        if (!label && !sub) {
-            p.lab = null;
-            continue;
-        }
-        const type = TEXT[p.level];
-        const lines = [];
-        if (label) {
-            const font = `${type.label} ${sim.family}`;
-            ctx.font = font;
-            lines.push({ text: label, font, color: p.level === 2 ? INK_2 : INK, w: ctx.measureText(label).width });
-        }
-        if (sub) {
-            const font = `${type.sub} ${sim.family}`;
-            ctx.font = font;
-            lines.push({ text: sub, font, color: SUB_COLOR[subTone] || INK_2, w: ctx.measureText(sub).width });
-        }
-        const prev = p.lab;
-        p.lab = {
-            lines,
-            w: Math.max(...lines.map((line) => line.w)),
-            h: lines.length * type.lh,
-            lh: type.lh,
-            side: prev ? prev.side : 'b',
-            home: prev ? prev.home : 'b',
-            fixed: prev ? prev.fixed : false,
-            on: prev ? prev.on : false,
-        };
-    }
-}
-
-// 점 가운데를 기준으로 한 라벨 상자. align 은 글자를 붙일 쪽(-1 왼쪽 정렬, 0 가운데, 1 오른쪽 정렬)입니다.
-function labelBox(side, gap, lab, out) {
-    const { w, h } = lab;
-    const d = gap * 0.74;
-    if (side === 'r') Object.assign(out, { x0: gap, y0: -h / 2, align: -1 });
-    else if (side === 'l') Object.assign(out, { x0: -gap - w, y0: -h / 2, align: 1 });
-    else if (side === 't') Object.assign(out, { x0: -w / 2, y0: -gap - h, align: 0 });
-    else if (side === 'b') Object.assign(out, { x0: -w / 2, y0: gap, align: 0 });
-    else if (side === 'tr') Object.assign(out, { x0: d, y0: -d - h + 3, align: -1 });
-    else if (side === 'br') Object.assign(out, { x0: d, y0: d - 3, align: -1 });
-    else if (side === 'tl') Object.assign(out, { x0: -d - w, y0: -d - h + 3, align: 1 });
-    else Object.assign(out, { x0: -d - w, y0: d - 3, align: 1 });
-    out.x1 = out.x0 + w;
-    out.y1 = out.y0 + h;
-    return out;
-}
-
-function restBox(sim, p, side) {
-    const box = labelBox(side, p.rest + LABEL_OFFSET[p.level], p.lab, {});
-    const x = sim.cx + p.lx;
-    const y = sim.cy + p.ly;
-    return { x0: x + box.x0, x1: x + box.x1, y0: y + box.y0, y1: y + box.y1 };
-}
-
-function overlaps(a, b) {
-    return a.x0 < b.x1 + LABEL_GAP && a.x1 > b.x0 - LABEL_GAP && a.y0 < b.y1 + LABEL_GAP && a.y1 > b.y0 - LABEL_GAP;
-}
-
-// 라벨을 둘 쪽의 우선순위: 부모에서 바깥쪽을 먼저 보고, 딸린 점·부모로 가는 선이 지나는 쪽은 뒤로 미룹니다.
-function sideOrder(p) {
-    if (p.level === 0) return ['b', 't'];
-    const out = Math.atan2(p.ly - (p.parent ? p.parent.ly : 0), p.lx - (p.parent ? p.parent.lx : 0));
-    const busy = p.kids.map((kid) => Math.atan2(kid.ly - p.ly, kid.lx - p.lx));
-    busy.push(out + Math.PI);
-    return SIDES
-        .map(([side, angle]) => {
-            let cost = angleGap(angle, out) + (side.length > 1 ? 0.4 : 0);
-            for (const dir of busy) {
-                const gap = angleGap(angle, dir);
-                if (gap < 0.7) cost += (0.7 - gap) * 5;
-            }
-            return [side, cost];
-        })
-        .sort((a, b) => a[1] - b[1])
-        .map(([side]) => side);
-}
-
-function findSpot(sim, p, placed, discs) {
-    const px = sim.cx + p.lx;
-    const py = sim.cy + p.ly;
-    const own = (p.rest + 2) ** 2;
-    for (const side of sideOrder(p)) {
-        const box = restBox(sim, p, side);
-        if (box.y0 < 5 || box.y1 > sim.h - 5) continue;
-        // 옆으로 넘치는 라벨은 칸 안으로 밀어 넣어 봅니다(그릴 때도 같은 식으로 밀립니다). 밀려서 제 점을 덮게 되면 그 자리는 쓰지 않습니다.
-        const shift = clamp(box.x0, EDGE, Math.max(EDGE, sim.w - EDGE - (box.x1 - box.x0))) - box.x0;
-        if (shift) {
-            box.x0 += shift;
-            box.x1 += shift;
-            if ((px - clamp(px, box.x0, box.x1)) ** 2 + (py - clamp(py, box.y0, box.y1)) ** 2 < own) continue;
-        }
-        if (placed.some((other) => overlaps(box, other))) continue;
-        const blocked = discs.some((disc) => {
-            if (disc.p === p) return false;
-            const nx = clamp(disc.x, box.x0, box.x1);
-            const ny = clamp(disc.y, box.y0, box.y1);
-            return (disc.x - nx) ** 2 + (disc.y - ny) ** 2 < disc.r * disc.r;
-        });
-        if (!blocked) return { side, box };
-    }
-    return null;
-}
-
-function discsOf(sim, only) {
-    const discs = [];
-    for (const p of sim.list) {
-        if (only && !only.has(p.id)) continue;
-        discs.push({ p, x: sim.cx + p.lx, y: sim.cy + p.ly, r: p.rest + 3 });
-    }
-    return discs;
-}
-
-// 늘 보이는 라벨(매장·1단계)의 자리를 정합니다. 자리가 없으면 숨겨 두고 점을 가리킬 때만 띄웁니다.
-function settleLabels(sim) {
-    const placed = [];
-    const discs = discsOf(sim, null);
-    for (const p of sim.order) {
-        const lab = p.lab;
-        if (!lab) continue;
-        if (p.level >= 2) {
-            lab.fixed = false;
-            lab.home = sideOrder(p)[0];
-            continue;
-        }
-        if (p.level === 0) {
-            // 매장 이름은 자리가 비좁아도 늘 보입니다. 다른 라벨이 이 자리를 피해 갑니다.
-            lab.fixed = true;
-            lab.home = 'b';
-            lab.box = restBox(sim, p, 'b');
-            placed.push(lab.box);
-            continue;
-        }
-        const spot = findSpot(sim, p, placed, discs);
-        lab.fixed = Boolean(spot);
-        lab.home = spot ? spot.side : sideOrder(p)[0];
-        lab.box = spot ? spot.box : null;
-        if (spot) placed.push(spot.box);
-    }
-}
-
-// 지금 밝힌 점에 맞춰 라벨을 켜고 끕니다. 세부 값 라벨은 밝힌 동안에만 빈 자리를 찾아 띄우고,
-// 그 자리와 겹치는 흐린 라벨은 잠시 숨깁니다. 켜져 있던 라벨의 자리는 옮기지 않습니다(글자가 튀지 않게).
-function showLabels(sim) {
-    const hot = sim.hotSet;
-    const placed = [];
-    const rest = [];
-    const discs = hot ? discsOf(sim, hot) : [];
-    for (const p of sim.order) {
-        const lab = p.lab;
-        if (!lab) continue;
-        if (hot && !hot.has(p.id)) {
-            rest.push(p);
-            continue;
-        }
-        if (lab.fixed) {
-            lab.side = lab.home;
-            lab.on = true;
-            placed.push(lab.box);
-            continue;
-        }
-        if (!hot) {
-            lab.on = false;
-            continue;
-        }
-        const spot = findSpot(sim, p, placed, discs);
-        if (!spot && p.id !== sim.selfId) {
-            lab.on = false;
-            continue;
-        }
-        lab.side = spot ? spot.side : lab.home;
-        lab.on = true;
-        placed.push(spot ? spot.box : restBox(sim, p, lab.side));
-    }
-    for (const p of rest) {
-        const lab = p.lab;
-        if (!lab.fixed) {
-            lab.on = false;
-            continue;
-        }
-        lab.on = !placed.some((other) => overlaps(lab.box, other));
-    }
-}
-
-/* ───────── 빛 입자·먼지·바탕 ───────── */
-
-function respawn(sim, spark, wait) {
-    const pool = sim.sources.length ? sim.sources : sim.links;
-    spark.link = pool.length ? pool[Math.floor(Math.random() * pool.length)] : null;
-    spark.u = 0;
-    spark.wait = wait ?? Math.random() * 1100;
-    spark.speed = 64 + Math.random() * 46;
-    spark.size = 9.5 + Math.random() * 4;
-}
-
-// 선을 따라 흐르는 빛 입자는 넉넉한 화면에서도 26개, 좁은 화면·터치 기기에서는 12개까지만 둡니다.
-function seedSparks(sim) {
-    const cap = sim.reduced ? 0 : Math.min(sim.lite ? 12 : 26, Math.round(sim.links.length * (sim.lite ? 0.45 : 0.85)));
-    while (sim.sparks.length < cap) {
-        const spark = {};
-        respawn(sim, spark, Math.random() * 2200);
-        sim.sparks.push(spark);
-    }
-    sim.sparks.length = cap;
-}
-
-function seedDust(sim) {
-    const count = sim.lite ? 10 : 22;
-    sim.dust = Array.from({ length: count }, (_, i) => {
-        const near = i % 7 === 6;
-        return {
-            x: (unit(i, 1) - 0.5) * sim.w * 1.25,
-            y: (unit(i, 2) - 0.5) * sim.h * 1.2,
-            z: near ? 150 + unit(i, 3) * 110 : -160 - unit(i, 3) * 320,
-            size: near ? 110 + unit(i, 4) * 90 : 11 + unit(i, 4) * 18,
-            alpha: near ? 0.06 : 0.14 + unit(i, 5) * 0.26,
-            phase: unit(i, 6) * TAU,
-        };
-    });
-}
-
-// 움직이지 않는 바탕(어두운 바탕색·색 안개·점 모눈·가장자리 어둠)은 크기가 바뀔 때만 다시 그려 둡니다.
-function paintBackdrop(sim) {
-    const { w, h, dpr } = sim;
-    if (!sim.bg) sim.bg = document.createElement('canvas');
-    sim.bg.width = Math.round(w * dpr);
-    sim.bg.height = Math.round(h * dpr);
-    const g = sim.bg.getContext('2d');
-    g.setTransform(dpr, 0, 0, dpr, 0, 0);
-    const far = Math.hypot(w, h) / 2;
-    const base = g.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, far);
-    base.addColorStop(0, '#111D30');
-    base.addColorStop(0.5, '#0A1322');
-    base.addColorStop(1, '#05080F');
-    g.fillStyle = base;
-    g.fillRect(0, 0, w, h);
-    const mist = (x, y, radius, color) => {
-        const cloud = g.createRadialGradient(x, y, 0, x, y, radius);
-        cloud.addColorStop(0, rgba(color, 0.075));
-        cloud.addColorStop(1, rgba(color, 0));
-        g.fillStyle = cloud;
-        g.fillRect(0, 0, w, h);
-    };
-    mist(w * 0.16, h * 0.86, far * 0.7, GROUP_COLOR.search);
-    mist(w * 0.86, h * 0.12, far * 0.72, GROUP_COLOR.geo);
-    g.fillStyle = 'rgba(170, 200, 240, 0.16)';
-    for (let x = (w / 2) % 22; x < w; x += 22) {
-        for (let y = (h / 2) % 22; y < h; y += 22) g.fillRect(x - 0.6, y - 0.6, 1.2, 1.2);
-    }
-    const shade = g.createRadialGradient(w / 2, h / 2, far * 0.3, w / 2, h / 2, far);
-    shade.addColorStop(0, 'rgba(5, 8, 15, 0)');
-    shade.addColorStop(1, 'rgba(5, 8, 15, 0.86)');
-    g.fillStyle = shade;
-    g.fillRect(0, 0, w, h);
-}
-
-function arrange(sim) {
-    if (!sim.w || !sim.ctx) return;
-    layout(sim);
-    measureLabels(sim);
-    settleLabels(sim);
-    showLabels(sim);
-    seedSparks(sim);
-    seedDust(sim);
-    // 키보드·화면 낭독기용 버튼을 점 자리에 맞춰 둡니다.
-    for (const [id, el] of sim.keys) {
-        const p = sim.pos.get(id);
-        if (p) el.style.transform = `translate(${Math.round(sim.cx + p.lx - 22)}px, ${Math.round(sim.cy + p.ly - 22)}px)`;
-    }
-}
-
-/* ───────── 움직임 ───────── */
-
-// 심장 박동처럼 '쿵-쿵' 두 번 뛰고 쉽니다(0~1).
-function heartbeat(now) {
-    const phase = (now % BEAT_MS) / BEAT_MS;
-    const lub = (phase - 0.06) / 0.05;
-    const dub = (phase - 0.24) / 0.065;
-    return Math.exp(-lub * lub) + 0.55 * Math.exp(-dub * dub);
-}
-
-// 점마다 제자리(부모 자리 + 떨어진 거리)로 당기는 용수철에 느린 흔들림을 더합니다.
-// 부모가 움직이면 딸린 점이 한 박자 늦게 따라옵니다.
-function drift(sim) {
-    const t = sim.clock;
-    for (const p of sim.order) {
-        if (p.level === 0) continue;
-        const parent = p.parent;
-        if (p.held && sim.drag) {
-            p.x += (sim.drag.lx - p.sx) / p.ss;
-            p.y += (sim.drag.ly - p.sy) / p.ss;
-            p.vx = 0;
-            p.vy = 0;
-            continue;
-        }
-        const amp = (p.level === 1 ? 4.6 : 3) * p.calm;
-        const tx = (parent ? parent.x : 0) + p.ox + (Math.sin(t * p.f1 + p.a1) + 0.5 * Math.sin(t * p.f2 + p.a2)) * amp;
-        const ty = (parent ? parent.y : 0) + p.oy + (Math.cos(t * p.f2 + p.a3) + 0.5 * Math.sin(t * p.f3 + p.a1)) * amp;
-        const tz = (parent ? parent.z : 0) + p.oz + Math.sin(t * p.f3 + p.a2) * 10 * p.calm;
-        p.vx = (p.vx + (tx - p.x) * 0.03) * 0.86;
-        p.vy = (p.vy + (ty - p.y) * 0.03) * 0.86;
-        p.x += p.vx;
-        p.y += p.vy;
-        p.z += (tz - p.z) * 0.06;
-    }
-}
-
-// 부모(x0·y0)에서 딸린 점(x1·y1)으로 가는 휜 선. 새 점은 이 선을 따라 뻗어 나오므로 끝(x1·y1)이 자라는 중의 자리입니다.
-function curve(sim, line, now) {
-    const a = line.a;
-    const x0 = line.b.px;
-    const y0 = line.b.py;
-    const dx = a.sx - x0;
-    const dy = a.sy - y0;
-    const bend = line.bend * (sim.reduced ? 1 : 1 + 0.22 * Math.sin(now * 0.0008 + line.seed));
-    line.x0 = x0;
-    line.y0 = y0;
-    line.cx = x0 + dx * 0.5 - dy * bend;
-    line.cy = y0 + dy * 0.5 + dx * bend;
-    line.len = Math.hypot(dx, dy);
-    if (a.e < 1 && a.up === line) {
-        const k = a.e;
-        const m = 1 - k;
-        line.qx = x0 + (line.cx - x0) * k;
-        line.qy = y0 + (line.cy - y0) * k;
-        line.x1 = m * m * x0 + 2 * m * k * line.cx + k * k * a.sx;
-        line.y1 = m * m * y0 + 2 * m * k * line.cy + k * k * a.sy;
-    } else {
-        line.qx = line.cx;
-        line.qy = line.cy;
-        line.x1 = a.sx;
-        line.y1 = a.sy;
-    }
-}
-
-function drawAmbient(sim, now, beat) {
-    const ctx = sim.ctx;
-    const ax = sim.center ? sim.center.px : sim.cx;
-    const ay = sim.center ? sim.center.py : sim.cy;
-    ctx.globalCompositeOperation = 'lighter';
-    const aura = Math.min(sim.rx, sim.ry) * 1.55;
-    ctx.globalAlpha = (sim.mode === 'idle' ? 0.14 : 0.3) + beat * 0.07;
-    ctx.drawImage(sprite('glow', GROUP_COLOR.store), ax - aura, ay - aura, aura * 2, aura * 2);
-
-    // 불러오는 동안 매장을 중심으로 도는 탐색 빛
-    if (sim.mode === 'loading' && !sim.reduced) {
-        const radius = Math.max(sim.rx, sim.ry) + sim.r2 + 48;
-        const angle = (now * 0.0026) % TAU;
-        // 앞쪽이 밝고 뒤로 갈수록 옅어지는 부채꼴을 얇은 조각으로 나눠 칠합니다(바깥으로 갈수록 사라짐).
-        const beam = ctx.createRadialGradient(ax, ay, 0, ax, ay, radius);
-        beam.addColorStop(0, 'rgba(0, 229, 255, 1)');
-        beam.addColorStop(0.62, 'rgba(0, 229, 255, 0.72)');
-        beam.addColorStop(1, 'rgba(0, 229, 255, 0)');
-        ctx.fillStyle = beam;
-        ctx.strokeStyle = beam;
-        const slices = 26;
-        const width = 1.35 / slices;
-        for (let i = 0; i < slices; i += 1) {
-            ctx.globalAlpha = 0.2 * (1 - i / slices) ** 1.7;
-            ctx.beginPath();
-            ctx.moveTo(ax, ay);
-            ctx.arc(ax, ay, radius, angle - (i + 1) * width, angle - i * width);
-            ctx.fill();
-        }
-        ctx.globalAlpha = 0.55;
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.moveTo(ax, ay);
-        ctx.lineTo(ax + Math.cos(angle) * radius, ay + Math.sin(angle) * radius);
-        ctx.stroke();
-    }
-
-    // 멀리(또는 아주 가까이) 떠 있는 먼지. 점보다 크게 밀려 보여서 앞뒤 거리가 느껴집니다.
-    const speck = sprite('glow', DUST);
-    for (const d of sim.dust) {
-        const wob = sim.reduced ? d.phase : sim.sway * 0.00016 + d.phase;
-        const x = d.x + Math.sin(wob) * 14;
-        const y = d.y + Math.cos(wob * 1.3) * 10;
-        const x1 = x * sim.cosY + d.z * sim.sinY;
-        const z1 = d.z * sim.cosY - x * sim.sinY;
-        const y1 = y * sim.cosX - z1 * sim.sinX;
-        const scale = CAMERA / (CAMERA - (z1 * sim.cosX + y * sim.sinX));
-        const size = d.size * scale;
-        ctx.globalAlpha = d.alpha * (0.72 + 0.28 * Math.sin(wob * 3.1));
-        ctx.drawImage(speck, sim.cx + x1 * scale - size / 2, sim.cy + y1 * scale - size / 2, size, size);
-    }
-}
-
-// 가리킨 점에 이어진 선 위로 전기가 흐르듯 떨리는 밝은 줄을 한 겹 더 얹습니다.
-function drawSurge(sim, line, now) {
-    const ctx = sim.ctx;
-    const dx = line.x1 - line.x0;
-    const dy = line.y1 - line.y0;
-    const len = Math.hypot(dx, dy) || 1;
-    const nx = -dy / len;
-    const ny = dx / len;
-    const amp = Math.min(3, len * 0.035) * line.hot;
-    // 물결 수는 선 길이에 맞춥니다(짧은 선에서 물결이 꺾여 보이지 않게).
-    const waves = len / 15;
-    const parts = clamp(Math.round(len / 7), 10, 36);
-    ctx.beginPath();
-    for (let i = 0; i <= parts; i += 1) {
-        const u = i / parts;
-        const m = 1 - u;
-        const wobble = (Math.sin(u * waves + now * 0.013 + line.seed) + 0.4 * Math.sin(u * waves * 2.3 - now * 0.021)) * Math.sin(Math.PI * u) * amp;
-        const x = m * m * line.x0 + 2 * m * u * line.cx + u * u * line.x1 + nx * wobble;
-        const y = m * m * line.y0 + 2 * m * u * line.cy + u * u * line.y1 + ny * wobble;
-        if (i) ctx.lineTo(x, y);
-        else ctx.moveTo(x, y);
-    }
-    ctx.shadowColor = line.color;
-    ctx.shadowBlur = 12 * sim.dpr;
-    ctx.strokeStyle = line.lit;
-    ctx.lineWidth = 1.25;
-    ctx.globalAlpha = 0.9 * line.hot * line.depthA;
-    ctx.stroke();
-    ctx.shadowBlur = 0;
-}
-
-function drawLinks(sim, now) {
-    const ctx = sim.ctx;
-    const tone = sim.mode === 'idle' ? 0.6 : 1;
-    ctx.globalCompositeOperation = 'lighter';
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-    for (const line of sim.links) {
-        const { a, b } = line;
-        if (a.up !== line) curve(sim, line, now);
-        line.dim = Math.max(a.dim, b.dim);
-        line.hot = Math.min(a.hot, b.hot);
-        line.depthA = 0.72 + 0.14 * (a.zn + b.zn);
-        line.depthS = (a.ss + b.ss) / 2;
-        if (a.e <= 0.01) continue;
-        const leaf = a.level >= 2;
-        const alpha = tone * line.depthA * (1 - 0.86 * line.dim) * Math.min(1, a.e * 2.2);
-        const paint = ctx.createLinearGradient(line.x0, line.y0, line.x1, line.y1);
-        paint.addColorStop(0, line.near);
-        paint.addColorStop(1, line.far);
-        ctx.strokeStyle = paint;
-        ctx.beginPath();
-        ctx.moveTo(line.x0, line.y0);
-        ctx.quadraticCurveTo(line.qx, line.qy, line.x1, line.y1);
-        ctx.globalAlpha = alpha * (0.16 + 0.22 * line.hot);
-        ctx.lineWidth = (leaf ? 5 : 7) * line.depthS;
-        ctx.stroke();
-        ctx.globalAlpha = alpha;
-        ctx.lineWidth = ((leaf ? 1.05 : 1.5) + 0.5 * line.hot) * line.depthS;
-        ctx.stroke();
-        if (a.e < 1) {
-            // 뻗어 나가는 끝의 불빛
-            const tip = 16 * line.depthS;
-            ctx.globalAlpha = Math.min(1, a.e * 3) * (1 - a.e) * 1.6;
-            ctx.drawImage(line.spark, line.x1 - tip / 2, line.y1 - tip / 2, tip, tip);
-        } else if (line.hot > 0.03 && !sim.reduced) {
-            drawSurge(sim, line, now);
-        }
-    }
-}
-
-function drawSparks(sim, dt) {
-    const ctx = sim.ctx;
-    const idle = sim.mode === 'idle';
-    const rate = sim.mode === 'loading' ? 2.3 : idle ? 0.6 : 1;
-    const active = idle ? Math.ceil(sim.sparks.length * 0.5) : sim.sparks.length;
-    ctx.globalCompositeOperation = 'lighter';
-    for (let i = 0; i < active; i += 1) {
-        const spark = sim.sparks[i];
-        const line = spark.link;
-        if (!line || line.dead || line.a.e < 1) {
-            respawn(sim, spark);
-            continue;
-        }
-        if (spark.wait > 0) {
-            spark.wait -= dt;
-            continue;
-        }
-        const len = Math.max(line.len, 24);
-        spark.u += (spark.speed * line.pace * rate * (1 + 1.5 * line.hot) * dt) / (1000 * len);
-        if (spark.u >= 1) {
-            // 신호가 닿은 점은 잠깐 밝아지고, 신호는 대개 다음 선을 타고 매장 쪽으로 이어집니다.
-            line.b.fire = 1;
-            const onward = line.b.up;
-            if (onward && Math.random() < 0.72) {
-                spark.link = onward;
-                spark.u = 0;
-            } else {
-                respawn(sim, spark);
-            }
-            continue;
-        }
-        const alpha = (idle ? 0.55 : 1) * (1 - 0.9 * line.dim) * line.depthA * Math.min(1, spark.u * 7);
-        for (let k = 0; k < TRAIL; k += 1) {
-            const u = spark.u - (k * 6.5) / len;
-            if (u < 0) break;
-            const t = 1 - u;
-            const m = 1 - t;
-            const x = m * m * line.x0 + 2 * m * t * line.cx + t * t * line.x1;
-            const y = m * m * line.y0 + 2 * m * t * line.cy + t * t * line.y1;
-            const size = spark.size * (1 - k * 0.16) * line.depthS;
-            ctx.globalAlpha = alpha * (1 - k / TRAIL) ** 1.6;
-            ctx.drawImage(line.spark, x - size / 2, y - size / 2, size, size);
-        }
-    }
-}
-
-function byDepth(a, b) {
-    return a.zn - b.zn;
-}
-
-function ringAt(ctx, x, y, radius) {
-    ctx.beginPath();
-    ctx.arc(x, y, Math.max(0.1, radius), 0, TAU);
-    ctx.stroke();
-}
-
-function drawNodes(sim, now, beat) {
-    const ctx = sim.ctx;
-    const still = sim.reduced;
-    const loading = sim.mode === 'loading' && !still;
-    const phase = (now % BEAT_MS) / BEAT_MS;
-    sim.depth.sort(byDepth);
-    for (const p of sim.depth) {
-        if (p.e <= 0.01) continue;
-        const { px: x, py: y, rr: r } = p;
-        const front = (p.zn + 1) / 2;
-        // 뒤쪽 점은 어둡게 가라앉히되 상태색은 읽히게 남기고, 밝힌 점은 깊이와 상관없이 또렷하게 올립니다.
-        const fog = 0.62 + 0.38 * Math.max(front, p.hot);
-        const born = Math.min(1, p.e * 1.6);
-        const blink = loading && p.level > 0 ? 0.45 + 0.55 * (0.5 + 0.5 * Math.sin(now * 0.0058 - p.index * 0.55)) : 1;
-        const vis = (1 - 0.84 * p.dim) * born * blink;
-        const lift = 0.5 * p.hot + 0.5 * p.self + 0.6 * p.fire + (p.level === 0 ? 0.5 * beat : 0);
-
-        ctx.globalCompositeOperation = 'lighter';
-        const halo = r * (p.level === 0 ? 7.2 : 6.6) * (1.28 - 0.28 * front);
-        ctx.globalAlpha = Math.min(1, (p.hollow ? 0.24 : 0.62) * fog * vis * (1 + lift));
-        ctx.drawImage(p.glow, x - halo / 2, y - halo / 2, halo, halo);
-
-        ctx.strokeStyle = p.color;
-        if (p.level === 0) {
-            const k = r / RADIUS[0];
-            ctx.lineWidth = 1.4;
-            ctx.globalAlpha = (0.55 - 0.2 * beat) * vis;
-            ringAt(ctx, x, y, r + 7 * k + beat * 1.5);
-            ctx.lineWidth = 1;
-            ctx.globalAlpha = (0.26 - 0.08 * beat) * vis;
-            ringAt(ctx, x, y, r + 14 * k + beat * 3);
-            if (!still && !p.ghost) {
-                // 박동마다 바깥으로 번져 나가는 고리
-                const q = phase / 0.86;
-                if (q < 1) {
-                    ctx.lineWidth = 1.5;
-                    ctx.globalAlpha = 0.34 * (1 - q) ** 2 * vis;
-                    ringAt(ctx, x, y, r + 10 + 78 * (1 - (1 - q) ** 3));
-                }
-            }
-        } else if (p.level === 1 && !p.pending) {
-            ctx.lineWidth = 1;
-            ctx.globalAlpha = (0.3 + 0.3 * p.hot + 0.2 * p.self) * fog * vis;
-            ringAt(ctx, x, y, r * (1 + 0.08 * p.self) + 3.5 * p.ss);
-        }
-
-        // 점 밑받침: 뒤에 깔린 선이 비치지 않게 가립니다(흐려진 점은 투명해지는 대신 어두워집니다).
-        ctx.globalCompositeOperation = 'source-over';
-        ctx.globalAlpha = born;
-        ctx.fillStyle = BACK;
-        ctx.beginPath();
-        ctx.arc(x, y, r, 0, TAU);
-        ctx.fill();
-        if (p.hollow) {
-            ctx.globalAlpha = (p.ghost ? 0.78 : 0.9) * fog * vis;
-            ctx.lineWidth = p.level === 0 ? 1.8 : 1.4;
-            ringAt(ctx, x, y, r - ctx.lineWidth / 2);
-            if (p.pending && !still) {
-                ctx.setLineDash([3, 3.2]);
-                ctx.lineDashOffset = -now * 0.022;
-                ctx.globalAlpha = 0.8 * vis;
-                ringAt(ctx, x, y, r + 4);
-                ctx.setLineDash([]);
-            }
-        } else {
-            const size = r * 2 * ORB_PAD;
-            ctx.globalAlpha = fog * vis;
-            ctx.drawImage(p.orb, x - size / 2, y - size / 2, size, size);
-            if (p.level === 0) {
-                ctx.globalAlpha = 0.9 * vis;
-                ctx.strokeStyle = '#FFFFFF';
-                ctx.lineWidth = 2 * (r / RADIUS[0]);
-                ringAt(ctx, x, y, r * 0.62);
-            }
-        }
-        if (sim.focusId === p.id) {
-            ctx.globalAlpha = 1;
-            ctx.strokeStyle = '#FFFFFF';
-            ctx.lineWidth = 2;
-            ringAt(ctx, x, y, r + 5);
-        }
-    }
-
-    // 점을 눌렀을 때 한 번 퍼지는 고리
-    if (still) sim.pings.length = 0;
-    ctx.globalCompositeOperation = 'lighter';
-    for (let i = sim.pings.length - 1; i >= 0; i -= 1) {
-        const ping = sim.pings[i];
-        const p = sim.pos.get(ping.id);
-        const q = (now - ping.at) / 700;
-        if (!p || q >= 1) {
-            sim.pings.splice(i, 1);
-            continue;
-        }
-        if (q < 0) continue;
-        ctx.strokeStyle = p.color;
-        ctx.lineWidth = 2;
-        ctx.globalAlpha = 0.9 * (1 - q);
-        ringAt(ctx, p.px, p.py, p.rr * (1 + 2.4 * (1 - (1 - q) ** 2)));
-    }
-}
-
-const BOX = {};
-
-function drawLabels(sim, ease) {
-    const ctx = sim.ctx;
-    const fade = ease(110);
-    ctx.globalCompositeOperation = 'source-over';
-    ctx.textBaseline = 'alphabetic';
-    ctx.lineJoin = 'round';
-    ctx.lineWidth = 3.4;
-    ctx.strokeStyle = HALO;
-    for (const p of sim.order) {
-        const lab = p.lab;
-        if (!lab) continue;
-        p.labA += ((lab.on && p.e > 0.72 ? 1 : 0) - p.labA) * fade;
-        if (p.labA < 0.02) continue;
-        const alpha = p.labA * (1 - 0.8 * p.dim) * (0.82 + 0.09 * (p.zn + 1));
-        const box = labelBox(lab.side, p.rr + LABEL_OFFSET[p.level], lab, BOX);
-        // 장면이 기울어도 글자가 그래프 칸 밖으로 잘리지 않게 안쪽으로 밀어 둡니다.
-        const left = clamp(p.px + box.x0, EDGE, Math.max(EDGE, sim.w - EDGE - lab.w));
-        const top = clamp(p.py + box.y0, 3, Math.max(3, sim.h - 3 - lab.h));
-        const anchor = box.align < 0 ? left : box.align > 0 ? left + lab.w : left + lab.w / 2;
-        ctx.textAlign = box.align < 0 ? 'left' : box.align > 0 ? 'right' : 'center';
-        ctx.globalAlpha = alpha;
-        lab.lines.forEach((line, i) => {
-            const y = top + lab.lh * (i + 0.77);
-            ctx.font = line.font;
-            ctx.strokeText(line.text, anchor, y);
-            ctx.fillStyle = i === 0 && p.hot > 0.5 ? '#FFFFFF' : line.color;
-            ctx.fillText(line.text, anchor, y);
-        });
-    }
-}
-
-// 한 프레임: 움직임 계산 → 화면 자리(원근) → 바탕·빛·선·입자·점·라벨 순으로 그립니다.
-function frame(sim, now) {
-    const ctx = sim.ctx;
-    if (!ctx || !sim.bg || !sim.w) return;
-    const still = sim.reduced;
-    const dt = still ? 0 : clamp(now - sim.last, 0, 64);
-    sim.last = now;
-    const ease = (tau) => (still ? 1 : 1 - Math.exp(-dt / tau));
-    const beat = still ? 0 : heartbeat(now);
-    const busy = Boolean(sim.selfId || sim.drag);
-
-    // 장면 전체가 천천히 좌우로 흔들리고 포인터 쪽으로 살짝 기웁니다. 점을 가리키는 동안은 멈춰서 점이 포인터 밑에 머뭅니다.
-    if (still) {
-        sim.tiltX = 0;
-        sim.tiltY = 0;
-    } else {
-        const follow = busy ? 0 : ease(320);
-        sim.tiltX += (sim.aimX - sim.tiltX) * follow;
-        sim.tiltY += (sim.aimY - sim.tiltY) * follow;
-        if (!busy) sim.sway += dt;
-    }
-    const rotY = still ? 0 : Math.sin(sim.sway * 0.00024) * 0.075 + sim.tiltY;
-    const rotX = still ? 0 : Math.sin(sim.sway * 0.00017 + 1.1) * 0.035 + sim.tiltX;
-    sim.cosY = Math.cos(rotY);
-    sim.sinY = Math.sin(rotY);
-    sim.cosX = Math.cos(rotX);
-    sim.sinX = Math.sin(rotX);
-
-    // 화면 주사율(60·120Hz)과 상관없이 같은 빠르기로 움직이도록 1/60초씩 끊어 계산합니다.
-    if (!still) {
-        sim.lag += dt;
-        let steps = 0;
-        while (sim.lag >= STEP && steps < 4) {
-            drift(sim);
-            sim.clock += STEP;
-            sim.lag -= STEP;
-            steps += 1;
-        }
-        if (steps === 4) sim.lag = 0;
-    }
-
-    const quick = ease(130);
-    for (const p of sim.order) {
-        const x1 = p.x * sim.cosY + p.z * sim.sinY;
-        const z1 = p.z * sim.cosY - p.x * sim.sinY;
-        const y1 = p.y * sim.cosX - z1 * sim.sinX;
-        const z2 = z1 * sim.cosX + p.y * sim.sinX;
-        p.ss = CAMERA / (CAMERA - z2);
-        p.sx = sim.cx + x1 * p.ss;
-        p.sy = sim.cy + y1 * p.ss;
-        p.zn = clamp(z2 / DEPTH, -1, 1);
-
-        const raw = still ? 1 : clamp((now - p.born) / GROW_MS[p.level], 0, 1);
-        p.e = raw >= 1 ? 1 : 1 - (1 - raw) ** 3;
-        if (p.e >= 1 && !p.arrived) {
-            p.arrived = true;
-            if (!still) p.fire = 1;
-        }
-        p.dim += (p.tDim - p.dim) * quick;
-        p.hot += (p.tHot - p.hot) * quick;
-        p.self += (p.tSelf - p.self) * quick;
-        p.calm += ((p.tSelf || p.held ? 0.1 : 1) - p.calm) * ease(220);
-        p.fire = still ? 0 : p.fire * Math.exp(-dt / 280);
-
-        if (p.up) {
-            curve(sim, p.up, now);
-            p.px = p.up.x1;
-            p.py = p.up.y1;
-        } else {
-            p.px = p.sx;
-            p.py = p.sy;
-        }
-        p.rr = p.r * p.ss * (1 + 0.14 * p.zn) * (0.3 + 0.7 * p.e) * (1 + 0.15 * p.self + 0.06 * p.fire)
-            * (p.level === 0 ? 1 + 0.055 * beat : 1);
-    }
-
-    ctx.setTransform(sim.dpr, 0, 0, sim.dpr, 0, 0);
-    ctx.globalCompositeOperation = 'source-over';
-    ctx.globalAlpha = 1;
-    ctx.drawImage(sim.bg, 0, 0, sim.w, sim.h);
-    drawAmbient(sim, now, beat);
-    drawLinks(sim, now);
-    if (!still) drawSparks(sim, dt);
-    drawNodes(sim, now, beat);
-    drawLabels(sim, ease);
-    ctx.globalAlpha = 1;
-    ctx.globalCompositeOperation = 'source-over';
-}
-
-function pickNode(sim, x, y, reach) {
-    let found = null;
-    let nearest = Infinity;
-    for (const p of sim.list) {
-        if (p.e < 0.4) continue;
-        const distance = Math.hypot(x - p.px, y - p.py);
-        if (distance > Math.max(p.rr + 7, reach)) continue;
-        if (distance - p.rr < nearest) {
-            nearest = distance - p.rr;
-            found = p;
-        }
-    }
-    return found;
-}
-
-// 매장을 가운데 두고 키워드·순위·리뷰·결제 데이터를 신경망처럼 잇는 그래프입니다.
-// 점·선·빛 입자는 캔버스 한 장에 requestAnimationFrame 으로 그리고(React 렌더 없음), 화면 밖이거나 탭이 숨으면 멈춥니다.
-// 바깥(요약·카드)에서는 ref.focus(id) 로 같은 점을 밝히고, onHover 로 지금 가리킨 점을 받습니다.
+// headline: 제목 옆에 쓰는 한 문장(지금 이 매장에서 먼저 볼 것). tip: 조작 안내 뒤에 붙일 이 화면만의 한마디.
+// hint: 불러오는 중·빈 화면에서 아래 줄에 쓰는 문구(데이터가 있을 때의 조작 안내는 여기서 입력 방식에 맞춰 직접 씁니다).
 const PlaceGraph = forwardRef(function PlaceGraph(
-    { nodes, links, mode = 'live', label, title = '연결 그래프', legend = [], hint, onSelect, onHover, children },
+    { nodes, links, mode = 'live', label, title = '연결 그래프', headline, legend = [], ontology, hint, tip, onSelect, onHover, children },
     ref,
 ) {
     const wrapRef = useRef(null);
     const canvasRef = useRef(null);
-    const simRef = useRef(null);
-    if (!simRef.current) simRef.current = createSim();
+    const inspectorRef = useRef(null);
+    const toolsRef = useRef(null);
+    const dockRef = useRef(null);
+    const exitRef = useRef(null);
+    const engineRef = useRef(null);
+    const gesturesRef = useRef(null);
+    const framed = useRef('');
+    const els = useRef({ labels: new Map(), leads: new Map(), keys: new Map(), tags: [], pins: [], handle: null, ring: null, tether: null, more: null });
+    // 손짓 판정(graph/gesture.js)이 부를 때마다 최신 상태를 보도록 담아 둡니다.
+    const hand = useRef({ live: false, loading: false, act: null });
     const hoverCb = useRef(onHover);
     hoverCb.current = onHover;
+    const live = mode === 'live';
+
     const [ready, setReady] = useState(false);
+    const [failed, setFailed] = useState(false);
+    const [sheet, setSheet] = useState(false);
+    const [turned, setTurned] = useState(false);
     const [hover, setHover] = useState(null);
+    const [keyFocus, setKeyFocus] = useState(null);
+    const [picked, setPicked] = useState(null);
+    // 손가락으로 톡 해서 이름만 띄워 둔 점(카드는 아직 열지 않음). 한 번에 하나만.
+    const [peek, setPeek] = useState(null);
     const [linked, setLinked] = useState(null);
     const [linkedGroup, setLinkedGroup] = useState(null);
-    const [group, setGroup] = useState(null);
+    const [hoverGroup, setHoverGroup] = useState(null);
     const [pinnedGroup, setPinnedGroup] = useState(null);
+    const [relation, setRelation] = useState(null);
+    const [klass, setKlass] = useState(null);
+    const [relOpen, setRelOpen] = useState(false);
+    // 끌어당기는 중인 점({ id, touch }), 방금 손가락으로 놓은 점(이름을 잠깐 더 보여 줌), 고정해 둔 점의 수
+    const [pulling, setPulling] = useState(null);
+    const [afterPull, setAfterPull] = useState(null);
+    const [pins, setPins] = useState(0);
+    // 손가락으로 쓰는 중인지(조작 안내와 손잡이를 거기에 맞춥니다)
+    const [touchy, setTouchy] = useState(false);
+    const [cardTick, setCardTick] = useState(0);
 
     const nodeById = useMemo(() => new Map(nodes.map((node) => [node.id, node])), [nodes]);
-    // 가리킨 점과 함께 밝힐 점: 매장까지 올라가는 길과 바로 딸린 점
-    const related = useMemo(() => {
-        const map = new Map();
-        const kids = new Map();
-        for (const node of nodes) {
-            if (!node.parent) continue;
-            if (!kids.has(node.parent)) kids.set(node.parent, []);
-            kids.get(node.parent).push(node.id);
-        }
-        for (const node of nodes) {
-            const set = new Set([node.id, ...(kids.get(node.id) || [])]);
-            let parent = node.parent;
-            while (parent) {
-                set.add(parent);
-                parent = nodeById.get(parent)?.parent;
-            }
-            map.set(node.id, set);
-        }
-        return map;
-    }, [nodes, nodeById]);
-
-    const active = hover ?? linked;
-    const activeNode = active ? nodeById.get(active) : null;
-    // 이름 없는 점(빈 화면의 자리 표시)은 부모 이름으로 읽어 줍니다.
-    const readNode = activeNode && !(activeNode.full || activeNode.label) ? nodeById.get(activeNode.parent) || activeNode : activeNode;
-    const shownGroup = activeNode ? null : group ?? linkedGroup ?? pinnedGroup;
-    const hotIds = useMemo(() => {
-        if (activeNode) return related.get(activeNode.id) || null;
-        if (!shownGroup) return null;
-        return new Set(nodes.filter((node) => node.level === 0 || node.group === shownGroup).map((node) => node.id));
-    }, [activeNode, related, shownGroup, nodes]);
     const groups = useMemo(() => new Set(nodes.map((node) => node.group)), [nodes]);
+    // 묶음 이름: 온톨로지(groups)가 정한 이름 하나만 씁니다. 없으면 범례의 이름, 그것도 없으면 기본 이름.
+    const groupLabels = useMemo(() => {
+        const map = new Map(Object.entries(GROUP_NAMES));
+        for (const item of legend) map.set(item.group, item.label);
+        for (const [key, value] of Object.entries(ontology?.groups || {})) if (value?.label) map.set(key, value.label);
+        return map;
+    }, [legend, ontology]);
+
+    // 연결 종류 목록(이 그래프에 실제로 나온 것만, 개수와 함께). 갈래별로 묶습니다.
+    // 구조 연결(quiet: '묶음에 속함' 같은 뼈대)은 걸러 볼 뜻이 없어(전체가 다 켜짐) 목록에 넣지 않습니다.
+    const relationList = useMemo(() => {
+        const relations = ontology?.relations;
+        if (!relations) return [];
+        const families = ontology?.families || {};
+        const counts = new Map();
+        for (const link of links) if (relations[link.rel] && !relations[link.rel].quiet) counts.set(link.rel, (counts.get(link.rel) || 0) + 1);
+        const orderOf = (family) => {
+            const given = families[family]?.order;
+            if (typeof given === 'number') return given;
+            const index = FAMILY_ORDER.indexOf(family);
+            return index < 0 ? 50 : index;
+        };
+        return Object.keys(relations)
+            .filter((rel) => counts.has(rel))
+            .map((rel, index) => {
+                const item = relations[rel];
+                return {
+                    rel, index,
+                    name: item.name || item.label || rel,
+                    family: item.family,
+                    familyLabel: families[item.family]?.label || FAMILY_NAMES[item.family] || '그 밖',
+                    quiet: Boolean(item.quiet),
+                    order: orderOf(item.family),
+                    count: counts.get(rel),
+                };
+            })
+            .sort((a, b) => a.quiet - b.quiet || a.order - b.order || a.index - b.index);
+    }, [links, ontology]);
+    const relationFamilies = useMemo(() => {
+        const list = [];
+        for (const item of relationList) {
+            const last = list[list.length - 1];
+            if (last && last.label === item.familyLabel && last.quiet === item.quiet) last.items.push(item);
+            else list.push({ label: item.familyLabel, quiet: item.quiet, items: [item] });
+        }
+        return list;
+    }, [relationList]);
+    // 걸러 보는 묶음 안의 항목 종류(묶음 중심 점은 세지 않습니다 — 띠의 수와 칩의 합이 같게)
+    const classList = useMemo(() => {
+        const classes = ontology?.classes;
+        if (!classes || !pinnedGroup) return [];
+        const counts = new Map();
+        for (const node of nodes) {
+            // 작은 제목 점(묶음 머리, quiet 인 종류)은 항목이 아니므로 칩으로 만들지 않습니다.
+            if (node.group === pinnedGroup && node.level >= 2 && classes[node.type] && !classes[node.type].quiet) counts.set(node.type, (counts.get(node.type) || 0) + 1);
+        }
+        return [...counts].map(([type, count]) => ({ type, label: classes[type].label, count }));
+    }, [nodes, ontology, pinnedGroup]);
+    const activeRelation = live && relation && relationList.some((item) => item.rel === relation) ? relation : null;
+    const activeKlass = live && klass && classList.some((item) => item.type === klass) ? klass : null;
+
+    const selectedId = live && picked && nodeById.has(picked.id) ? picked.id : null;
+    const selectedNode = selectedId ? nodeById.get(selectedId) : null;
+    const peekId = live && peek && peek !== selectedId && nodeById.has(peek) ? peek : null;
+    const watching = hover ?? keyFocus ?? selectedId;
+    const self = watching ?? (linked && nodeById.has(linked) ? linked : null);
+    const filterGroup = pinnedGroup && groups.has(pinnedGroup) ? pinnedGroup : null;
+    const group = self ? null : hoverGroup ?? filterGroup ?? linkedGroup;
+    const pullNode = pulling ? nodeById.get(pulling.id) || null : null;
+    const readNode = (() => {
+        const id = hover ?? keyFocus ?? peekId ?? (selectedId ? null : linked);
+        const node = id ? nodeById.get(id) : null;
+        // 이름 없는 점(빈 화면의 자리 표시)은 부모 이름으로 읽어 줍니다.
+        return node && !(node.full || node.label) ? nodeById.get(node.parent) || node : node;
+    })();
 
     useImperativeHandle(ref, () => ({
         // 'group:search' 처럼 넘기면 점 하나가 아니라 그 묶음 전체를 밝힙니다.
@@ -1164,95 +165,253 @@ const PlaceGraph = forwardRef(function PlaceGraph(
             const groupId = typeof id === 'string' && id.startsWith('group:') ? id.slice(6) : null;
             setLinkedGroup(groupId);
             setLinked(!groupId && id && nodeById.has(id) ? id : null);
+            if (!groupId && id) engineRef.current?.turnTo(id);
         },
         ping(id) {
-            const sim = simRef.current;
-            if (!id || !nodeById.has(id)) return;
-            sim.pings.push({ id, at: performance.now() });
-            sim.invalidate?.();
+            if (id && nodeById.has(id)) {
+                engineRef.current?.ping(id);
+                engineRef.current?.invalidate?.();
+            }
         },
     }), [nodeById]);
 
     useEffect(() => {
-        hoverCb.current?.(hover ? nodeById.get(hover) || null : null);
-    }, [hover, nodeById]);
+        hoverCb.current?.(watching ? nodeById.get(watching) || null : null);
+    }, [watching, nodeById]);
 
-    // 캔버스 준비: 크기·해상도 맞추기, 화면에 보일 때만 도는 반복 그리기, '움직임 줄이기' 설정 따르기
-    useEffect(() => {
-        const sim = simRef.current;
+    /* ───────── 캔버스·장면 준비 ───────── */
+
+    // 이 effect 가 장면을 만들고, 아래 effect 들이 그 장면에 그래프·상태를 넣습니다(같은 단계에서 적힌 순서대로 실행됨).
+    useLayout(() => {
         const wrap = wrapRef.current;
         const canvas = canvasRef.current;
         if (!wrap || !canvas) return undefined;
-        const motion = window.matchMedia('(prefers-reduced-motion: reduce)');
-        sim.canvas = canvas;
-        sim.ctx = canvas.getContext('2d');
-        sim.family = getComputedStyle(wrap).fontFamily || 'sans-serif';
-        sim.reduced = motion.matches;
-        sim.coarse = window.matchMedia('(pointer: coarse)').matches;
+        const renderer = createRenderer(canvas);
+        if (!renderer) {
+            setFailed(true);
+            return undefined;
+        }
+        const motionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
+        const E = createEngine(renderer);
+        E.reduced = motionQuery.matches;
+        E.coarse = window.matchMedia('(pointer: coarse)').matches;
+        engineRef.current = E;
+        setTouchy(E.coarse);
+        // 개발 중 확인용(점 자리·프레임 시간을 콘솔에서 볼 수 있게). 운영 빌드에서는 빠집니다.
+        if (process.env.NODE_ENV !== 'production') window.__placeGraph = E;
 
         let raf = 0;
+        let running = false;
         let visible = true;
         let disposed = false;
         const tick = (now) => {
             raf = 0;
-            frame(sim, now);
-            if (sim.running) raf = requestAnimationFrame(tick);
+            E.frame(now);
+            // 끌어당긴 것이 돌아오는 중이거나 길게 누르는 고리가 차오르는 중이면, 반복 그리기가 멈춘 상태(움직임 줄이기)에서도 이어서 그립니다.
+            if (!raf && (running || E.pull.awake || E.charge)) raf = requestAnimationFrame(tick);
         };
         const start = () => {
-            if (sim.running || sim.reduced || !visible || document.hidden) return;
-            sim.running = true;
-            sim.last = performance.now();
+            if (running || E.reduced || !visible || document.hidden || renderer.lost) return;
+            running = true;
+            E.last = 0;
             if (!raf) raf = requestAnimationFrame(tick);
         };
         const stop = () => {
-            sim.running = false;
+            running = false;
             cancelAnimationFrame(raf);
             raf = 0;
         };
         // 반복 그리기가 멈춰 있을 때(움직임 줄이기·화면 밖)에도 바뀐 내용을 한 번은 그립니다.
-        sim.invalidate = () => {
-            if (!raf) raf = requestAnimationFrame(tick);
+        E.invalidate = () => {
+            if (!raf && !disposed) raf = requestAnimationFrame(tick);
+        };
+        renderer.onRestore = () => {
+            E.setGraph(E.list.map((p) => p.node), E.links.map((line) => line.link));
+            if (E.brain) E.setBrain(E.brain);
+            start();
+            E.invalidate();
+        };
+
+        // 관계 이름표의 글자를 바꾸고 크기를 재 둡니다(고른 점이 바뀔 때만).
+        E.onTags = (tags) => {
+            els.current.tags.forEach((el, i) => {
+                if (!el) return;
+                const tag = tags[i];
+                if (!tag) return;
+                if (el.textContent !== tag.text) el.textContent = tag.text;
+                tag.w = el.offsetWidth;
+                tag.h = el.offsetHeight;
+            });
+        };
+
+        // 라벨·지시선을 화면 자리에 맞춥니다(프레임마다, React 를 거치지 않고 바로).
+        let turnedNow = false;
+        const spot = [0, 0, 0, 0];
+        E.onFrame = () => {
+            const { labels, leads } = els.current;
+            const snap = E.dpr;
+            for (const p of E.list) {
+                const lab = p.lab;
+                const el = labels.get(p.id);
+                if (!el) continue;
+                const visibleNow = lab.a > 0;
+                if (visibleNow) {
+                    const x = Math.round(lab.x * snap) / snap;
+                    const y = Math.round(lab.y * snap) / snap;
+                    el.style.transform = `translate3d(${x}px, ${y}px, 0)`;
+                    el.style.opacity = (lab.a * (1 - 0.5 * p.dim)).toFixed(3);
+                }
+                if (visibleNow !== lab.vis) {
+                    lab.vis = visibleNow;
+                    el.style.visibility = visibleNow ? 'visible' : 'hidden';
+                }
+                // 톡 해서 띄운 이름은 잡은 점의 이름처럼 쪽지 모양으로 그립니다(빽빽한 점들 위에서도 읽히게).
+                const state = lab.loose || p.id === E.peekId ? 'held' : p.id === E.selfId || p.id === E.selectedId ? 'self' : p.tHot ? 'hot' : '';
+                if (state !== lab.state) {
+                    lab.state = state;
+                    el.dataset.state = state;
+                }
+                const lead = leads.get(p.id);
+                if (!lead) continue;
+                const leadNow = visibleNow && lab.lead;
+                if (leadNow) {
+                    lead.setAttribute('x1', lab.ax.toFixed(1));
+                    lead.setAttribute('y1', lab.ay.toFixed(1));
+                    lead.setAttribute('x2', lab.bx.toFixed(1));
+                    lead.setAttribute('y2', lab.by.toFixed(1));
+                    lead.style.opacity = (lab.a * (1 - 0.6 * p.dim) * (p.level <= 1 ? 0.5 : 0.36)).toFixed(3);
+                }
+                if (leadNow !== lab.leadVis) {
+                    lab.leadVis = leadNow;
+                    lead.style.visibility = leadNow ? 'visible' : 'hidden';
+                }
+            }
+            // 관계 이름표(고른 점의 연결 묶음마다 하나)
+            const pool = els.current.tags;
+            for (let i = 0; i < pool.length; i += 1) {
+                const el = pool[i];
+                if (!el) continue;
+                const tag = E.tags[i];
+                const on = Boolean(tag && tag.a > 0.01);
+                if (on) {
+                    el.style.transform = `translate3d(${Math.round(tag.x * snap) / snap}px, ${Math.round(tag.y * snap) / snap}px, 0)`;
+                    el.style.opacity = tag.a.toFixed(3);
+                }
+                if (el.dataset.on !== String(on)) {
+                    el.dataset.on = String(on);
+                    el.style.visibility = on ? 'visible' : 'hidden';
+                }
+            }
+            // 자리가 없어 숨긴 관계 이름표의 수("연결 종류 +3")
+            const moreEl = els.current.more;
+            if (moreEl) {
+                const more = E.more;
+                if (moreEl.dataset.n !== String(more.n)) {
+                    moreEl.dataset.n = String(more.n);
+                    if (more.n > 0) {
+                        moreEl.textContent = `연결 종류 +${more.n}`;
+                        more.w = moreEl.offsetWidth;
+                        more.h = moreEl.offsetHeight;
+                    }
+                }
+                const on = more.a > 0.01;
+                if (on) {
+                    moreEl.style.transform = `translate3d(${Math.round(more.x * snap) / snap}px, ${Math.round(more.y * snap) / snap}px, 0)`;
+                    moreEl.style.opacity = more.a.toFixed(3);
+                }
+                if (moreEl.dataset.on !== String(on)) {
+                    moreEl.dataset.on = String(on);
+                    moreEl.style.visibility = on ? 'visible' : 'hidden';
+                }
+            }
+            const focused = E.focusId ? E.byId.get(E.focusId) : null;
+            const key = focused ? els.current.keys.get(focused.id) : null;
+            if (key) key.style.transform = `translate(${Math.round(focused.sx - 22)}px, ${Math.round(focused.sy - 22)}px)`;
+            // 고른 점의 손잡이(손가락으로 당길 때 잡는 고리)는 그 점을 따라다닙니다.
+            const handle = els.current.handle;
+            const chosen = handle && E.selectedId ? E.byId.get(E.selectedId) : null;
+            if (chosen) handle.style.transform = `translate(${Math.round(chosen.sx - 22)}px, ${Math.round(chosen.sy - 22)}px)`;
+            // 고정해 둔 점: 원래 자리에 옅은 빈 고리를 남기고, 지금 자리까지 가는 선으로 잇습니다.
+            const marks = els.current.pins;
+            for (let i = 0; i < marks.length; i += 1) {
+                const mark = marks[i];
+                if (!mark) continue;
+                const p = E.pins[i];
+                if (p) {
+                    E.project(p.at, spot);
+                    mark.firstChild.setAttribute('cx', spot[0].toFixed(1));
+                    mark.firstChild.setAttribute('cy', spot[1].toFixed(1));
+                    mark.lastChild.setAttribute('x1', spot[0].toFixed(1));
+                    mark.lastChild.setAttribute('y1', spot[1].toFixed(1));
+                    mark.lastChild.setAttribute('x2', p.sx.toFixed(1));
+                    mark.lastChild.setAttribute('y2', p.sy.toFixed(1));
+                }
+                const on = Boolean(p);
+                if (mark.dataset.on !== String(on)) {
+                    mark.dataset.on = String(on);
+                    mark.style.visibility = on ? 'visible' : 'hidden';
+                }
+            }
+            // 손가락으로 당길 때: 손가락과 위로 빼낸 점을 가는 선으로 잇습니다(무엇을 잡고 있는지 보이게).
+            // 마우스는 한계보다 멀리 당겨 점이 포인터에서 떨어졌을 때만 잇습니다.
+            const tether = els.current.tether;
+            if (tether) {
+                const grabbed = E.grab && !E.auto ? E.grab : null;
+                const held = grabbed && (grabbed.touch || Math.hypot(grabbed.x - grabbed.p.sx, grabbed.y - grabbed.p.sy) > 10) ? grabbed : null;
+                if (held) {
+                    tether.setAttribute('x1', held.x.toFixed(1));
+                    tether.setAttribute('y1', held.y.toFixed(1));
+                    tether.setAttribute('x2', held.p.sx.toFixed(1));
+                    tether.setAttribute('y2', held.p.sy.toFixed(1));
+                }
+                const on = Boolean(held);
+                if (tether.dataset.on !== String(on)) {
+                    tether.dataset.on = String(on);
+                    tether.style.visibility = on ? 'visible' : 'hidden';
+                }
+            }
+            if (E.cam.moved !== turnedNow) {
+                turnedNow = E.cam.moved;
+                setTurned(turnedNow);
+            }
         };
 
         const resize = () => {
             const rect = wrap.getBoundingClientRect();
             const w = Math.max(240, Math.round(rect.width));
-            const h = Math.max(240, Math.round(rect.height));
-            const dpr = Math.min(window.devicePixelRatio || 1, 2);
-            if (w === sim.w && h === sim.h && dpr === sim.dpr) return;
-            Object.assign(sim, { w, h, dpr, lite: sim.coarse || w < 560 });
-            canvas.width = Math.round(w * dpr);
-            canvas.height = Math.round(h * dpr);
-            paintBackdrop(sim);
-            arrange(sim);
+            const h = Math.max(200, Math.round(rect.height));
+            const dpr = Math.min(window.devicePixelRatio || 1, E.dprCap);
+            if (w === E.w && h === E.h && dpr === E.dpr) return;
+            E.setSize(w, h, dpr);
+            setSheet(w < 520);
+            setCardTick((count) => count + 1);
             // 크기를 바꾸면 캔버스가 지워지므로 같은 순간에 바로 다시 그립니다(깜빡임 방지).
-            frame(sim, performance.now());
-        };
-        // 웹 글꼴이 늦게 들어오면 글자 폭이 달라지므로 다시 재고 자리를 잡습니다.
-        const refit = () => {
-            if (disposed) return;
-            sim.family = getComputedStyle(wrap).fontFamily || 'sans-serif';
-            arrange(sim);
-            sim.invalidate();
+            E.last = 0;
+            E.frame(performance.now());
         };
         const onMotion = () => {
-            sim.reduced = motion.matches;
-            if (sim.reduced) stop();
-            arrange(sim);
-            sim.invalidate();
-            start();
+            E.reduced = motionQuery.matches;
+            if (E.reduced) stop();
+            else start();
+            E.invalidate();
         };
         const onVisibility = () => (document.hidden ? stop() : start());
-        // 점 위에서 시작한 터치는 끌기로 쓰고, 빈 곳에서 시작한 터치는 페이지 스크롤로 둡니다.
-        const onTouchStart = (event) => {
-            if (sim.reduced || event.touches.length !== 1) return;
-            const rect = canvas.getBoundingClientRect();
-            const p = pickNode(sim, event.touches[0].clientX - rect.left, event.touches[0].clientY - rect.top, 16);
-            if (p && p.level > 0) event.preventDefault();
+        // 휠은 페이지 스크롤로 두고, ⌘/Ctrl 을 누른 채 굴릴 때(트랙패드로 벌리기 포함)만 확대합니다.
+        const onWheel = (event) => {
+            if (!event.ctrlKey && !event.metaKey) return;
+            event.preventDefault();
+            E.zoomBy(Math.exp(-event.deltaY * 0.0045));
+            E.invalidate();
         };
 
         resize();
-        setReady(true);
+        // 뇌 형상은 조금씩 나눠 계산합니다(첫 화면이 멈추지 않도록). 다 되면 가운데에서 바깥으로 떠오릅니다.
+        buildBrain(E.lite ? 'lite' : 'full').then((brain) => {
+            if (disposed) return;
+            E.setBrain(brain);
+            setReady(true);
+            E.invalidate();
+        });
         const sizeObserver = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(resize);
         sizeObserver?.observe(wrap);
         const viewObserver = typeof IntersectionObserver === 'undefined' ? null : new IntersectionObserver(([entry]) => {
@@ -1263,154 +422,376 @@ const PlaceGraph = forwardRef(function PlaceGraph(
         viewObserver?.observe(wrap);
         window.addEventListener('resize', resize);
         document.addEventListener('visibilitychange', onVisibility);
-        motion.addEventListener?.('change', onMotion);
-        canvas.addEventListener('touchstart', onTouchStart, { passive: false });
-        document.fonts?.ready?.then(refit);
-        document.fonts?.addEventListener?.('loadingdone', refit);
+        motionQuery.addEventListener?.('change', onMotion);
+        canvas.addEventListener('wheel', onWheel, { passive: false });
+        // 손짓(누르기·끌어당기기·줄 튕기기·회전·벌려서 확대)은 graph/gesture.js 가 판정하고, 여기서는 그 결과만 받습니다.
+        const gestures = attachGestures(canvas, E, {
+            live: () => hand.current.live,
+            loading: () => hand.current.loading,
+            hover: (id) => {
+                setHover(id);
+                if (id) setPeek(null);
+            },
+            tap: (node, how) => {
+                // 손가락으로 이름이 꺼진 점을 처음 톡 하면 카드를 열지 않고 이름만 띄웁니다(스친 터치 한 번에 낯선 카드가 열리지 않게).
+                // 그 이름이나 같은 점을 한 번 더 누르면 카드가 열립니다. 이름이 떠 있는 점·묶음·매장은 첫 톡에 엽니다.
+                if (how && how.touch && !how.named && hand.current.live && hand.current.peek !== node.id && !node.ghost && (node.label || node.full)) {
+                    setPeek(node.id);
+                    return;
+                }
+                setPeek(null);
+                hand.current.act?.(node, false);
+            },
+            emptyTap: () => {
+                setPeek(null);
+                if (hand.current.live) setPicked(null);
+            },
+            pull: (info) => {
+                // 손가락 둘레의 가는 고리는 손가락을 그대로 따라다닙니다(React 를 거치지 않고 바로).
+                const ring = els.current.ring;
+                if (ring && info.touch && info.phase !== 'end') ring.style.transform = `translate(${Math.round(info.x - 38)}px, ${Math.round(info.y - 38)}px)`;
+                if (info.phase === 'start') {
+                    setAfterPull(null);
+                    setPulling({ id: info.id, touch: info.touch });
+                } else if (info.phase === 'end') {
+                    setPulling(null);
+                    setPins(E.pins.length);
+                    if (info.touch) setAfterPull(info.id);
+                }
+            },
+        });
+        gesturesRef.current = gestures;
         start();
-        sim.invalidate();
+        E.invalidate();
         return () => {
             disposed = true;
             stop();
-            sim.invalidate = null;
+            gestures.detach();
+            gesturesRef.current = null;
+            E.dispose();
+            renderer.dispose();
+            engineRef.current = null;
             sizeObserver?.disconnect();
             viewObserver?.disconnect();
             window.removeEventListener('resize', resize);
             document.removeEventListener('visibilitychange', onVisibility);
-            motion.removeEventListener?.('change', onMotion);
-            canvas.removeEventListener('touchstart', onTouchStart);
-            document.fonts?.removeEventListener?.('loadingdone', refit);
+            motionQuery.removeEventListener?.('change', onMotion);
+            canvas.removeEventListener('wheel', onWheel);
         };
     }, []);
 
-    useEffect(() => {
-        const sim = simRef.current;
-        syncGraph(sim, nodes, links);
-        arrange(sim);
-        sim.invalidate?.();
-    }, [nodes, links]);
+    // 라벨 크기를 재 둡니다(자리 잡기에 씀). 웹 글꼴이 늦게 들어오면 폭이 달라지므로 그때 다시 잽니다.
+    const measure = useCallback(() => {
+        const E = engineRef.current;
+        if (!E) return;
+        const metrics = new Map();
+        for (const [id, el] of els.current.labels) {
+            if (el.offsetWidth) metrics.set(id, { w: el.offsetWidth, h: el.offsetHeight });
+        }
+        E.labels.metrics = metrics;
+        E.invalidate?.();
+    }, []);
+
+    useLayout(() => {
+        const E = engineRef.current;
+        if (!E) return undefined;
+        E.relations = ontology?.relations || {};
+        // 관계 이름표는 살펴보기 카드의 묶음 제목과 같은 말을 씁니다(card-model 의 relationTitle).
+        E.titleOf = ontology?.relations ? (rel, asSubject) => relationTitle(rel, asSubject ? 'out' : 'in', ontology) : null;
+        E.setGraph(nodes, links);
+        setPins(0);
+        measure();
+        let alive = true;
+        document.fonts?.ready?.then(() => alive && measure());
+        return () => {
+            alive = false;
+        };
+    }, [nodes, links, ontology, measure, failed]);
+
+    // 글자 크기가 화면 폭에 따라 달라지므로(폰은 더 큼), 좁은 배치와 넓은 배치가 바뀌면 라벨 크기를 다시 잽니다.
+    useLayout(() => {
+        measure();
+    }, [sheet, measure]);
 
     useEffect(() => {
-        const sim = simRef.current;
-        sim.mode = mode;
-        sim.invalidate?.();
+        const E = engineRef.current;
+        if (!E) return;
+        E.setMode(mode);
+        E.invalidate?.();
+        if (mode !== 'live') {
+            setPicked(null);
+            setPinnedGroup(null);
+            setRelation(null);
+            setKlass(null);
+            setRelOpen(false);
+        }
     }, [mode]);
 
-    // 밝힐 점·흐릴 점을 장면에 알립니다. 실제 밝기는 프레임마다 부드럽게 따라갑니다.
+    // 무엇을 밝힐지(올린 점·걸러 보기)를 장면에 넘깁니다. 아래의 '맞춰 보기'보다 먼저 실행되어야 합니다.
+    useLayout(() => {
+        const E = engineRef.current;
+        if (!E) return;
+        E.setSelf(self);
+        E.setGroup(group);
+        E.setRelation(activeRelation);
+        E.setKlass(activeKlass);
+        E.focusId = keyFocus;
+        E.peekId = peekId;
+        E.invalidate?.();
+    }, [self, group, activeRelation, activeKlass, keyFocus, peekId]);
+
+    // 카드를 열거나 걸러 보기를 바꾸면 톡 해서 띄운 이름은 지웁니다.
     useEffect(() => {
-        const sim = simRef.current;
-        sim.hotSet = hotIds;
-        sim.selfId = activeNode ? activeNode.id : null;
-        for (const p of sim.list) {
-            const on = hotIds ? hotIds.has(p.id) : false;
-            p.tHot = on ? 1 : 0;
-            p.tDim = hotIds && !on ? 1 : 0;
-            p.tSelf = p.id === sim.selfId ? 1 : 0;
+        setPeek(null);
+    }, [selectedId, pinnedGroup, relation, klass]);
+
+    // 카드·시트가 덮지 않는 영역을 장면에 알려 주고, 고른 점(또는 걸러 본 점들)이 그 안에 들어오게 맞춥니다.
+    // 라벨도 카드·단추 밑으로 들어가지 않게 합니다.
+    useLayout(() => {
+        const E = engineRef.current;
+        const wrap = wrapRef.current;
+        if (!E || !wrap) return;
+        const base = wrap.getBoundingClientRect();
+        const blocks = [];
+        E.setLinkHot(null);
+        for (const el of [toolsRef.current, dockRef.current]) {
+            if (!el) continue;
+            const box = el.getBoundingClientRect();
+            if (box.width) blocks.push([box.left - base.left, box.top - base.top, box.right - base.left, box.bottom - base.top]);
         }
-        showLabels(sim);
-        sim.invalidate?.();
-    }, [hotIds, activeNode, nodes, links]);
+        let right = base.width;
+        let bottom = base.height;
+        // 자리(slot)는 카드보다 클 수 있으므로(폰 시트는 '최대 영역'), 가려지는 곳은 카드의 실제 상자로 잽니다.
+        // 들고나는 움직임과 상관없이, 카드가 자리 잡았을 때의 상자를 씁니다(offset 값은 transform 의 영향을 받지 않음).
+        const slot = selectedId ? inspectorRef.current : null;
+        const card = slot ? slot.firstElementChild || slot : null;
+        if (card) {
+            const left = card === slot ? slot.offsetLeft : slot.offsetLeft + card.offsetLeft;
+            const top = card === slot ? slot.offsetTop : slot.offsetTop + card.offsetTop;
+            blocks.push([left, top, left + card.offsetWidth, top + card.offsetHeight]);
+            // (무대가 아주 낮으면 시트 위 띠가 93px 까지 줄 수 있습니다.)
+            if (sheet) bottom = Math.max(80, top - 6);
+            else right = Math.max(240, left - 6);
+        } else if (sheet && toolsRef.current) {
+            // 폰의 쉬는 화면: 아래 가장자리의 단추 줄(확대·연결 종류)이 뇌를 가리지 않게 그 위쪽에 뇌를 둡니다.
+            bottom = Math.max(160, toolsRef.current.offsetTop - 6);
+        }
+        E.labels.blocks = blocks;
+        // 손가락 화면에서 고른 점 둘레에 뜨는 손잡이 고리(44px)의 반지름. 이름표가 그 위에 얹히지 않게 엔진에 알려 줍니다.
+        E.handleR = touchy && selectedId ? 24 : 0;
+        E.selectedId = selectedId;
+        const key = `${selectedId || ''}|${filterGroup || ''}|${activeRelation || ''}|${activeKlass || ''}`;
+        if (key === framed.current) {
+            // 보는 것은 그대로이고 자리만 바뀐 경우(시트가 접힘·펼쳐짐, 무대 크기 변화)
+            E.setSafe(0, 0, right, bottom);
+        } else {
+            framed.current = key;
+            E.safe = [0, 0, right, bottom];
+            if (selectedId) E.lookAt(selectedId);
+            else if (activeRelation) E.lookAtLit({ relation: activeRelation });
+            else if (activeKlass) E.lookAtLit({ klass: activeKlass, group: filterGroup });
+            else if (filterGroup) E.lookAtGroup(filterGroup);
+            else E.release();
+        }
+        E.invalidate?.();
+    }, [selectedId, filterGroup, activeRelation, activeKlass, sheet, ready, relOpen, relationList.length, cardTick, pins, touchy]);
 
-    const localPoint = (event) => {
-        const rect = canvasRef.current.getBoundingClientRect();
-        return { x: event.clientX - rect.left, y: event.clientY - rect.top };
-    };
+    // 카드(시트)의 크기가 바뀌면(끄는 동안 접힘 등) 가려지지 않는 영역을 다시 잽니다.
+    useEffect(() => {
+        const slot = selectedId ? inspectorRef.current : null;
+        if (!slot || typeof ResizeObserver === 'undefined') return undefined;
+        const observer = new ResizeObserver(() => setCardTick((count) => count + 1));
+        // 카드 높이는 고른 점·보기 방식·접힘에 따라 바뀝니다. 자리와 카드를 함께 지켜봅니다.
+        observer.observe(slot);
+        if (slot.firstElementChild) observer.observe(slot.firstElementChild);
+        return () => observer.disconnect();
+    }, [selectedId]);
 
-    const select = (node) => {
-        const sim = simRef.current;
-        sim.pings.push({ id: node.id, at: performance.now() });
-        sim.invalidate?.();
-        onSelect?.(node);
-    };
+    // 손가락으로 놓은 점의 이름은 0.8초 더 보여 주고 지웁니다.
+    useEffect(() => {
+        if (!afterPull) return undefined;
+        const timer = setTimeout(() => setAfterPull(null), 800);
+        return () => clearTimeout(timer);
+    }, [afterPull]);
 
-    const pointAt = (id) => {
-        setLinked(null);
-        setLinkedGroup(null);
-        setHover(id);
-    };
+    /* ───────── 고르기·살펴보기 ───────── */
 
-    const onPointerDown = (event) => {
-        if (event.pointerType === 'mouse' && event.button !== 0) return;
-        const sim = simRef.current;
-        const touch = event.pointerType === 'touch';
-        const { x, y } = localPoint(event);
-        const p = pickNode(sim, x, y, touch ? 22 : 13);
-        if (!p) return;
-        sim.drag = { p, x: event.clientX, y: event.clientY, lx: x, ly: y, moved: false, touch };
-        event.currentTarget.setPointerCapture?.(event.pointerId);
-        if (touch) pointAt(p.id);
-    };
-
-    const onPointerMove = (event) => {
-        const sim = simRef.current;
-        const { x, y } = localPoint(event);
-        const drag = sim.drag;
-        if (drag) {
-            if (!drag.moved && Math.hypot(event.clientX - drag.x, event.clientY - drag.y) < 5) return;
-            drag.moved = true;
-            drag.lx = clamp(x, 10, sim.w - 10);
-            drag.ly = clamp(y, 10, sim.h - 10);
-            // 매장 점은 가운데에 고정이고, '움직임 줄이기'에서는 끌어도 곧바로 제자리로 돌아가므로 끌기를 받지 않습니다.
-            if (drag.p.level > 0 && !sim.reduced) {
-                drag.p.held = true;
-                drag.p.born = 0;
-                event.currentTarget.style.cursor = 'grabbing';
+    // origin: 이름표(또는 눌린 조각)가 있던 화면 자리. 카드 제목이 거기서 날아옵니다.
+    const inspect = useCallback((id, origin, byKey = false) => {
+        const E = engineRef.current;
+        let from = origin;
+        if (!from && E) {
+            const p = E.byId.get(id);
+            const el = els.current.labels.get(id);
+            if (p && el && p.lab.a > 0.5) {
+                const box = el.getBoundingClientRect();
+                from = { x: box.left, y: box.top, h: box.height };
+            } else if (p && wrapRef.current) {
+                const base = wrapRef.current.getBoundingClientRect();
+                from = { x: base.left + p.sx, y: base.top + p.sy - 8, h: 14 };
             }
+        }
+        setPicked({ id, origin: from || null, byKey });
+    }, []);
+
+    const close = useCallback((byKey) => {
+        setPicked((prev) => {
+            // 키보드로 연 카드를 닫을 때만 초점을 그 점으로 돌려줍니다(마우스로 연 경우에는 강조가 남지 않게 그대로 둠).
+            if (byKey && prev?.byKey) requestAnimationFrame(() => els.current.keys.get(prev.id)?.focus({ preventScroll: true }));
+            return null;
+        });
+    }, []);
+
+    // 살펴보기 카드가 열려 있는 동안에는 초점이 어디에 있든 Esc 로 닫습니다.
+    useEffect(() => {
+        if (!selectedId) return undefined;
+        const onEscape = (event) => {
+            if (event.key === 'Escape' && !event.defaultPrevented) close(Boolean(picked?.byKey));
+        };
+        document.addEventListener('keydown', onEscape);
+        return () => document.removeEventListener('keydown', onEscape);
+    }, [selectedId, picked, close]);
+
+    const act = (node, byKey) => {
+        if (mode === 'loading') return;
+        if (!live) {
+            onSelect?.(node);
             return;
         }
-        if (event.pointerType === 'touch') return;
-        sim.aimY = (x / sim.w - 0.5) * 0.16;
-        sim.aimX = -(y / sim.h - 0.5) * 0.09;
-        const p = pickNode(sim, x, y, 13);
-        event.currentTarget.style.cursor = p && mode !== 'loading' ? 'pointer' : '';
-        const id = p ? p.id : null;
-        if (id !== hover) {
-            if (id) pointAt(id);
-            else setHover(null);
+        if (node.ghost) return;
+        inspect(node.id, null, byKey);
+    };
+    // 무대의 손짓은 graph/gesture.js 가 받습니다(위의 attachGestures). 누르기만 한 경우 여기 act 로 옵니다.
+    hand.current = { live, loading: mode === 'loading', act, peek: peekId };
+
+    const onKey = (event, node) => {
+        const E = engineRef.current;
+        if (event.key === 'Escape') {
+            // 카드가 열려 있으면 닫고(초점은 그 점에 남음), 아니면 그래프 밖으로 나갑니다(다음 Tab 이 그래프 뒤로 이어짐).
+            event.preventDefault();
+            if (picked) close(true);
+            else exitRef.current?.focus({ preventScroll: true });
+            return;
+        }
+        const arrow = ARROWS[event.key];
+        if (!arrow || !E) return;
+        event.preventDefault();
+        // 화살표: 이어진 점 가운데 그 방향에 있는 점으로 옮겨 갑니다.
+        const from = E.byId.get(node.id);
+        if (!from) return;
+        let best = null;
+        let score = 0.2;
+        for (const line of from.links) {
+            const other = line.a === from ? line.b : line.a;
+            const dx = other.sx - from.sx;
+            const dy = other.sy - from.sy;
+            const far = Math.hypot(dx, dy) || 1;
+            const along = (dx * arrow[0] + dy * arrow[1]) / far;
+            if (along > score) {
+                score = along;
+                best = other;
+            }
+        }
+        if (best) {
+            els.current.keys.get(best.id)?.focus({ preventScroll: true });
+        } else {
+            // 그 방향에 이어진 점이 없으면: 점이 그쪽으로 살짝 밀렸다 돌아옵니다("더 갈 곳이 없다"는 반응).
+            E.bump(node.id, arrow[0], arrow[1]);
+            E.invalidate?.();
         }
     };
 
-    const endDrag = (event, pick) => {
-        const sim = simRef.current;
-        const drag = sim.drag;
-        if (!drag) return;
-        sim.drag = null;
-        drag.p.held = false;
-        event.currentTarget.style.cursor = '';
-        if (drag.touch) setHover(null);
-        if (pick && !drag.moved) select(drag.p.node);
+    const zoom = (factor) => {
+        engineRef.current?.zoomBy(factor);
+        engineRef.current?.invalidate?.();
     };
 
-    const onPointerLeave = () => {
-        const sim = simRef.current;
-        sim.aimX = 0;
-        sim.aimY = 0;
-        if (!sim.drag) setHover(null);
+    // 연결 종류를 고르면 그 연결만 봅니다. 묶음·종류를 걸러 보던 것은 지우지 않고 두었다가, 연결 종류를 끄면 그대로 돌아옵니다.
+    const chooseRelation = (rel) => {
+        setPicked(null);
+        setRelOpen(false);
+        setRelation((prev) => (prev === rel ? null : rel));
     };
+
+    const unpin = () => {
+        engineRef.current?.unpinAll();
+        engineRef.current?.invalidate?.();
+        setPins(0);
+    };
+
+    const reset = () => {
+        setPinnedGroup(null);
+        setRelation(null);
+        setKlass(null);
+        setPicked(null);
+        engineRef.current?.home();
+        engineRef.current?.invalidate?.();
+        setPins(0);
+    };
+
+    const shownLegend = legend.filter((item) => groups.has(item.group));
+    const filtering = Boolean(activeRelation || filterGroup);
+    const relationItem = activeRelation ? relationList.find((item) => item.rel === activeRelation) : null;
+    const klassItem = activeKlass ? classList.find((item) => item.type === activeKlass) : null;
+    // 띠에 쓰는 수: 종류 칩의 합과 같게(묶음 중심 점은 세지 않음)
+    const filterCount = filterGroup ? classList.reduce((sum, item) => sum + item.count, 0) || nodes.filter((node) => node.group === filterGroup && node.level >= 2).length : 0;
+    const selectedInFilter = selectedNode && filterGroup && !activeRelation && selectedNode.group === filterGroup ? selectedNode : null;
+    // 걸러 보는 묶음 밖의 점을 고른 경우(카드의 연결된 항목으로 건너감, 매장 점을 고름): 띠에 그 점의 이름을 함께 적습니다.
+    const selectedOutside = selectedNode && filterGroup && !activeRelation && selectedNode.group !== filterGroup ? selectedNode : null;
+    // 손가락으로 톡 해서 이름만 띄워 둔 점을 아래 줄이 읽어 주는 중인지
+    const peekShown = Boolean(peekId) && Boolean(readNode) && readNode.id === peekId && !hover && !keyFocus;
+    // 폰처럼 좁은 무대에서 여럿을 걸러 볼 때는 이름표에서 값(sub)을 빼고 이름만 띄웁니다(이름이 더 많이 들어가게). 값은 카드에서 봅니다.
+    const litCount = relationItem ? relationItem.count : klassItem ? klassItem.count : filterCount;
+    const compact = sheet && filtering && litCount > 6;
+    useLayout(() => {
+        measure();
+    }, [compact, measure]);
+    const heldNode = pullNode || (afterPull ? nodeById.get(afterPull) || null : null);
+
+    // 조작 안내: 마우스와 손가락은 하는 법이 달라서 따로 씁니다.
+    // (어느 쪽이든 아래 줄의 높이는 같습니다. 입력 방식이 바뀌어도 무대가 밀리지 않게 CSS 에서 높이를 고정해 둡니다.)
+    const guide = touchy
+        ? '점을 누르면 이름, 이름을 누르면 살펴봅니다 · 고리를 끌면 당겨집니다 · 옆으로 쓸면 돕니다'
+        : `점이나 이름을 누르면 살펴봅니다 · 점을 끌면 이어진 점이 따라옵니다 · 빈 곳을 끌면 돌아갑니다 · 위의 묶음 이름을 누르면 그 묶음만 봅니다${tip ? ` · ${tip}` : ''}`;
 
     return (
-        <div className={styles.panel} data-mode={mode}>
+        <div
+            className={styles.panel}
+            data-mode={mode}
+            data-filter={filtering ? 'true' : 'false'}
+            data-touch={touchy ? 'true' : 'false'}
+            style={activeRelation ? { '--f': '#F3EDE0' } : filterGroup ? { '--f': colorOf(filterGroup).hex } : undefined}
+        >
             <header className={styles.head}>
                 <p className={styles.headTitle}>
                     <strong>{title}</strong>
-                    <span>점 {nodes.length} · 선 {links.length}</span>
+                    {headline && <span className={styles.headline}>{headline}</span>}
+                    <span className={styles.counts}>항목 {nodes.length} · 연결 {links.length}</span>
                 </p>
-                {legend.length > 0 && (
-                    <ul className={styles.legend} aria-label="점 색 설명. 누르면 그 묶음만 밝게 봅니다.">
-                        {legend.filter((item) => groups.has(item.group)).map((item) => (
-                            <li key={item.group}>
+                {shownLegend.length > 0 && (
+                    <ul className={styles.legend} aria-label="묶음. 누르면 그 묶음만 가까이 봅니다.">
+                        {shownLegend.map((item) => (
+                            <li key={item.group} data-group={item.group}>
                                 <button
                                     type="button"
-                                    style={{ '--c': GROUP_COLOR[item.group] || GROUP_COLOR.ops }}
-                                    aria-pressed={pinnedGroup === item.group}
-                                    onClick={() => setPinnedGroup((prev) => (prev === item.group ? null : item.group))}
-                                    onPointerEnter={(event) => {
-                                        if (event.pointerType !== 'touch') setGroup(item.group);
+                                    style={{ '--c': colorOf(item.group).hex, '--cv': colorOf(item.group).vividHex }}
+                                    aria-pressed={filterGroup === item.group}
+                                    onClick={() => {
+                                        if (!live) return;
+                                        setPicked(null);
+                                        setRelation(null);
+                                        setKlass(null);
+                                        setPinnedGroup((prev) => (prev === item.group ? null : item.group));
                                     }}
-                                    onPointerLeave={() => setGroup(null)}
-                                    onFocus={() => setGroup(item.group)}
-                                    onBlur={() => setGroup(null)}
+                                    onPointerMove={trackPointer}
+                                    onPointerEnter={(event) => {
+                                        if (event.pointerType !== 'touch') setHoverGroup(item.group);
+                                    }}
+                                    onPointerLeave={() => setHoverGroup(null)}
+                                    onFocus={() => setHoverGroup(item.group)}
+                                    onBlur={() => setHoverGroup(null)}
                                 >
+                                    <i aria-hidden="true" />
                                     {item.label}
                                 </button>
                             </li>
@@ -1418,59 +799,367 @@ const PlaceGraph = forwardRef(function PlaceGraph(
                     </ul>
                 )}
             </header>
-            <div ref={wrapRef} className={styles.wrap} data-ready={ready ? 'true' : 'false'} role="group" aria-label={label}>
-                <canvas
-                    ref={canvasRef}
-                    className={styles.canvas}
-                    aria-hidden="true"
-                    onPointerDown={onPointerDown}
-                    onPointerMove={onPointerMove}
-                    onPointerUp={(event) => endDrag(event, true)}
-                    onPointerCancel={(event) => endDrag(event, false)}
-                    onPointerLeave={onPointerLeave}
-                />
-                {/* 캔버스가 그려지기 전(서버가 그린 화면)에 매장 자리에서 뛰는 불빛 */}
-                <div className={styles.placeholder} aria-hidden="true">
-                    <span />
-                </div>
-                {/* 캔버스 안의 점은 키보드·화면 낭독기가 닿지 못하므로, 보이지 않는 버튼을 같은 자리에 겹쳐 둡니다. */}
-                <ul className={styles.keys}>
-                    {nodes.filter((node) => node.level < 2).map((node) => (
-                        <li key={node.id}>
-                            <button
-                                type="button"
+
+            {/* 걸러 보는 중임을 알리는 띠: 무대 위에 겹치지 않고 따로 한 줄을 씁니다(이름표·점을 가리지 않게). */}
+            <AnimatePresence initial={false}>
+                {filtering && (
+                    <motion.div
+                        key="modebar"
+                        className={styles.modebar}
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        transition={{ duration: 0.18 }}
+                    >
+                        <p className={styles.modeText}>
+                            <i aria-hidden="true" />
+                            {/* 줄이 넘어갈 때 "중" 한 글자만 떨어지지 않게, 끝말은 한 덩어리(keep)로 묶어 둡니다. */}
+                            {relationItem && selectedNode ? (
+                                <span><strong>{relationItem.name}</strong> <b aria-hidden="true">›</b> <strong>{selectedNode.full || selectedNode.label}</strong> <span className={styles.keep}>살펴보는 중</span></span>
+                            ) : relationItem ? (
+                                <span><strong>{relationItem.name}</strong> <span className={styles.keep}>연결만 보는 중</span> <span className={styles.keep}>· 연결 {relationItem.count}</span></span>
+                            ) : selectedInFilter ? (
+                                <span><strong>{groupLabels.get(filterGroup)}</strong> <b aria-hidden="true">›</b> <strong>{selectedInFilter.full || selectedInFilter.label}</strong> <span className={styles.keep}>살펴보는 중</span></span>
+                            ) : selectedOutside ? (
+                                <span><span className={styles.keep}><strong>{groupLabels.get(filterGroup)}</strong>만 보는 중</span> · <strong>{selectedOutside.full || selectedOutside.label}</strong> <span className={styles.keep}>살펴보는 중</span></span>
+                            ) : klassItem ? (
+                                <span><strong>{groupLabels.get(filterGroup)}</strong> <b aria-hidden="true">›</b> <strong>{klassItem.label}</strong> <span className={styles.keep}>· 항목 {klassItem.count}</span></span>
+                            ) : (
+                                <span><span className={styles.keep}><strong>{groupLabels.get(filterGroup)}</strong>만 보는 중</span> <span className={styles.keep}>· 항목 {filterCount}</span></span>
+                            )}
+                        </p>
+                        {/* 묶음 안의 항목 종류: 누르면 그 종류만 밝힙니다(한 줄, 넘치면 옆으로 넘겨 봅니다) */}
+                        {!activeRelation && classList.length > 1 && (
+                            <ul className={styles.kinds} aria-label="항목 종류">
+                                {classList.map((item) => (
+                                    <li key={item.type}>
+                                        <button type="button" aria-pressed={activeKlass === item.type} onClick={() => setKlass((prev) => (prev === item.type ? null : item.type))}>
+                                            {item.label} <em>{item.count}</em>
+                                        </button>
+                                    </li>
+                                ))}
+                            </ul>
+                        )}
+                        <button
+                            type="button"
+                            className={styles.modeClose}
+                            onClick={() => {
+                                if (activeRelation) {
+                                    setRelation(null);
+                                    return;
+                                }
+                                setPinnedGroup(null);
+                                setKlass(null);
+                            }}
+                        >
+                            {activeRelation && filterGroup ? '연결 종류 끄기' : '전체 보기'}
+                            <X size={14} aria-hidden="true" />
+                        </button>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
+            <div
+                ref={wrapRef}
+                className={styles.wrap}
+                data-ready={ready ? 'true' : 'false'}
+                data-pulling={pulling ? (pulling.touch ? 'touch' : 'mouse') : undefined}
+                data-compact={compact ? 'true' : undefined}
+                role="group"
+                aria-label={label}
+                onPointerEnter={(event) => {
+                    if (event.pointerType !== 'touch' && engineRef.current) engineRef.current.pointerOn = true;
+                }}
+                onPointerLeave={(event) => {
+                    if (event.pointerType !== 'touch' && engineRef.current) engineRef.current.pointerOn = false;
+                }}
+                onPointerDownCapture={(event) => {
+                    const byTouch = event.pointerType === 'touch';
+                    if (byTouch !== touchy) setTouchy(byTouch);
+                }}
+            >
+                {!failed && (
+                    <canvas ref={canvasRef} className={styles.canvas} aria-hidden="true" />
+                )}
+                {/* 캔버스가 그려지기 전(서버가 그린 화면)에 매장 자리에서 숨 쉬는 불빛 */}
+                {!failed && (
+                    <div className={styles.placeholder} aria-hidden="true">
+                        <span />
+                    </div>
+                )}
+
+                {failed ? (
+                    // WebGL2 를 쓸 수 없는 기기: 같은 내용을 묶음별 목록으로 보여 줍니다.
+                    <div className={styles.fallback}>
+                        <p>이 기기에서는 3D 그래프를 그릴 수 없어 목록으로 보여 드립니다.</p>
+                        <ul>
+                            {nodes.filter((node) => node.level <= 1 && (node.label || node.full)).map((node) => (
+                                <li key={node.id} style={{ '--c': colorOf(node.group).hex }}>
+                                    <button type="button" onClick={() => onSelect?.(node)}>
+                                        <strong>{node.full || node.label}</strong>
+                                        {node.sub && <span>{node.sub}</span>}
+                                    </button>
+                                    <ul>
+                                        {nodes.filter((kid) => kid.parent === node.id && node.level === 1 && (kid.label || kid.full)).map((kid) => (
+                                            <li key={kid.id}>
+                                                <button type="button" onClick={() => onSelect?.(kid)}>
+                                                    {kid.label || kid.full}
+                                                    {kid.sub && <span>{kid.sub}</span>}
+                                                </button>
+                                            </li>
+                                        ))}
+                                    </ul>
+                                </li>
+                            ))}
+                        </ul>
+                    </div>
+                ) : (
+                    <>
+                        <svg className={styles.leads} aria-hidden="true">
+                            {nodes.filter((node) => node.label).map((node) => (
+                                <line
+                                    key={node.id}
+                                    ref={(el) => {
+                                        if (el) els.current.leads.set(node.id, el);
+                                        else els.current.leads.delete(node.id);
+                                    }}
+                                />
+                            ))}
+                            <line
+                                className={styles.tether}
                                 ref={(el) => {
-                                    if (el) simRef.current.keys.set(node.id, el);
-                                    else simRef.current.keys.delete(node.id);
+                                    els.current.tether = el;
                                 }}
-                                aria-label={node.aria || node.label}
-                                onFocus={() => {
-                                    simRef.current.focusId = node.id;
-                                    pointAt(node.id);
-                                }}
-                                onBlur={() => {
-                                    simRef.current.focusId = null;
-                                    setHover((prev) => (prev === node.id ? null : prev));
-                                }}
-                                onClick={() => select(node)}
                             />
-                        </li>
-                    ))}
-                </ul>
+                            {/* 고정해 둔 점의 원래 자리(빈 고리)와 지금 자리까지의 선 */}
+                            {PIN_SLOTS.map((slot) => (
+                                <g
+                                    key={`pin-${slot}`}
+                                    className={styles.pinMark}
+                                    ref={(el) => {
+                                        els.current.pins[slot] = el;
+                                    }}
+                                >
+                                    <circle r="5" />
+                                    <line />
+                                </g>
+                            ))}
+                        </svg>
+                        <div className={styles.labels} aria-hidden="true">
+                            {nodes.filter((node) => node.label).map((node) => (
+                                <div
+                                    key={node.id}
+                                    ref={(el) => {
+                                        if (el) els.current.labels.set(node.id, el);
+                                        else els.current.labels.delete(node.id);
+                                    }}
+                                    className={styles.label}
+                                    data-level={Math.min(3, node.level)}
+                                    data-ghost={node.ghost ? 'true' : undefined}
+                                    style={{ '--c': colorOf(node.group).hex }}
+                                >
+                                    <b>{node.label}</b>
+                                    {node.sub && <span style={TONES[node.subTone] ? { color: TONES[node.subTone] } : undefined}>{node.sub}</span>}
+                                </div>
+                            ))}
+                        </div>
+                        {/* 캔버스 안의 점은 키보드·화면 낭독기가 닿지 못하므로, 보이지 않는 버튼을 겹쳐 둡니다.
+                            Tab 은 매장과 묶음을 돌고, 화살표는 이어진 점으로 옮겨 가며, Enter·Space 는 살펴보기를 엽니다. Esc 는 그래프 밖으로 나갑니다. */}
+                        <ul className={styles.keys}>
+                            {nodes.filter((node) => node.label || node.aria || node.full).map((node) => (
+                                <li key={node.id}>
+                                    <button
+                                        type="button"
+                                        ref={(el) => {
+                                            if (el) els.current.keys.set(node.id, el);
+                                            else els.current.keys.delete(node.id);
+                                        }}
+                                        tabIndex={node.level <= 1 ? 0 : -1}
+                                        aria-label={node.aria || [node.full || node.label, node.sub, node.detail].filter(Boolean).join(', ')}
+                                        onFocus={() => {
+                                            setKeyFocus(node.id);
+                                            engineRef.current?.turnTo(node.id);
+                                        }}
+                                        onBlur={() => setKeyFocus((prev) => (prev === node.id ? null : prev))}
+                                        onClick={() => act(node, true)}
+                                        onKeyDown={(event) => onKey(event, node)}
+                                    />
+                                </li>
+                            ))}
+                        </ul>
+                    </>
+                )}
+
+                {/* 관계 이름표: 고른 점에서 뻗은 연결 묶음마다 하나씩(자리는 스크립트가 잡습니다) */}
+                {!failed && (
+                    <div className={styles.labels} aria-hidden="true">
+                        {TAG_SLOTS.map((slot) => (
+                            <span
+                                key={slot}
+                                ref={(el) => {
+                                    els.current.tags[slot] = el;
+                                }}
+                                className={styles.tag}
+                            />
+                        ))}
+                        <span
+                            ref={(el) => {
+                                els.current.more = el;
+                            }}
+                            className={`${styles.tag} ${styles.tagMore}`}
+                        />
+                    </div>
+                )}
+
+                {/* 손가락으로 당기기: 고른 점에 뜨는 고리 손잡이. 여기서 시작한 끌기는 기다림 없이 바로 그 점을 당깁니다. */}
+                {!failed && live && touchy && selectedNode && !selectedNode.ghost && (
+                    <span
+                        ref={(el) => {
+                            els.current.handle = el;
+                        }}
+                        className={styles.handle}
+                        aria-hidden="true"
+                        onPointerDown={(event) => gesturesRef.current?.pullFrom(event.nativeEvent, selectedNode.id, event.currentTarget)}
+                    />
+                )}
+                {/* 손가락으로 당기는 동안: 손가락 둘레의 가는 고리와, 손가락에 가리지 않게 무대 맨 위에 쓰는 점 이름 */}
+                {!failed && (
+                    <span
+                        ref={(el) => {
+                            els.current.ring = el;
+                        }}
+                        className={styles.touchRing}
+                        data-on={pulling?.touch ? 'true' : 'false'}
+                        aria-hidden="true"
+                    />
+                )}
+                {!failed && heldNode && (pulling?.touch || afterPull) && (
+                    <p className={styles.pullName} aria-hidden="true">
+                        <i style={{ '--c': colorOf(heldNode.group).hex }} />
+                        <strong>{heldNode.full || heldNode.label}</strong>
+                        {heldNode.sub && <span>{heldNode.sub}</span>}
+                    </p>
+                )}
+
+                {!failed && (
+                    <div ref={toolsRef} className={styles.tools} role="group" aria-label="그래프 보기 조절">
+                        <button type="button" onClick={() => zoom(1.3)} aria-label="확대" title="확대 (⌘/Ctrl + 휠)">
+                            <Plus size={16} aria-hidden="true" />
+                        </button>
+                        <button type="button" onClick={() => zoom(1 / 1.3)} aria-label="축소" title="축소">
+                            <Minus size={16} aria-hidden="true" />
+                        </button>
+                        <button type="button" onClick={reset} aria-label="처음 보기로" title="처음 보기로" data-on={turned || filtering || pins > 0 ? 'true' : 'false'}>
+                            <RotateCcw size={15} aria-hidden="true" />
+                        </button>
+                    </div>
+                )}
+
+                {/* 연결 종류: 하나를 고르면 그 연결만 밝아집니다. 선 무늬는 연결의 갈래(근거·경쟁·할 일 …)를 뜻합니다.
+                    확대 단추 옆(왼쪽 아래)에 두어 살펴보기 카드에 가려지지 않습니다. */}
+                {!failed && live && (relationList.length > 0 || pins > 0) && (
+                    <div ref={dockRef} className={styles.relations}>
+                        {relOpen && relationList.length > 0 && (
+                            <div className={styles.relationList} role="group" aria-label="연결 종류">
+                                <p className={styles.relationHelp}>연결 종류를 고르면 그 연결만 밝게 보입니다.</p>
+                                <div className={styles.relationCols}>
+                                    {relationFamilies.map((family) => (
+                                        <section key={`${family.label}-${family.quiet}`} data-quiet={family.quiet ? 'true' : undefined}>
+                                            <p>{family.label}</p>
+                                            <ul>
+                                                {family.items.map((item) => (
+                                                    <li key={item.rel}>
+                                                        <button type="button" aria-pressed={activeRelation === item.rel} data-family={item.family} onClick={() => chooseRelation(item.rel)}>
+                                                            <i aria-hidden="true" />
+                                                            <span>{item.name}</span>
+                                                            <em>{item.count}</em>
+                                                        </button>
+                                                    </li>
+                                                ))}
+                                            </ul>
+                                        </section>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+                        {relationList.length > 0 && (
+                            <button type="button" className={styles.relationToggle} aria-expanded={relOpen} onClick={() => setRelOpen((prev) => !prev)}>
+                                연결 종류 <em>{relationList.length}</em>
+                            </button>
+                        )}
+                        {pins > 0 && (
+                            <button type="button" className={styles.pinned} onClick={unpin}>
+                                고정 <em>{pins}</em> · 모두 풀기
+                            </button>
+                        )}
+                    </div>
+                )}
+
+                <AnimatePresence>
+                    {selectedNode && (
+                        <motion.div
+                            key="inspector"
+                            ref={inspectorRef}
+                            className={`${styles.inspectorSlot} ${styles.inspector}`}
+                            data-sheet={sheet ? 'true' : 'false'}
+                            data-collapsed={pulling?.touch ? 'true' : 'false'}
+                            initial={sheet ? { y: '100%' } : { opacity: 0, x: 14 }}
+                            animate={sheet ? { y: 0 } : { opacity: 1, x: 0 }}
+                            exit={sheet ? { y: '100%' } : { opacity: 0, x: 14 }}
+                            transition={{ duration: 0.34, ease: [0.16, 1, 0.3, 1] }}
+                        >
+                            <Inspector
+                                node={selectedNode}
+                                links={links}
+                                nodeById={nodeById}
+                                ontology={ontology}
+                                groupNames={groupLabels}
+                                origin={picked?.origin || null}
+                                sheet={sheet}
+                                collapsed={Boolean(pulling?.touch)}
+                                focusOnOpen={Boolean(picked?.byKey)}
+                                onJump={(id, origin) => inspect(id, origin, Boolean(picked?.byKey))}
+                                onGo={(node) => onSelect?.(node)}
+                                onClose={close}
+                                onLinkHover={(id) => {
+                                    engineRef.current?.setLinkHot(id);
+                                    engineRef.current?.invalidate?.();
+                                }}
+                            />
+                        </motion.div>
+                    )}
+                </AnimatePresence>
                 {children}
             </div>
-            <p className={styles.readout} data-on={readNode ? 'true' : 'false'}>
-                {readNode ? (
+
+            <p className={styles.readout} data-on={readNode || pullNode ? 'true' : 'false'}>
+                {pullNode ? (
                     <>
-                        <span className={styles.readoutDot} style={{ '--c': colorOf(readNode) }} aria-hidden="true" />
-                        <strong>{readNode.full || readNode.label}</strong>
-                        {readNode.detail && <span className={styles.readoutText}>{readNode.detail}</span>}
-                        {readNode.go && <span className={styles.readoutGo}>{readNode.go}</span>}
+                        <i className={styles.readoutDot} style={{ '--c': colorOf(pullNode.group).hex }} aria-hidden="true" />
+                        <strong>{pullNode.full || pullNode.label}</strong>
+                        <span className={styles.readoutText}>당기는 중 · 놓으면 제자리로{pulling.touch ? '' : ' · Shift 누른 채 놓으면 고정'}</span>
                     </>
+                ) : readNode ? (
+                    <>
+                        <i className={styles.readoutDot} style={{ '--c': colorOf(readNode.group).hex }} aria-hidden="true" />
+                        <strong>{readNode.full || readNode.label}</strong>
+                        {/* 이름 · 값 — 설명 (값은 이름표의 sub 와 같은 글자) */}
+                        {readNode.sub && <span className={styles.readoutValue}>{readNode.sub}</span>}
+                        {/* 톡 해서 이름만 띄운 동안에는 설명 대신 다음에 할 일을 적습니다(설명 전문은 카드에서 봅니다). */}
+                        {peekShown ? (
+                            <span className={styles.readoutText}>이름을 한 번 더 누르면 살펴봅니다</span>
+                        ) : (
+                            readNode.detail && <span className={styles.readoutText}>{readNode.detail}</span>
+                        )}
+                    </>
+                ) : live ? (
+                    <span className={styles.readoutHint}>{guide}</span>
                 ) : (
-                    <span className={styles.readoutText}>{hint}</span>
+                    <span className={styles.readoutHint}>{hint}</span>
                 )}
             </p>
+            {/* Esc 로 그래프에서 나왔을 때 초점이 놓이는 자리(다음 Tab 이 그래프 뒤로 이어집니다) */}
+            <span ref={exitRef} tabIndex={-1} className={styles.exit} aria-label="그래프 끝" />
         </div>
     );
 });

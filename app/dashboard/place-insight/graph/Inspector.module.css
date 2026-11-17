@@ -1,0 +1,1142 @@
+/* 살펴보기 카드. 그래프 무대(.panel) 안에 놓이므로 무대의 색 변수(--g-*)를 그대로 물려 씁니다.
+   구조: 머리(묶음·이름·핵심 값, 고정) → 본문(스크롤: 연결된 항목 → 수치 → 설명) → 이유 칸(조각을 가리킬 때만, 고정) → 본문으로 가는 버튼(고정).
+   색 원칙: 불투명한 잉크색 면, 글자는 상아색과 밝은 회색 두 단계, 묶음 색(--c)은 가는 눈금에만 씁니다.
+   글자 크기: 넓은 화면 12px 이상, 좁은 화면(720px 이하) 13px 이상. */
+.card {
+    --c: #A5ACB8;
+    --k-card: var(--g-card, #13161D);
+    --k-lift: var(--g-card-2, #1A1E26);
+    --k-hair: var(--g-hair, rgba(214, 222, 235, 0.12));
+    --k-hair-2: var(--g-hair-2, rgba(214, 222, 235, 0.22));
+    --k-text: var(--g-text, #F3EDE0);
+    --k-text-2: var(--g-text-2, #B4BAC4);
+    --k-ease: var(--g-ease, cubic-bezier(0.16, 1, 0.3, 1));
+    --k-pad: 14px;
+    --k-head-top: 5px;
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    min-height: 0;
+    /* 스크립트가 본문 높이를 정수 px 로 맞춘 값으로 덮어씁니다(Inspector.js). */
+    max-height: 100%;
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--k-text-2);
+    background: var(--k-card);
+    border-radius: 6px;
+    box-shadow: 0 0 0 1px var(--k-hair-2), 0 24px 44px -24px rgba(0, 0, 0, 0.85);
+    overflow: hidden;
+    pointer-events: auto;
+}
+
+.card:focus {
+    outline: none;
+}
+
+.card :focus-visible {
+    outline: 2px solid var(--k-text);
+    outline-offset: 2px;
+}
+
+.card[data-sheet='true'] {
+    --k-pad: 16px;
+    border-radius: 10px 10px 0 0;
+    box-shadow: 0 -1px 0 0 var(--k-hair-2), 0 -22px 40px -20px rgba(0, 0, 0, 0.8);
+}
+
+.srOnly {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+}
+
+/* 묶음 표시는 도판의 눈금 같은 짧은 세로 막대입니다(범례·이름표와 같은 모양). */
+.eyebrow i,
+.kindLine i,
+.chip i,
+.rowTop i {
+    flex-shrink: 0;
+    width: 3px;
+    height: 10px;
+    border-radius: 1px;
+    background: var(--c);
+    transition: height 0.24s var(--k-ease), background-color 0.2s ease;
+}
+
+/* ───────── 머리(고정): 무엇의 카드인지 스크롤해도 보입니다 ───────── */
+
+.head {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: start;
+    column-gap: 6px;
+    flex-shrink: 0;
+    padding: 6px 6px 9px var(--k-pad);
+    border-bottom: 1px solid var(--k-hair);
+}
+
+.headText {
+    min-width: 0;
+    padding-top: var(--k-head-top);
+}
+
+.eyebrow {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0 7px;
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 18px;
+    color: var(--k-text-2);
+}
+
+.eyebrow span {
+    padding-left: 7px;
+    border-left: 1px solid var(--k-hair-2);
+    font-weight: 500;
+}
+
+/* 이름과 핵심 값은 한 줄에 나란히 둡니다(자리가 모자라면 값이 다음 줄로 내려감). */
+.heading {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0 10px;
+    min-width: 0;
+    margin-top: 2px;
+}
+
+.title {
+    width: fit-content;
+    max-width: 100%;
+    font-size: 17px;
+    font-weight: 700;
+    line-height: 24px;
+    letter-spacing: -0.01em;
+    color: var(--k-text);
+    transform-origin: 0 0;
+    word-break: keep-all;
+    overflow-wrap: anywhere;
+}
+
+/* 묶음 · 종류 줄이 없는 머리(제목이 곧 묶음 이름인 점, 자리가 낮은 시트): 이름과 값 왼쪽에 묶음 색 줄을 긋습니다(그래프의 묶음 이름표와 같은 모양). */
+.headText[data-mark='true'] {
+    position: relative;
+    padding-left: 10px;
+}
+
+.headText[data-mark='true']::before {
+    content: '';
+    position: absolute;
+    top: calc(var(--k-head-top) + 4px);
+    bottom: 3px;
+    left: 0;
+    width: 2px;
+    border-radius: 1px;
+    background: var(--c);
+}
+
+.headText[data-mark='true'] .heading {
+    margin-top: 0;
+}
+
+/* 문장이 제목인 점(AI 브리핑·AI가 묻는 질문)은 한 단계 작게 써서 머리가 본문을 밀어내지 않게 합니다. */
+.title[data-long='true'] {
+    font-size: 15px;
+    line-height: 22px;
+}
+
+.value {
+    font-size: 22px;
+    font-weight: 700;
+    line-height: 28px;
+    letter-spacing: -0.01em;
+    color: var(--k-text);
+}
+
+.close {
+    display: grid;
+    place-items: center;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    color: var(--k-text-2);
+    background: transparent;
+    border: 0;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: color 0.15s ease, background-color 0.15s ease;
+}
+
+/* 머리 아래 전부를 한 칸에 담아 둡니다. 접으면(collapsed) 칸 높이가 0 으로 줄어 제목 한 줄만 남습니다. */
+.rest {
+    display: grid;
+    grid-template-rows: 1fr;
+    flex: 1 1 auto;
+    min-height: 0;
+    transition: grid-template-rows 0.26s var(--k-ease);
+}
+
+.restIn {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
+}
+
+.card[data-collapsed='true'] .rest {
+    grid-template-rows: 0fr;
+}
+
+.card[data-collapsed='true'] .restIn {
+    visibility: hidden;
+    transition: visibility 0s linear 0.26s;
+}
+
+/* 접힌 머리: 이름 + 핵심 값 한 줄(56px) */
+.card[data-collapsed='true'] .head {
+    align-items: center;
+    min-height: 56px;
+    padding-top: 6px;
+    padding-bottom: 6px;
+    border-bottom-width: 0;
+}
+
+.card[data-collapsed='true'] .headText {
+    padding-top: 0;
+}
+
+.card[data-collapsed='true'] .headText[data-mark='true']::before {
+    top: 3px;
+    bottom: 3px;
+}
+
+.card[data-collapsed='true'] .eyebrow {
+    display: none;
+}
+
+.card[data-collapsed='true'] .heading {
+    flex-wrap: nowrap;
+    margin-top: 0;
+}
+
+.card[data-collapsed='true'] .title {
+    flex: 0 1 auto;
+    min-width: 0;
+    font-size: 16px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.card[data-collapsed='true'] .value {
+    flex-shrink: 0;
+    font-size: 16px;
+    white-space: nowrap;
+}
+
+/* ───────── 본문(스크롤): 연결된 항목 → 수치 → 설명 ───────── */
+
+.body {
+    /* 안의 항목 자리를 스크립트가 잴 때의 기준 */
+    position: relative;
+    /* 자리가 모자라면 본문이 먼저 줄어듭니다(머리·이유 칸·버튼은 그대로). */
+    flex: 1 9999 auto;
+    min-height: 0;
+    padding: 8px var(--k-pad) 12px;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: var(--k-hair-2) transparent;
+    animation: bodyIn 0.3s var(--k-ease) backwards;
+}
+
+@keyframes bodyIn {
+    from { opacity: 0; }
+}
+
+/* 본문의 내용 묶음(스크립트가 이 높이를 재서 정수 px 로 맞춥니다) */
+.bodyIn {
+    min-width: 0;
+}
+
+.detail {
+    font-size: 13px;
+    line-height: 20px;
+    word-break: keep-all;
+    overflow-wrap: anywhere;
+}
+
+/* 연결된 항목과 수치 뒤에 놓이는 설명 문장(주석) */
+.detailAfter {
+    margin-top: 10px;
+}
+
+.linked + .detailAfter,
+.kindLine + .detailAfter {
+    margin-top: 12px;
+    padding-top: 10px;
+    border-top: 1px solid var(--k-hair);
+}
+
+/* 자리가 낮은 시트에서 머리에서 뺀 묶음 · 종류 */
+.kindLine {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    margin-top: 14px;
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 20px;
+    color: var(--k-text-2);
+}
+
+.facts {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    margin-top: 12px;
+    border-top: 1px solid var(--k-hair);
+}
+
+.kindLine + .facts,
+.detail + .facts {
+    margin-top: 8px;
+}
+
+/* 수치가 본문의 첫 줄이면(연결이 없는 점) 머리의 밑줄이 수치 칸의 윗줄을 대신합니다. */
+.facts:first-child {
+    margin-top: -8px;
+    border-top: 0;
+}
+
+.facts > div {
+    padding: 8px 0 7px;
+    border-bottom: 1px solid var(--k-hair);
+    animation: rowIn 0.42s var(--k-ease) backwards;
+    animation-delay: calc(60ms + var(--n) * 45ms);
+}
+
+.facts > div:nth-child(odd) {
+    padding-right: 10px;
+}
+
+.facts > div:nth-child(even) {
+    padding-left: 10px;
+    border-left: 1px solid var(--k-hair);
+}
+
+.facts > div:last-child:nth-child(odd) {
+    grid-column: 1 / -1;
+    padding-right: 0;
+}
+
+.facts dt {
+    font-size: 12px;
+    line-height: 17px;
+    color: var(--k-text-2);
+    word-break: keep-all;
+}
+
+.facts dd {
+    margin-top: 1px;
+    font-size: 15px;
+    font-weight: 650;
+    line-height: 21px;
+    color: var(--k-text);
+}
+
+@keyframes rowIn {
+    from { opacity: 0; transform: translateY(5px); }
+}
+
+/* 숫자: 자릿수마다 0 에서 굴러 올라와 멈추고, 쉼표는 제자리로 톡 뛰어 들어옵니다. */
+.rolling {
+    position: relative;
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+}
+
+.rollDigit {
+    display: inline-block;
+    height: 1.25em;
+    line-height: 1.25;
+    overflow: hidden;
+    vertical-align: bottom;
+}
+
+.rollDigit > span {
+    display: block;
+    width: 1ch;
+    white-space: normal;
+    word-break: break-all;
+    transform: translateY(calc(var(--d) * -10%));
+    transition: transform 0.8s var(--k-ease);
+    transition-delay: calc(var(--i) * 40ms);
+}
+
+.rollMark {
+    display: inline-block;
+    animation: hop 0.5s cubic-bezier(0.3, 1.5, 0.5, 1) backwards;
+    animation-delay: calc(260ms + var(--i) * 40ms);
+}
+
+@keyframes hop {
+    from { opacity: 0; transform: translateY(-0.55em); }
+}
+
+/* ───────── 연결된 항목 ───────── */
+
+.linked {
+    margin-top: 10px;
+}
+
+.linked:first-child {
+    margin-top: 0;
+}
+
+.linkedHead {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px 10px;
+    min-height: 28px;
+}
+
+.linkedHead h4 {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 18px;
+    color: var(--k-text-2);
+}
+
+.linkedHead h4 span {
+    color: var(--k-text);
+}
+
+/* 보기 방식: 이름만(조각) · 이유 함께(줄). 고른 쪽으로 밑판이 미끄러집니다. */
+.views {
+    position: relative;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    flex-shrink: 0;
+    padding: 2px;
+    border-radius: 5px;
+    box-shadow: inset 0 0 0 1px var(--k-hair-2);
+}
+
+.views::before {
+    content: '';
+    position: absolute;
+    top: 2px;
+    bottom: 2px;
+    left: 2px;
+    width: calc(50% - 2px);
+    background: rgba(214, 222, 235, 0.13);
+    border-radius: 3px;
+    pointer-events: none;
+    transition: transform 0.3s var(--k-ease);
+}
+
+.card[data-view='list'] .views::before {
+    transform: translateX(100%);
+}
+
+.views button {
+    position: relative;
+    height: 24px;
+    padding: 0 10px;
+    font: inherit;
+    font-size: 12px;
+    font-weight: 600;
+    white-space: nowrap;
+    color: var(--k-text-2);
+    background: transparent;
+    border: 0;
+    border-radius: 3px;
+    cursor: pointer;
+    transition: color 0.16s ease;
+}
+
+.views button[aria-pressed='true'] {
+    color: var(--k-text);
+}
+
+.group {
+    margin-top: 10px;
+}
+
+.linkedHead + .group {
+    margin-top: 6px;
+}
+
+.group h5 {
+    font-size: 12.5px;
+    font-weight: 600;
+    line-height: 18px;
+    color: var(--k-text);
+    word-break: keep-all;
+}
+
+.group h5 span,
+.foldToggle span {
+    margin-left: 3px;
+    font-weight: 500;
+    color: var(--k-text-2);
+}
+
+/* 연결의 구조(주어 › 술어 › 목적어): 평문 이유 문장을 돕는 작은 줄 */
+.triple {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0 4px;
+    font-size: 12px;
+    line-height: 18px;
+    color: var(--k-text-2);
+    word-break: keep-all;
+}
+
+.triple b {
+    font-weight: 600;
+}
+
+.tripleStep {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
+    max-width: 100%;
+}
+
+.triple svg {
+    flex-shrink: 0;
+    opacity: 0.75;
+}
+
+.chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px 6px;
+    margin-top: 5px;
+    list-style: none;
+}
+
+.rows {
+    display: grid;
+    gap: 1px;
+    margin: 3px -8px 0;
+    list-style: none;
+}
+
+.chips li,
+.rows li {
+    max-width: 100%;
+    min-width: 0;
+    animation: rowIn 0.4s var(--k-ease) backwards;
+    animation-delay: calc(90ms + min(var(--n), 12) * 24ms);
+}
+
+/* 조각: 이름(+ 값). 한 줄에 다 들어가지 않으면 줄이지 않고 이름을 다음 줄로 넘깁니다. --mx·--my 는 포인터 자리 */
+.chip {
+    --c: #A5ACB8;
+    --mx: 50%;
+    --my: 50%;
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    max-width: 100%;
+    min-height: 28px;
+    padding: 3px 10px 3px 9px;
+    font: inherit;
+    font-size: 12.5px;
+    font-weight: 600;
+    line-height: 18px;
+    text-align: left;
+    color: var(--k-text);
+    background-color: transparent;
+    border: 0;
+    border-radius: 4px;
+    box-shadow: inset 0 0 0 1px var(--k-hair-2);
+    cursor: pointer;
+    transition: color 0.16s ease, background-color 0.16s ease, box-shadow 0.2s ease, transform 0.12s var(--k-ease);
+}
+
+.chipName {
+    min-width: 0;
+    word-break: keep-all;
+    overflow-wrap: anywhere;
+}
+
+.badge {
+    flex-shrink: 0;
+    font-size: 12px;
+    font-style: normal;
+    font-weight: 500;
+    white-space: nowrap;
+    color: var(--k-text-2);
+}
+
+.chip:active {
+    transform: scale(0.97);
+}
+
+/* 지금 이유 칸에 나와 있는 조각 */
+.chip[data-current='true'] {
+    background-color: var(--k-lift);
+    box-shadow: inset 0 0 0 1px var(--c);
+}
+
+.chip[data-current='true'] i {
+    height: 14px;
+    background: var(--cv, var(--c));
+}
+
+/* 방금 건너온 연결의 조각 */
+.chip[data-via='true']:not([data-current='true']) {
+    box-shadow: inset 0 0 0 1px var(--k-text-2);
+}
+
+/* 줄: 이름 · 값 + 이유 문장 */
+.row {
+    --c: #A5ACB8;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    align-content: center;
+    gap: 2px;
+    width: 100%;
+    min-height: 44px;
+    padding: 7px 8px 8px;
+    font: inherit;
+    text-align: left;
+    color: var(--k-text-2);
+    background-color: transparent;
+    border: 0;
+    border-radius: 5px;
+    cursor: pointer;
+    transition: background-color 0.16s ease, transform 0.12s var(--k-ease);
+}
+
+.row:active {
+    transform: scale(0.99);
+}
+
+.rowTop {
+    display: grid;
+    grid-template-columns: 3px minmax(0, 1fr) auto;
+    align-items: baseline;
+    column-gap: 8px;
+}
+
+.rowTop i {
+    align-self: center;
+    height: 11px;
+}
+
+.rowTop strong {
+    font-size: 13px;
+    font-weight: 650;
+    line-height: 19px;
+    color: var(--k-text);
+    word-break: keep-all;
+    overflow-wrap: anywhere;
+}
+
+.rowWhy,
+.rowTag,
+.rowTriple {
+    padding-left: 11px;
+}
+
+.rowWhy {
+    font-size: 12.5px;
+    line-height: 19px;
+    word-break: keep-all;
+    overflow-wrap: anywhere;
+}
+
+.rowTag {
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 18px;
+    color: var(--k-text);
+}
+
+.row[data-via='true'] {
+    background-color: var(--k-lift);
+    box-shadow: inset 0 0 0 1px var(--k-hair-2);
+}
+
+/* 구조 관계('속한 곳')는 맨 아래에 접어 둡니다. */
+.fold {
+    margin-top: 10px;
+    padding-top: 2px;
+    border-top: 1px solid var(--k-hair);
+}
+
+.linkedHead + .fold {
+    margin-top: 4px;
+}
+
+.foldToggle {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    width: 100%;
+    height: 30px;
+    padding: 0;
+    font: inherit;
+    font-size: 12px;
+    font-weight: 600;
+    text-align: left;
+    color: var(--k-text-2);
+    background: none;
+    border: 0;
+    border-radius: 3px;
+    cursor: pointer;
+    transition: color 0.16s ease;
+}
+
+.foldToggle svg {
+    flex-shrink: 0;
+    transition: transform 0.26s var(--k-ease);
+}
+
+.fold[data-open='true'] .foldToggle svg {
+    transform: rotate(90deg);
+}
+
+.fold .chips {
+    margin-top: 2px;
+}
+
+.fold .rows {
+    margin-top: 0;
+}
+
+/* ───────── 이유 칸(고정): 본문과 버튼 사이. 조각을 가리킬 때(와 방금 건너왔을 때) 생기고, 문장 전체가 제목과 함께 보입니다 ───────── */
+
+.strip {
+    position: relative;
+    flex-shrink: 0;
+    box-sizing: border-box;
+    /* 높이가 늘어나는 동안 안의 글자가 밖으로 비치지 않게 */
+    overflow: hidden;
+    background: var(--k-lift);
+    border-top: 1px solid var(--k-hair);
+}
+
+.stripIn {
+    padding: 9px var(--k-pad) 10px;
+}
+
+/* 이 카드의 이유 문장을 모두 한 칸에 겹쳐 두고 하나만 보입니다 → 칸 높이가 가장 긴 문장에 맞춰져 조각을 옮겨 가도 출렁이지 않습니다. */
+.stack {
+    display: grid;
+}
+
+.note {
+    grid-area: 1 / 1;
+    min-width: 0;
+    visibility: hidden;
+    opacity: 0;
+    transition: opacity 0.12s ease, visibility 0s linear 0.12s;
+}
+
+.note[data-on='true'] {
+    visibility: visible;
+    opacity: 1;
+    transition: opacity 0.2s ease 0.05s, visibility 0s;
+}
+
+.noteTag {
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 18px;
+    color: var(--k-text);
+}
+
+.noteHead {
+    display: flex;
+}
+
+/* 가리킨 조각: 이름(또렷하게) + 그 묶음 제목(흐리게) */
+.noteName {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0 6px;
+    font-size: 12px;
+    line-height: 18px;
+    color: var(--k-text-2);
+    word-break: keep-all;
+    overflow-wrap: anywhere;
+}
+
+.noteName strong {
+    font-weight: 600;
+    color: var(--k-text);
+}
+
+.noteText {
+    margin-top: 2px;
+    font-size: 13px;
+    line-height: 20px;
+    color: var(--k-text);
+    word-break: keep-all;
+    overflow-wrap: anywhere;
+}
+
+/* 올릴 수 없는 화면의 조각 보기: 건너온 연결의 이유를 그 묶음 아래 본문 안에 둡니다(고정하지 않음). */
+.inlineNote {
+    margin-top: 8px;
+    padding: 9px 12px 10px;
+    background: var(--k-lift);
+    border-radius: 5px;
+}
+
+/* ───────── 본문으로 가는 버튼(고정) ───────── */
+
+.foot {
+    flex-shrink: 0;
+    padding: 8px var(--k-pad);
+    border-top: 1px solid var(--k-hair);
+}
+
+.go {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    width: 100%;
+    height: 44px;
+    font: inherit;
+    font-size: 13px;
+    font-weight: 700;
+    color: #14171C;
+    background: var(--k-text);
+    border: 0;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: transform 0.12s var(--k-ease), background-color 0.15s ease;
+}
+
+.go span {
+    animation: wordIn 0.34s var(--k-ease) backwards;
+}
+
+.go svg {
+    transition: transform 0.25s var(--k-ease);
+}
+
+.go:active {
+    transform: scale(0.98);
+}
+
+@keyframes wordIn {
+    from { opacity: 0; transform: translateY(6px); filter: blur(3px); }
+}
+
+/* 올렸을 때의 반응은 마우스가 있는 기기에서만 */
+@media (hover: hover) {
+    .close:hover {
+        color: var(--k-text);
+        background: var(--k-lift);
+    }
+
+    .views button:hover,
+    .foldToggle:hover {
+        color: var(--k-text);
+    }
+
+    /* 포인터가 있는 자리에서 묶음 색이 옅게 번져 따라다닙니다. */
+    .chip:hover {
+        background-image: radial-gradient(72px circle at var(--mx) var(--my), color-mix(in srgb, var(--c) 26%, transparent), transparent 72%);
+    }
+
+    .chip:hover i {
+        height: 14px;
+    }
+
+    .row:hover {
+        background-color: var(--k-lift);
+    }
+
+    .row:hover .rowTop i {
+        height: 14px;
+        background: var(--cv, var(--c));
+    }
+
+    .go:hover {
+        background: #FFFFFF;
+    }
+
+    .go:hover svg {
+        transform: translate(2px, -2px);
+    }
+}
+
+/* 손가락으로 누르는 화면: 누르는 것은 모두 44px 이상 */
+@media (pointer: coarse), (max-width: 768px) {
+    .card {
+        --k-head-top: 8px;
+    }
+
+    .head {
+        padding: 2px 2px 8px var(--k-pad);
+    }
+
+    .eyebrow {
+        line-height: 20px;
+    }
+
+    .close {
+        width: 44px;
+        height: 44px;
+    }
+
+    /* 본문 첫 줄이 '연결된 항목' 줄(44px)이면 위 여백 없이 머리 바로 아래에 둡니다. */
+    .body {
+        padding-top: 0;
+    }
+
+    .detail:first-child {
+        margin-top: 10px;
+    }
+
+    .facts:first-child {
+        margin-top: 0;
+    }
+
+    .linkedHead {
+        min-height: 44px;
+    }
+
+    /* 보이는 크기는 34px 로 두고 누르는 상자만 44px 로 키웁니다(테두리와 밑판은 안쪽에 그림). */
+    .views {
+        padding: 0 2px;
+        box-shadow: none;
+    }
+
+    .views::after {
+        content: '';
+        position: absolute;
+        inset: 5px 0;
+        border-radius: 6px;
+        box-shadow: inset 0 0 0 1px var(--k-hair-2);
+        pointer-events: none;
+    }
+
+    .views::before {
+        top: 7px;
+        bottom: 7px;
+        border-radius: 4px;
+    }
+
+    .views button {
+        min-width: 60px;
+        height: 44px;
+        padding: 0 12px;
+    }
+
+    .linkedHead + .group {
+        margin-top: 2px;
+    }
+
+    .chips {
+        gap: 8px;
+        margin-top: 6px;
+    }
+
+    .chip {
+        min-height: 44px;
+        padding: 4px 14px 4px 12px;
+    }
+
+    .rows {
+        margin-top: 2px;
+    }
+
+    .row {
+        padding: 9px 8px 10px;
+    }
+
+    .foldToggle {
+        height: 44px;
+    }
+
+    .foot {
+        padding: 6px var(--k-pad) 8px;
+    }
+
+    .go {
+        height: 44px;
+    }
+
+    /* 자리가 낮은 시트(Inspector.js 의 TIGHT_SHEET): 머리를 이름·값만 남겨 낮춥니다. */
+    .card[data-tight='true'] .head {
+        padding-bottom: 4px;
+    }
+
+    .card[data-tight='true'] .value {
+        font-size: 20px;
+        line-height: 26px;
+    }
+
+    /* 그래도 첫 묶음의 첫 줄이 안 들어오는 시트(Inspector.js 의 steps 'snug' — 좁은 폰에서 걸러 보는 중이거나 제목이 두세 줄일 때):
+       머리·버튼의 여백과 묶음 사이를 더 줄입니다. 누르는 크기는 그대로 둡니다. */
+    .card[data-snug='true'] .head {
+        padding-bottom: 2px;
+    }
+
+    /* 제목이 두 줄이면 값이 따로 한 줄을 차지하지 않게, 제목 끝에 이어서 적습니다(값은 한 덩어리로 줄을 바꿈). */
+    .card[data-snug='true']:not([data-collapsed='true']) .heading {
+        display: block;
+    }
+
+    /* 사이 간격은 제목 끝에 둡니다(값이 다음 줄로 내려가면 줄 머리에 맞게). */
+    .card[data-snug='true']:not([data-collapsed='true']) .title {
+        display: inline;
+        margin-right: 10px;
+    }
+
+    /* 제목이 따옴표로 끝나면 그 뒤에서 줄을 못 바꿔 제목이 쪼개지므로, 줄 바꿈 자리(폭 없는 빈칸)를 넣어 둡니다. */
+    .card[data-snug='true']:not([data-collapsed='true']) .title::after {
+        content: '\200B';
+    }
+
+    .card[data-snug='true']:not([data-collapsed='true']) .value {
+        display: inline-block;
+    }
+
+    .card[data-snug='true'] .foot {
+        padding: 4px var(--k-pad);
+    }
+
+    .card[data-snug='true'] .linkedHead + .group {
+        margin-top: 0;
+    }
+
+    .card[data-snug='true'] .chips {
+        margin-top: 4px;
+    }
+}
+
+/* 좁은 화면: 작은 제목 13px, 설명·조각·줄 14px 이상 */
+@media (max-width: 720px) {
+    .card {
+        font-size: 14px;
+    }
+
+    .eyebrow {
+        font-size: 13px;
+    }
+
+    .title[data-long='true'] {
+        font-size: 16px;
+        line-height: 23px;
+    }
+
+    .detail {
+        font-size: 14px;
+        line-height: 21px;
+    }
+
+    .facts dt {
+        font-size: 13px;
+        line-height: 19px;
+    }
+
+    .facts dd {
+        font-size: 16px;
+        line-height: 22px;
+    }
+
+    .linkedHead h4,
+    .views button,
+    .foldToggle,
+    .badge,
+    .triple,
+    .noteName,
+    .rowTag,
+    .noteTag {
+        font-size: 13px;
+        line-height: 20px;
+    }
+
+    .group h5 {
+        font-size: 14px;
+        line-height: 20px;
+    }
+
+    .chip {
+        font-size: 14px;
+        line-height: 20px;
+    }
+
+    .rowTop strong {
+        font-size: 15px;
+        line-height: 21px;
+    }
+
+    .rowWhy,
+    .noteText {
+        font-size: 14px;
+        line-height: 21px;
+    }
+
+    .go {
+        font-size: 15px;
+    }
+}
+
+/* 움직임 줄이기: 바로 바뀝니다. */
+@media (prefers-reduced-motion: reduce) {
+    .body,
+    .facts > div,
+    .chips li,
+    .rows li,
+    .rollMark,
+    .go span {
+        animation: none;
+    }
+
+    .rest,
+    .card[data-collapsed='true'] .restIn,
+    .eyebrow i,
+    .chip,
+    .chip i,
+    .rowTop i,
+    .row,
+    .close,
+    .views::before,
+    .views button,
+    .foldToggle,
+    .foldToggle svg,
+    .note,
+    .note[data-on='true'],
+    .rollDigit > span,
+    .go,
+    .go svg {
+        transition: none;
+    }
+
+    /* 페이지의 안전망(모든 요소의 전환 시간을 0.01ms 로 줄임)이 걸리면, 전환 대상이 기본값(all)인 요소는 치수 변화가 한 프레임 늦게 적용됩니다.
+       카드는 열자마자 치수를 재서 첫 묶음이 보이도록 줄이므로(Inspector.js 의 steps), 전환 대상을 없애 바로 적용되게 합니다. */
+    .card,
+    .card *,
+    .card *::before,
+    .card *::after {
+        transition-property: none !important;
+    }
+}

@@ -1,6 +1,7 @@
 'use client';
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -11,8 +12,10 @@ import {
     TrendingDown, TrendingUp, Utensils, Waypoints, X,
 } from 'lucide-react';
 import DashboardLayout from '@/components/layout/DashboardLayout';
-import { keywordFrequency, diagnoseRank, parseCount, buildActionItems, daysAgo, distanceKm, rankLocality } from '@/lib/naver-place';
+import { keywordFrequency, diagnoseRank, parseCount, buildActionItems, distanceKm, rankLocality } from '@/lib/naver-place';
 import { recommendKeywords, pickRankKeywords, rankScope } from '@/lib/place-keywords';
+// 숫자·날짜·순위 표기는 연결 그래프와 본문이 같은 글자를 쓰도록 lib/place-graph 의 것을 함께 씁니다.
+import { buildPlaceGraph, buildIdleGraph, ONTOLOGY, ontologyFor, itemWord, formatNumber, agoLabel, won, rankLabel, rankTone, sampleSuffix } from '@/lib/place-graph';
 import styles from './page.module.css';
 import PlaceGraph from './PlaceGraph';
 import GeoAeoPanel from './GeoAeoPanel';
@@ -25,30 +28,9 @@ const MENU_SHOWN = 8;
 
 /* ───────── 표시 도우미 ───────── */
 
-function formatNumber(value) {
-    return value === null || value === undefined ? '-' : Number(value).toLocaleString('ko-KR');
-}
-
-function agoLabel(isoDate) {
-    const days = daysAgo(isoDate);
-    if (days === null) return '-';
-    if (days <= 0) return '오늘';
-    if (days === 1) return '어제';
-    return `${formatNumber(days)}일 전`;
-}
-
-function won(value) {
-    return value ? `${formatNumber(value)}원` : '-';
-}
-
 function timeLabel(ms) {
     if (!ms) return '';
     return new Date(ms).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false });
-}
-
-function shorten(text, max) {
-    const value = String(text || '').trim();
-    return value.length > max ? `${value.slice(0, max - 1)}…` : value;
 }
 
 // 1km 미만은 10m 단위, 10km 미만은 소수 한 자리
@@ -80,19 +62,6 @@ function errorText(data, fallback) {
     return fallback;
 }
 
-function rankLabel(result) {
-    if (result.status === 'found') return `${result.rank}위`;
-    if (result.status === 'not_listed') return '목록에 없음';
-    return `${formatNumber(result.scanned)}위 밖`;
-}
-
-// 10위 안은 초록, 50위 안은 검정, 그 밖은 주황, 못 찾으면 빨강
-function rankTone(result) {
-    if (result.status !== 'found') return 'bad';
-    if (result.rank <= 10) return 'good';
-    return result.rank <= 50 ? 'ink' : 'warn';
-}
-
 function recordNote(recorded) {
     if (!recorded) return null;
     if (recorded.saved) {
@@ -104,11 +73,6 @@ function recordNote(recorded) {
     if (recorded.reason === 'LIMIT') return '순위 기록장이 가득 차(10개) 기록하지 못했습니다.';
     if (recorded.reason === 'NO_RESULTS') return '검색된 매장이 없어 기록하지 않았습니다.';
     return null;
-}
-
-// 최근 표본을 꽉 채웠고 전체가 더 많으면 "n개 이상"으로 보여 줍니다.
-function sampleSuffix(count, sampled, total) {
-    return count > 0 && count === sampled && total > sampled ? '개 이상' : '개';
 }
 
 // 전체 대비 비율(%). 값이 없거나 전체보다 크면(집계 기준이 다른 경우) 보여 주지 않습니다.
@@ -123,6 +87,30 @@ function reducedMotion() {
 
 function scrollToId(id) {
     document.getElementById(id)?.scrollIntoView({ behavior: reducedMotion() ? 'auto' : 'smooth', block: 'start' });
+}
+
+// 화면 이동이 끝난 뒤(스크롤이 멈춘 뒤)에 한 번 부릅니다. 움직임이 없으면 곧바로 부릅니다.
+// 돌려주는 함수를 부르면 기다리던 것을 그만둡니다.
+function afterScroll(callback) {
+    let quiet = 0;
+    let limit = 0;
+    function stop() {
+        window.removeEventListener('scroll', onScroll);
+        clearTimeout(quiet);
+        clearTimeout(limit);
+    }
+    function done() {
+        stop();
+        callback();
+    }
+    function onScroll() {
+        clearTimeout(quiet);
+        quiet = setTimeout(done, 120);
+    }
+    window.addEventListener('scroll', onScroll, { passive: true });
+    limit = setTimeout(done, 3000);
+    onScroll();
+    return stop;
 }
 
 /* ───────── 움직임: 화면에 들어오면 펼치기, 숫자 올리기 ───────── */
@@ -214,149 +202,18 @@ function Meter({ ratio, tone }) {
     );
 }
 
-/* ───────── 그래프 데이터 ───────── */
-
-const ACTION_TONE = { high: 'bad', mid: 'warn', low: 'ink' };
-
-// 키워드 점 아래에 순위를 함께 적습니다(순위마다 점을 따로 두면 라벨이 겹쳐서 한 점으로 합침).
-function rankBadge(row) {
-    if (!row) return { detail: '아직 순위를 조회하지 않았습니다' };
-    if (row.state === 'loading') return { sub: '조회 중', subTone: 'pending', tone: 'pending', detail: '순위를 조회하고 있습니다' };
-    if (row.state === 'error') return { sub: '조회 실패', subTone: 'muted', tone: 'muted', detail: row.error || '순위를 조회하지 못했습니다' };
-    const tone = rankTone(row.result);
-    return {
-        sub: rankLabel(row.result),
-        subTone: tone,
-        tone,
-        detail: [rankLabel(row.result), row.result.total ? `검색된 매장 ${formatNumber(row.result.total)}곳` : null].filter(Boolean).join(' · '),
-    };
-}
-
-// 점의 id 는 본문 카드의 data-node 와 같습니다. 같은 id 끼리 서로 밝혀 그래프와 카드를 잇습니다.
-function buildGraph(place, activity, ranks, actions) {
-    const nodes = [];
-    const links = [];
-    const add = (node, parent) => {
-        nodes.push({ go: '눌러서 이동', ...node, parent: parent || null });
-        if (parent) links.push({ id: `${node.id}>${parent}`, source: node.id, target: parent });
-    };
-    add({
-        id: 'store', level: 0, group: 'store', label: shorten(place.name, 16), full: place.name, sub: shorten(place.category, 18),
-        detail: [place.category, `방문자 리뷰 ${formatNumber(place.visitorReviews)}`, `블로그·카페 리뷰 ${formatNumber(place.blogReviews)}`].filter(Boolean).join(' · '),
-        go: null, target: 'sec-summary', aria: `${place.name} 요약으로 이동`,
-    });
-
-    const rankByKeyword = new Map(ranks.map((row) => [row.keyword, row]));
-    const words = ranks.length ? ranks.map((row) => row.keyword) : (place.keywords || []).slice(0, MAX_KEYWORDS);
-    if (words.length === 0) {
-        add({ id: 'kw:none', level: 1, group: 'search', tone: 'bad', label: '대표키워드 없음', detail: '스마트플레이스에서 5개까지 등록할 수 있습니다', target: 'sec-rank', aria: '키워드 순위로 이동' }, 'store');
-    }
-    words.forEach((word, index) => {
-        const target = ranks.length ? `rank-row-${index}` : 'sec-rank';
-        add({
-            id: `kw:${word}`, level: 1, group: 'search', label: shorten(word, 10), full: word, ...rankBadge(rankByKeyword.get(word)),
-            go: '눌러서 순위 표 보기', target, keyword: word, aria: `${word} 순위로 이동`,
-        }, 'store');
-    });
-
-    add({
-        id: 'hub:voice', level: 1, group: 'voice', label: '리뷰', target: 'sec-reviews', aria: '리뷰로 이동',
-        detail: `방문자 ${formatNumber(place.visitorReviews)} · 블로그·카페 ${formatNumber(place.blogReviews)}`,
-    }, 'store');
-    add({ id: 'rv:visitor', level: 2, group: 'voice', label: `방문자 ${formatNumber(place.visitorReviews)}`, full: '방문자 리뷰', detail: `${formatNumber(place.visitorReviews)}개${place.reviewAuthors ? ` · ${formatNumber(place.reviewAuthors)}명이 작성` : ''}`, target: 'sec-reviews' }, 'hub:voice');
-    add({ id: 'rv:blog', level: 2, group: 'voice', label: `블로그 ${formatNumber(place.blogReviews)}`, full: '블로그·카페 리뷰', detail: `${formatNumber(place.blogReviews)}개`, target: 'sec-reviews' }, 'hub:voice');
-    if (place.visitorScore) add({ id: 'rv:score', level: 2, group: 'voice', label: `평점 ${place.visitorScore.toFixed(2)}`, full: '평점', detail: `${place.visitorScore.toFixed(2)}점`, target: 'sec-reviews' }, 'hub:voice');
-    const vote = place.reviewVotes?.[0];
-    if (vote) add({ id: 'rv:vote', level: 2, group: 'voice', label: shorten(vote.label, 9), full: vote.label, detail: `손님 ${formatNumber(vote.count)}명이 고른 좋은 점`, target: 'sec-reviews' }, 'hub:voice');
-
-    const { visitor, feeds, coupons } = activity || {};
-    add({
-        id: 'hub:activity', level: 1, group: 'voice', tone: activity ? undefined : 'muted', label: activity ? '활동' : '활동 확인 불가',
-        full: '리뷰·소식 활동', detail: activity ? '최근 리뷰·답글·소식·쿠폰' : '활동 정보를 불러오지 못했습니다', target: 'sec-activity', aria: '리뷰·소식 활동으로 이동',
-    }, 'store');
-    if (visitor && visitor.replyRate !== null) {
-        const tone = visitor.replyRate < 10 ? 'bad' : visitor.replyRate < 50 ? 'warn' : 'good';
-        add({ id: 'ac:reply', level: 2, group: 'voice', tone, label: `답글률 ${visitor.replyRate}%`, full: '사장님 답글률', detail: `${visitor.replyRate}% · 최근 ${formatNumber(visitor.sampled)}개 중 ${formatNumber(visitor.replied)}개 답글`, target: 'sec-activity' }, 'hub:activity');
-    }
-    if (visitor) add({ id: 'ac:week', level: 2, group: 'voice', label: `7일 리뷰 ${formatNumber(visitor.last7)}`, full: '최근 7일 방문자 리뷰', detail: `${formatNumber(visitor.last7)}${sampleSuffix(visitor.last7, visitor.sampled, visitor.total)}`, target: 'sec-activity' }, 'hub:activity');
-    if (feeds) {
-        const stale = !feeds.latest || (feeds.daysSinceLatest !== null && feeds.daysSinceLatest > 30);
-        add({ id: 'ac:feed', level: 2, group: 'voice', tone: stale ? 'warn' : undefined, label: feeds.latest ? `소식 ${agoLabel(feeds.latest)}` : '소식 없음', full: '마지막 소식', detail: feeds.latest ? `${agoLabel(feeds.latest)}${feeds.latestTitle ? ` · ${feeds.latestTitle}` : ''}` : '소식 탭에 올린 글이 없습니다', target: 'sec-activity' }, 'hub:activity');
-    }
-    if (coupons) add({ id: 'ac:coupon', level: 2, group: 'voice', tone: coupons.total === 0 ? 'warn' : undefined, label: `쿠폰 ${formatNumber(coupons.total)}개`, full: '쿠폰', detail: coupons.total ? `${formatNumber(coupons.total)}개 등록` : '등록된 쿠폰이 없습니다', target: 'sec-activity' }, 'hub:activity');
-
-    const pos = place.detail?.pos;
-    if (pos) {
-        add({ id: 'hub:pos', level: 1, group: 'pay', label: '결제 데이터', detail: '네이버페이 결제 단말(POS) 최근 1주 집계', target: 'sec-pos', aria: '결제 데이터로 이동' }, 'store');
-        if (pos.weeklySales !== null) add({ id: 'pos:sales', level: 2, group: 'pay', label: `주간 ${formatNumber(pos.weeklySales)}건`, full: '주간 결제 건수', detail: `${formatNumber(pos.weeklySales)}건`, target: 'sec-pos' }, 'hub:pos');
-        if (pos.averagePrice.total) add({ id: 'pos:price', level: 2, group: 'pay', label: `평균 ${won(pos.averagePrice.total)}`, full: '1회 평균 결제', detail: won(pos.averagePrice.total), target: 'sec-pos' }, 'hub:pos');
-        if (pos.busiestDay) add({ id: 'pos:day', level: 2, group: 'pay', label: `${pos.busiestDay}요일 최다`, full: '가장 붐비는 요일', detail: `${pos.busiestDay}요일`, target: 'sec-pos' }, 'hub:pos');
-        if (pos.popularMenus[0]) add({ id: 'pos:menu', level: 2, group: 'pay', label: shorten(pos.popularMenus[0].name, 9), full: pos.popularMenus[0].name, detail: `주간 인기 메뉴 1위${pos.popularMenus[0].share !== null ? ` · 주문의 ${pos.popularMenus[0].share}%` : ''}`, target: 'sec-pos' }, 'hub:pos');
-    }
-
-    const high = actions.filter((item) => item.level === 'high').length;
-    add({
-        id: 'hub:todo', level: 1, group: 'todo', tone: actions.length ? undefined : 'good', label: actions.length ? `할 일 ${actions.length}` : '할 일 없음',
-        full: '지금 할 일', detail: actions.length ? `${actions.length}개${high ? ` · 먼저 할 일 ${high}개` : ''}` : '지금 확인된 빈 항목이 없습니다', target: 'sec-todo', aria: '지금 할 일로 이동',
-    }, 'store');
-    actions.slice(0, 5).forEach((item) => {
-        add({ id: `todo:${item.key}`, level: 2, group: 'todo', tone: ACTION_TONE[item.level] || 'ink', label: shorten(item.title, 10), full: item.title, detail: shorten(item.detail, 60), target: 'sec-todo' }, 'hub:todo');
-    });
-
-    const detail = place.detail;
-    if (detail) {
-        add({ id: 'hub:ops', level: 1, group: 'ops', label: '운영', full: '운영 정보', detail: '영업시간·사진·네이버 도구', target: 'sec-ops', aria: '운영 정보로 이동' }, 'store');
-        if (detail.hours) {
-            add({ id: 'ops:hours', level: 2, group: 'ops', tone: detail.hours.registered ? 'good' : 'bad', label: detail.hours.registered ? '영업시간 등록' : '영업시간 없음', full: '영업시간', detail: detail.hours.registered ? [detail.hours.status, detail.hours.statusText].filter(Boolean).join(' · ') || '등록됨' : '등록되지 않았습니다', target: 'sec-ops' }, 'hub:ops');
-        }
-        if (detail.photos?.business !== null && detail.photos?.business !== undefined) {
-            add({ id: 'ops:photos', level: 2, group: 'ops', label: `업체 사진 ${formatNumber(detail.photos.business)}`, full: '업체 사진', detail: `${formatNumber(detail.photos.business)}장`, target: 'sec-ops' }, 'hub:ops');
-        }
-        if (detail.hasBooking !== null) {
-            add({ id: 'ops:booking', level: 2, group: 'ops', tone: detail.hasBooking ? 'good' : 'warn', label: detail.hasBooking ? '예약 연결' : '예약 없음', full: '네이버 예약', detail: detail.hasBooking ? '연결됨' : '연결되지 않았습니다', target: 'sec-ops' }, 'hub:ops');
-        }
-    }
-
-    add({ id: 'hub:geo', level: 1, group: 'geo', label: 'AI 검색', full: 'AI 검색(GEO·AEO) 진단', detail: 'AI가 내 매장을 추천할 재료가 있는지 점수로 봅니다', target: 'sec-geo', aria: 'AI 검색 진단으로 이동' }, 'store');
-    return { nodes, links };
-}
-
-const IDLE_HUBS = [
-    ['search', '숨은 대표키워드'], ['search', '검색 순위'], ['search', '상위 매장 비교'],
-    ['voice', '리뷰·소식 활동'], ['pay', '결제 데이터'], ['todo', '지금 할 일'], ['geo', 'AI 검색 진단'],
-];
-
-function buildIdleGraph(loading) {
-    const nodes = [{
-        id: 'store', level: 0, group: 'store', ghost: !loading, label: loading ? '조회 중' : '내 매장',
-        detail: loading ? '네이버 플레이스에서 매장 정보를 읽고 있습니다' : '주소를 넣고 분석하면 내 매장 데이터로 채워집니다',
-        aria: '플레이스 주소 입력으로 이동', parent: null,
-    }];
-    const links = [];
-    IDLE_HUBS.forEach(([group, label], index) => {
-        const id = `idle:${index}`;
-        nodes.push({ id, level: 1, group, label, ghost: true, detail: loading ? '불러오는 중' : '주소를 넣으면 채워집니다', aria: `${label}: 주소를 넣으면 채워집니다`, parent: 'store' });
-        links.push({ id: `${id}>store`, source: id, target: 'store' });
-        for (let j = 0; j < 2; j += 1) {
-            const leaf = `${id}:${j}`;
-            nodes.push({ id: leaf, level: 2, group, ghost: true, parent: id });
-            links.push({ id: `${leaf}>${id}`, source: leaf, target: id });
-        }
-    });
-    return { nodes, links };
-}
+/* ───────── 그래프 데이터 ─────────
+ * 점과 연결은 lib/place-graph.js 의 buildPlaceGraph 가 만듭니다(순수 함수, tests/place-graph.test.mjs).
+ * 점의 id 는 본문 카드의 data-node 와 같습니다. 같은 id 끼리 서로 밝혀 그래프와 카드를 잇습니다. */
 
 const IDLE_GRAPH = buildIdleGraph(false);
 const LOADING_GRAPH = buildIdleGraph(true);
 
-const LEGEND = [
-    { group: 'search', label: '검색 순위' },
-    { group: 'voice', label: '리뷰·활동' },
-    { group: 'pay', label: '결제' },
-    { group: 'todo', label: '할 일' },
-    { group: 'ops', label: '운영' },
-    { group: 'geo', label: 'AI 검색' },
-];
+// 범례의 묶음 이름은 그래프 데이터가 쓰는 묶음 이름(ONTOLOGY.groups)을 그대로 씁니다(범례·묶음 점·카드 머리가 같은 말).
+const LEGEND = Object.entries(ONTOLOGY.groups)
+    .filter(([group]) => group !== 'store')
+    .sort((a, b) => a[1].order - b[1].order)
+    .map(([group, info]) => ({ group, label: info.label }));
 
 // 구역 머리의 '그래프' 버튼과 카드 강조가 함께 쓰는 연결 통로
 const GraphLink = createContext({ showInGraph: () => {} });
@@ -716,7 +573,7 @@ function KeywordSlots({ keywords, diagnosis, blogTotal, onCopy }) {
                     {slots.map((word, index) => {
                         const state = word ? stateOf.get(word) : null;
                         return (
-                            <li key={word || `empty-${index}`} data-empty={word ? undefined : 'true'} style={{ '--d': index }}>
+                            <li key={word || `empty-${index}`} data-empty={word ? undefined : 'true'} data-node={word ? `kw:${word}` : undefined} style={{ '--d': index }}>
                                 <span>{word || '빈 칸'}</span>
                                 {state && <small className={styles.slotState} data-tone={state.tone}>{state.text}</small>}
                             </li>
@@ -787,7 +644,7 @@ function KeywordReco({ recommendation, ranks, rankPick, comparing, ranking, unav
                     {shown.map((item, index) => {
                         const row = rankOf.get(item.keyword);
                         return (
-                            <li key={item.keyword} style={{ '--d': index }}>
+                            <li key={item.keyword} data-node={`kw:${item.keyword}`} style={{ '--d': index }}>
                                 <span className={styles.recoWord}>
                                     <strong>{item.keyword}</strong>
                                     {!item.registrable && <span className={styles.tagMuted}>순위 확인용</span>}
@@ -1134,7 +991,7 @@ function ReviewSection({ place, briefing, mentions, unmentioned = [] }) {
                         {place.reviewAuthors ? <dd className={styles.figureNote}>{formatNumber(place.reviewAuthors)}명이 작성</dd> : null}
                     </div>
                     {place.textReviews !== null && place.textReviews !== undefined && (
-                        <div>
+                        <div data-node="rv:text">
                             <dt>글 리뷰</dt>
                             <dd><CountUp value={place.textReviews} /></dd>
                             {shareOf(place.textReviews, place.visitorReviews) !== null && <dd className={styles.figureNote}>방문자 리뷰 대비 {shareOf(place.textReviews, place.visitorReviews)}%</dd>}
@@ -1159,14 +1016,15 @@ function ReviewSection({ place, briefing, mentions, unmentioned = [] }) {
                     {hasCounts ? (
                         <>
                             <CountList title="손님이 고른 좋은 점" items={place.reviewVotes} unit="명" d={2} node="rv:vote" />
-                            <CountList title="많이 언급된 주제" items={place.reviewThemes} d={3} />
-                            <CountList title="많이 언급된 메뉴·시술" items={place.reviewMenus} d={4} />
-                            <CountList title="예약 많은 스타일" items={styleItems} unit="건" d={5} />
+                            <CountList title="많이 언급된 주제" items={place.reviewThemes} d={3} node="rv:theme" />
+                            <CountList title={`많이 언급된 ${itemWord(place)}`} items={place.reviewMenus} d={4} node="rv:menu" />
+                            <CountList title="예약 많은 스타일" items={styleItems} unit="건" d={5} node="ops:style" />
                             <CountList
                                 title={`블로그 후기에 나온 낱말${mentions?.blogTotal ? ` (전체 ${formatNumber(mentions.blogTotal)}개 중)` : ''}`}
                                 items={mentionItems}
                                 unit="개"
                                 d={6}
+                                node="rv:mention"
                             />
                         </>
                     ) : (
@@ -1180,7 +1038,7 @@ function ReviewSection({ place, briefing, mentions, unmentioned = [] }) {
                 </p>
             )}
             {briefing && (
-                <figure className={`${styles.briefing} ${styles.rise}`} style={{ '--d': 5 }}>
+                <figure className={`${styles.briefing} ${styles.rise}`} data-node="rv:briefing" style={{ '--d': 5 }}>
                     <figcaption>
                         <strong>네이버 AI 브리핑</strong>
                         리뷰를 바탕으로 매장 화면에 보여 주는 요약입니다. 손님이 내 매장을 어떻게 기억하는지 확인하세요.
@@ -1194,7 +1052,7 @@ function ReviewSection({ place, briefing, mentions, unmentioned = [] }) {
     );
 }
 
-const TILE_NODE = { last7: 'ac:week', reply: 'ac:reply', feed: 'ac:feed', coupon: 'ac:coupon' };
+const TILE_NODE = { last7: 'ac:week', reply: 'ac:reply', revisit: 'ac:revisit', blog: 'ac:blog', feed: 'ac:feed', coupon: 'ac:coupon' };
 
 function ActivitySection({ activity, error }) {
     const { visitor, blog, feeds, coupons } = activity || {};
@@ -1297,7 +1155,7 @@ function PosSection({ pos }) {
                     <dt>가장 붐비는 요일</dt>
                     <dd>{pos.busiestDay ? <>{pos.busiestDay}<small>요일</small></> : '-'}</dd>
                 </div>
-                <div className={styles.rise} style={{ '--d': 4 }}>
+                <div className={styles.rise} data-node="pos:stay" style={{ '--d': 4 }}>
                     <dt>평균 체류 시간</dt>
                     <dd>{pos.stayMinutes ? <><CountUp value={pos.stayMinutes} /><small>분</small></> : '-'}</dd>
                 </div>
@@ -1410,7 +1268,7 @@ function MenuBoard({ place }) {
     const gaps = [unpriced > 0 ? `가격 없는 메뉴 ${unpriced}개` : null, noPhoto > 0 ? `사진 없는 메뉴 ${noPhoto}개` : null].filter(Boolean);
     const shown = open ? menus : menus.slice(0, MENU_SHOWN);
     return (
-        <div className={`${styles.menuBoard} ${styles.rise}`} style={{ '--d': 3 }}>
+        <div className={`${styles.menuBoard} ${styles.rise}`} data-node="ops:menu" style={{ '--d': 3 }}>
             <div className={styles.menuHead}>
                 <h3>메뉴·가격 <span className={styles.slotCount}>{formatNumber(total)}</span></h3>
                 <p>
@@ -1500,20 +1358,20 @@ function OpsSection({ place }) {
                             {[detail.stylistCount > 0 ? `디자이너 ${formatNumber(detail.stylistCount)}명` : null, ...themes].filter(Boolean).join(' · ')}
                         </Fact>
                     )}
-                    {seatText && <Fact label="좌석·대관">{seatText}</Fact>}
+                    {seatText && <Fact label="좌석·대관" node="ops:seat">{seatText}</Fact>}
                     {typeof detail.hasAiBriefing === 'boolean' && (
                         <Fact label="네이버 AI 브리핑">{detail.hasAiBriefing ? '매장 화면에 노출 중' : '아직 노출되지 않음'}</Fact>
                     )}
                     {parking && (
-                        <Fact label="주차">
+                        <Fact label="주차" node="ops:parking">
                             {parking.available ? `가능${parking.free === true ? ' (무료)' : parking.free === false ? ' (유료)' : ''}${parking.valet ? ' · 발레파킹' : ''}` : '정보 없음'}
                         </Fact>
                     )}
-                    {detail.facilities.length > 0 && <Fact label="편의시설">{detail.facilities.join(', ')}{detail.pet === true ? ' · 반려동물 동반' : ''}</Fact>}
-                    {detail.links.length > 0 && <Fact label="연결 채널">{detail.links.join(', ')}</Fact>}
+                    {detail.facilities.length > 0 && <Fact label="편의시설" node="ops:conv">{detail.facilities.join(', ')}{detail.pet === true ? ' · 반려동물 동반' : ''}</Fact>}
+                    {detail.links.length > 0 && <Fact label="연결 채널" node="ops:links">{detail.links.join(', ')}</Fact>}
                     {externalSites.length > 0 && <Fact label="함께 보이는 서비스">{externalSites.join(', ')}</Fact>}
                     {detail.subway && (
-                        <Fact label="가까운 역">
+                        <Fact label="가까운 역" node="ops:subway">
                             {detail.subway.station}{detail.subway.exit ? ` ${detail.subway.exit}번 출구` : ''}{detail.subway.walkMinutes ? ` · 걸어서 ${detail.subway.walkMinutes}분` : ''}
                         </Fact>
                     )}
@@ -1832,7 +1690,8 @@ export default function PlaceInsightPage() {
         if (!place) return;
         const index = ranks.findIndex((row) => row.keyword === keyword);
         if (index >= 0) {
-            if (ranks[index].state === 'done') setOpenKeyword(keyword);
+            // 펼침을 먼저 화면에 반영한 뒤 이동합니다(이유는 아래 openRank 설명 참고).
+            if (ranks[index].state === 'done') flushSync(() => setOpenKeyword(keyword));
             scrollToId(`rank-row-${index}`);
             return;
         }
@@ -1895,8 +1754,10 @@ export default function PlaceInsightPage() {
     const comparable = ranks.find((row) => row.state === 'done' && row.result.top.filter((item) => !item.isTarget).length >= 2)?.result || null;
     const graph = useMemo(() => {
         if (loadingPlace) return LOADING_GRAPH;
-        return place ? buildGraph(place, activity, ranks, actions) : IDLE_GRAPH;
-    }, [loadingPlace, place, activity, ranks, actions]);
+        return place ? buildPlaceGraph({ place, activity, ranks, rivals, rivalPool, recommendation, actions }) : IDLE_GRAPH;
+    }, [loadingPlace, place, activity, ranks, rivals, rivalPool, recommendation, actions]);
+    // 점마다 한 단계 위의 점. 자기 카드가 없는 세부 점에서 윗단계 카드를 찾을 때 씁니다.
+    const parentOf = useMemo(() => new Map(graph.nodes.map((node) => [node.id, node.parent])), [graph]);
     const showResult = place && !loadingPlace;
 
     const sections = useMemo(() => {
@@ -1966,20 +1827,28 @@ export default function PlaceInsightPage() {
     const scrollTo = scrollToId;
 
     // 그래프 점과 같은 id(data-node)를 가진 카드들
-    const cardsOf = (id) => {
+    const cardsOf = useCallback((id) => {
         const root = sheetRef.current;
         if (!root || !id) return [];
         return [...root.querySelectorAll(`[data-node="${CSS.escape(id)}"]`)];
-    };
+    }, []);
 
-    // 그래프 → 카드: 그래프에서 가리킨 점과 같은 카드를 밝힙니다.
+    // 자기 카드가 없는 점(리뷰 좋은 점 하나, 경쟁 매장의 키워드 같은 세부·근거)은 윗단계로 올라가며 카드가 있는 점을 찾습니다.
+    const hostOf = useCallback((id) => {
+        for (let current = id, hop = 0; current && current !== 'store' && hop < 4; current = parentOf.get(current), hop += 1) {
+            if (cardsOf(current).length > 0) return current;
+        }
+        return null;
+    }, [parentOf, cardsOf]);
+
+    // 그래프 → 카드: 그래프에서 가리킨 점과 같은 카드(없으면 가장 가까운 윗단계 카드)를 밝힙니다.
     const markLinked = useCallback((node) => {
         const root = sheetRef.current;
         if (!root) return;
         root.querySelectorAll('[data-linked]').forEach((el) => el.removeAttribute('data-linked'));
         if (!node) return;
-        root.querySelectorAll(`[data-node="${CSS.escape(node.id)}"]`).forEach((el) => el.setAttribute('data-linked', 'true'));
-    }, []);
+        cardsOf(hostOf(node.id)).forEach((el) => el.setAttribute('data-linked', 'true'));
+    }, [cardsOf, hostOf]);
 
     // 카드 → 그래프: 카드마다 핸들러를 달지 않고 시트에서 한 번에 받아, 같은 id 의 점을 밝힙니다.
     const onSheetOver = (event) => {
@@ -2003,13 +1872,17 @@ export default function PlaceInsightPage() {
     };
 
     // 이동한 자리의 카드를 잠깐 강조해 그래프에서 고른 항목이 어디인지 알려 줍니다.
+    // 화면이 그 자리에 도착한 뒤에 시작합니다(이동하는 동안 시작하면 도착했을 때는 강조가 이미 끝나 있습니다).
     const flash = (id) => {
         const state = linkState.current;
-        const cards = cardsOf(id);
         clearTimeout(state.flashTimer);
+        state.flashWait?.();
         sheetRef.current?.querySelectorAll('[data-flash]').forEach((el) => el.removeAttribute('data-flash'));
-        requestAnimationFrame(() => cards.forEach((el) => el.setAttribute('data-flash', 'true')));
-        state.flashTimer = setTimeout(() => cards.forEach((el) => el.removeAttribute('data-flash')), 2200);
+        state.flashWait = afterScroll(() => {
+            const cards = cardsOf(id);
+            cards.forEach((el) => el.setAttribute('data-flash', 'true'));
+            state.flashTimer = setTimeout(() => cards.forEach((el) => el.removeAttribute('data-flash')), 2200);
+        });
     };
 
     // 그래프 점·요약 숫자 → 본문: 같은 id 의 카드(없으면 구역)로 이동합니다.
@@ -2029,7 +1902,7 @@ export default function PlaceInsightPage() {
             const state = linkState.current;
             state.pin = { x: event?.clientX ?? 0, y: event?.clientY ?? 0 };
             state.card = null;
-            scrollToId('sec-summary');
+            scrollToId('sec-graph');
             graphRef.current?.focus(id);
             setTimeout(() => graphRef.current?.ping(id), reducedMotion() ? 0 : 520);
             clearTimeout(state.pinTimer);
@@ -2040,10 +1913,13 @@ export default function PlaceInsightPage() {
         },
     }), []);
 
+    // 순위 표의 한 줄을 펼치고 그 줄로 갑니다.
+    // 펼침을 먼저 화면에 반영(flushSync)한 뒤에 이동해야 합니다. 열려 있던 다른 줄이 접히면 그 아래 줄들이 접힌 높이만큼
+    // 올라오는데, 접히기 전의 자리를 향해 이동하면 꼭 그만큼 지나쳐서 고른 줄이 화면 위로 사라집니다.
     const openRank = (keyword) => {
         const index = ranks.findIndex((row) => row.keyword === keyword);
         if (index < 0) return;
-        if (ranks[index].state === 'done') setOpenKeyword(keyword);
+        if (ranks[index].state === 'done') flushSync(() => setOpenKeyword(keyword));
         scrollTo(`rank-row-${index}`);
         flash(`kw:${keyword}`);
     };
@@ -2058,7 +1934,14 @@ export default function PlaceInsightPage() {
             openRank(node.keyword);
             return;
         }
-        jumpTo(node.id, node.target || 'sec-summary');
+        // 자기 카드가 없는 점: 점이 가리키는 자리(target)가 구역보다 좁으면 그곳으로, 아니면 가장 가까운 윗단계 카드로 갑니다.
+        const host = hostOf(node.id);
+        if (host !== node.id && node.target && !node.target.startsWith('sec-') && document.getElementById(node.target)) {
+            scrollTo(node.target);
+            flash(host);
+            return;
+        }
+        jumpTo(host || node.id, node.target || 'sec-summary');
     };
 
     return (
@@ -2135,21 +2018,23 @@ export default function PlaceInsightPage() {
                 )}
 
                 <section id="sec-summary" className={styles.stage} aria-busy={loadingPlace} aria-label="매장 연결 그래프와 요약">
-                    <div className={styles.graphPane}>
+                    {/* sec-graph: 본문의 '그래프' 버튼과 목차의 매장 이름이 올라오는 자리.
+                        ontology 는 업종에 맞는 낱말(메뉴·시술)로 바꾼 스키마입니다(같은 업종이면 늘 같은 객체라 다시 그리지 않음).
+                        조작 안내는 그래프가 입력 방식에 맞춰 직접 쓰므로, 빈 화면·불러오는 중의 문구(hint)와 이 화면에만 있는 한마디(tip)만 넘깁니다. */}
+                    <div id="sec-graph" className={styles.graphPane}>
                         <PlaceGraph
                             ref={graphRef}
                             nodes={graph.nodes}
                             links={graph.links}
                             mode={loadingPlace ? 'loading' : place ? 'live' : 'idle'}
-                            label={place && !loadingPlace
-                                ? `${place.name}과 대표키워드·순위·리뷰·결제 데이터의 연결 그래프. 점을 누르면 해당 항목으로 이동합니다.`
+                            label={showResult
+                                ? `${place.name}의 연결 그래프. 점을 누르면 연결된 항목을 살펴봅니다.`
                                 : '플레이스 분석으로 채워질 항목의 연결 그래프'}
+                            headline={graph.headline}
                             legend={LEGEND}
-                            hint={loadingPlace
-                                ? '불러오는 대로 내 매장 데이터로 채웁니다.'
-                                : place
-                                    ? <>점을 누르면 그 항목으로 이동합니다. <span className={styles.hintWide}>끌어서 옮길 수 있고, 요약 숫자에 올리면 같은 점이 밝아집니다.</span></>
-                                    : '주소를 넣고 분석하면 내 매장 데이터로 채워집니다.'}
+                            ontology={ontologyFor(showResult ? place : null)}
+                            hint={loadingPlace ? '불러오는 대로 내 매장 데이터로 채웁니다.' : '주소를 넣고 분석하면 내 매장 데이터로 채워집니다.'}
+                            tip="요약 숫자에 올리면 같은 점이 밝아집니다"
                             onSelect={selectNode}
                             onHover={markLinked}
                         >
@@ -2181,7 +2066,7 @@ export default function PlaceInsightPage() {
                 {showResult && (
                     <>
                         <nav ref={indexRef} className={styles.index} aria-label="분석 항목">
-                            <button type="button" className={styles.indexHome} onClick={() => scrollTo('sec-summary')} aria-label={`${place.name} 연결 그래프로 올라가기`}>
+                            <button type="button" className={styles.indexHome} onClick={() => scrollTo('sec-graph')} aria-label={`${place.name} 연결 그래프로 올라가기`}>
                                 <ArrowUpToLine size={14} aria-hidden="true" />
                                 <span>{place.name}</span>
                             </button>
@@ -2204,8 +2089,8 @@ export default function PlaceInsightPage() {
 
                         <TodoSection place={place} actions={actions} />
 
-                        <Reveal id="sec-rank" className={styles.section} data-group="search" data-node="group:search">
-                            <SectionHead title="키워드 순위" hub="group:search">
+                        <Reveal id="sec-rank" className={styles.section} data-group="search" data-node="hub:search">
+                            <SectionHead title="키워드 순위" hub="hub:search">
                                 키워드를 검색했을 때 내 매장이 몇 번째에 나오는지 네이버 목록에서 광고를 빼고 셉니다. 한 번에 {MAX_KEYWORDS}개까지, 쉼표로 구분해 입력하세요.
                             </SectionHead>
 
