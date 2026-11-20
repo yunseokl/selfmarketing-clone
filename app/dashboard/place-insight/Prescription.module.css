@@ -425,6 +425,18 @@
     border-left: 0.5pt solid var(--rx-hair);
 }
 
+/* ④ 10위 안 키워드 메모: 키워드 이름을 줄이지 않고 표 전체 너비 한 줄(위 줄과 한 묶음) */
+.table tr.hasWide th,
+.table tr.hasWide td {
+    border-bottom: 0;
+}
+
+.table tr.wideRow td {
+    padding: 0 0 1mm;
+    padding-left: 0;
+    font-size: 9pt;
+}
+
 .page1Foot {
     margin-top: 3mm;
     font-size: 9.5pt;
@@ -434,7 +446,7 @@
 /* ───────── 2쪽부터: 상세 ───────── */
 
 .section {
-    margin-top: 4.4mm;
+    margin-top: 3.8mm;
 }
 
 .section:first-of-type {
@@ -454,7 +466,7 @@
 }
 
 .part {
-    margin-top: 3.2mm;
+    margin-top: 2.8mm;
 }
 
 /* 짧은 묶음은 제목과 내용이 다른 쪽으로 갈라지지 않게 통째로 둡니다. */
@@ -472,6 +484,9 @@
     font-weight: 700;
     break-after: avoid;
     page-break-after: avoid;
+    /* 제목과 그 옆 설명이 쪽 경계에서 갈라지지 않게 */
+    break-inside: avoid;
+    page-break-inside: avoid;
 }
 
 .partTitle span {
@@ -522,6 +537,12 @@
     page-break-inside: avoid;
 }
 
+/* 행이 6개 이상인 표는 앞 2줄·뒤 2줄을 한 묶음으로 둡니다(한 줄만 다음 쪽에 남지 않게). */
+.rowKeep {
+    break-inside: avoid;
+    page-break-inside: avoid;
+}
+
 /* 구역 제목 바로 아래에 붙는 표: 제목의 밑줄이 표의 윗줄을 대신합니다. */
 .tableFlush {
     margin-top: 0;
@@ -558,6 +579,14 @@
 
 .colPrice {
     width: 22mm;
+}
+
+.colWhy {
+    width: 40mm;
+}
+
+.colRank {
+    width: 26mm;
 }
 
 .colSwap {
@@ -605,6 +634,8 @@
 }
 
 /* B. 처방 상세 */
+/* 처방 한 건: 머리·왜·하는 법(.taskTop)은 한 덩어리로 두고, 초안 상자(.draft)는 쪽을 넘어 이어질 수 있습니다(쪽 아래가 비지 않게).
+ * 상자는 초안 한 편(.draftItem)·표의 한 행 단위로만 끊깁니다. */
 .task {
     margin-top: 2.6mm;
     padding-bottom: 2.4mm;
@@ -664,12 +695,32 @@
     border-color: var(--rx-rule);
 }
 
+/* 처방 한 건의 머리는 '왜'와 붙어 있고, '왜'·'하는 법'은 각각 한 덩어리입니다(.adviceRow). 쪽이 모자라면 '왜'와 '하는 법' 사이에서 끊을 수 있어
+ * 앞 쪽 아래가 크게 비지 않습니다. */
+.taskTop {
+    break-inside: auto;
+}
+
+/* 뒤에 초안 상자가 이어지는 처방은 머리 블록이 쪽 맨 아래에 홀로 남지 않게(상자가 한 줄도 못 들어가면 머리 블록째 넘김) */
+.taskTop[data-draft='true'] {
+    break-after: auto;
+}
+
 .advice {
-    display: grid;
-    grid-template-columns: 14mm 1fr;
-    gap: 0.8mm 1.5mm;
     margin-top: 1mm;
     padding-left: 6.1mm;
+}
+
+.adviceRow {
+    display: grid;
+    grid-template-columns: 14mm 1fr;
+    gap: 0 1.5mm;
+    break-inside: avoid;
+    page-break-inside: avoid;
+}
+
+.adviceRow + .adviceRow {
+    margin-top: 0.8mm;
 }
 
 .advice dt {
@@ -683,6 +734,50 @@
     margin-top: 0.4mm;
 }
 
+/* 스마트플레이스 시작 안내(처방 상세 머리에 한 번) */
+.guide {
+    margin-top: 1.6mm;
+    padding: 1.3mm 2.6mm 1.5mm;
+    font-size: 9.5pt;
+    border: 0.6pt solid var(--rx-rule);
+    break-inside: avoid;
+    page-break-inside: avoid;
+}
+
+.guide p + p {
+    margin-top: 0.5mm;
+}
+
+.guide b {
+    margin-right: 1.5mm;
+    color: var(--rx-accent);
+}
+
+.guideHead {
+    font-weight: 700;
+    color: var(--rx-ink);
+}
+
+/* 이 업종에서는 메뉴가 없거나 이름이 다를 수 있다는 안내 */
+.preface {
+    font-size: 9.5pt;
+    font-weight: 700;
+}
+
+.waitLine {
+    margin-top: 0.6mm;
+    font-size: 9.5pt;
+}
+
+.waitLine b {
+    margin-right: 1.5mm;
+}
+
+.stepsSmall {
+    font-size: 9.5pt;
+    color: var(--rx-ink-2);
+}
+
 .steps li {
     display: grid;
     grid-template-columns: 4.5mm 1fr;
@@ -694,10 +789,24 @@
 }
 
 /* 초안: 가는 줄로 두른 칸(장식 없음) */
+/* 초안 상자는 쪽 경계에서 이어질 수 있고, 갈라진 조각마다 테두리가 닫힙니다(box-decoration-break: clone). */
 .draft {
     margin: 1.6mm 0 0 6.1mm;
-    padding: 1.6mm 2.6mm 2mm;
-    border: 0.6pt solid var(--rx-rule);
+}
+
+.draftList {
+    margin-top: 0.4mm;
+}
+
+.draftList li {
+    position: relative;
+    padding-left: 3.5mm;
+}
+
+.draftList li::before {
+    content: '–';
+    position: absolute;
+    left: 0;
 }
 
 .draftMark {
@@ -710,8 +819,16 @@
 
 .draftItem {
     margin-top: 1.2mm;
+    padding: 1.4mm 2.6mm 1.8mm;
+    border: 0.6pt solid var(--rx-rule);
     break-inside: avoid;
     page-break-inside: avoid;
+}
+
+.draftNote {
+    margin-top: 1mm;
+    font-size: 9pt;
+    color: var(--rx-ink-2);
 }
 
 .draftLabel {
@@ -751,33 +868,45 @@
     page-break-inside: avoid;
 }
 
-/* C. 추천에서 뺀 키워드: 이유(짧은 표시) — 낱말 */
-.excluded {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 0 6mm;
-    margin-top: 1.4mm;
-    border-top: 0.6pt solid var(--rx-ink);
+/* A. 상위 전체와 비교 · C. 추천에서 뺀 키워드 표 */
+.colVerdict {
+    width: 18mm;
 }
 
-.excluded > div {
-    display: grid;
-    grid-template-columns: 30mm 1fr;
-    gap: 0 2mm;
-    padding: 1.1mm 0;
-    font-size: 10pt;
-    border-bottom: 0.5pt solid var(--rx-hair);
-    break-inside: avoid;
-    page-break-inside: avoid;
+.colExcluded {
+    width: 52mm;
 }
 
-.excluded dt {
-    font-size: 9.5pt;
+.colKind {
+    width: 24mm;
+}
+
+/* C. 5칸 근거에 쓴 표기 풀이 */
+.legend {
+    margin-top: 1.2mm;
+    break-before: avoid;
+    page-break-before: avoid;
+    font-size: 9pt;
     color: var(--rx-ink-2);
 }
 
-.excluded dd {
+/* 줄바꿈 없이 이어 쓴 한 문단(줄 수를 아끼려고): 풀이 하나씩은 중간에서 끊기지 않게 */
+.legend span {
+    margin-right: 3mm;
+}
+
+.legend .legendHead {
+    margin-right: 2mm;
     font-weight: 700;
+    color: var(--rx-ink);
+}
+
+/* C. 상위 매장이 등록한 대표키워드: 내 매장이 쓰는 말·5칸에 넣는 말은 굵게 */
+.wordMark {
+    margin-left: 0.8mm;
+    font-size: 8pt;
+    font-weight: 400;
+    color: var(--rx-ink-2);
 }
 
 /* D. AI 검색 준비 */
@@ -818,11 +947,17 @@
     page-break-inside: avoid;
 }
 
+.planTable th,
+.planTable td {
+    padding-top: 0.7mm;
+    padding-bottom: 0.7mm;
+}
+
 .checks li {
     display: grid;
     grid-template-columns: 4.6mm 1fr;
     gap: 0 1.5mm;
-    padding: 0.4mm 0;
+    padding: 0.25mm 0;
 }
 
 .repeat {
@@ -832,7 +967,7 @@
 
 .repeat th,
 .repeat td {
-    padding: 0.5mm 0;
+    padding: 0.3mm 0;
     text-align: left;
     vertical-align: middle;
     border: 0;
@@ -842,6 +977,11 @@
     font-size: 9pt;
     font-weight: 700;
     color: var(--rx-ink-2);
+}
+
+.repeatPart {
+    break-after: avoid;
+    page-break-after: avoid;
 }
 
 .colTick {
@@ -854,9 +994,31 @@
     margin-top: 0;
 }
 
+.planBlock {
+    break-inside: avoid;
+    page-break-inside: avoid;
+}
+
+.recheckTable {
+    margin-top: 1mm;
+}
+
+.recheckTable th,
+.recheckTable td {
+    padding-top: 0.45mm;
+    padding-bottom: 0.45mm;
+}
+
+.fillIn {
+    display: inline-block;
+    width: 11mm;
+    margin-right: 0.8mm;
+    border-bottom: 0.5pt solid var(--rx-ink);
+}
+
 .recheck {
-    margin-top: 2.4mm;
-    padding: 1.6mm 2.6mm 2.2mm;
+    margin-top: 2mm;
+    padding: 1.3mm 2.6mm 1.6mm;
     border: 0.6pt solid var(--rx-ink);
     break-inside: avoid;
     page-break-inside: avoid;
@@ -866,7 +1028,7 @@
     display: flex;
     align-items: flex-end;
     gap: 2mm;
-    margin-top: 2mm;
+    margin-top: 1.6mm;
     font-size: 10pt;
     white-space: nowrap;
 }
@@ -887,6 +1049,8 @@
 
 /* 꼬리: 사실 고지 */
 .foot {
+    break-inside: avoid;
+    page-break-inside: avoid;
     margin-top: 2.8mm;
     padding-top: 1.4mm;
     border-top: 0.6pt solid var(--rx-ink);
@@ -901,8 +1065,8 @@
 .foot li {
     position: relative;
     padding-left: 3mm;
-    font-size: 9pt;
-    line-height: 1.4;
+    font-size: 8.5pt;
+    line-height: 1.32;
     color: var(--rx-ink-2);
 }
 

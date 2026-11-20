@@ -200,7 +200,7 @@ test('초안은 매장 사실로 채우고 광고성 표현이 없으며, 댓글
     assert.ok(quick['naver-feed'].draft.text.includes(`${question}? 분석식당 곰탕·위치·영업시간 안내`));
     assert.ok(quick['gemini-live'].draft.text.startsWith(`[제목] ${question}? 분석식당 3분 정리`));
     assert.ok(quick['naver-feed'].steps[0].includes(`"${question}"`));
-    assert.ok(quick['chatgpt-fetch'].draft.text.includes('강남구청역에서 곰탕 잘하고 주차 되는 한식 알려줘.'));
+    assert.ok(quick['chatgpt-fetch'].draft.text.includes('강남구청역에서 주차 되는 곰탕 알려줘.'));
     assert.equal(quick['gemini-websub'].draft, null);
     // Perplexity: 질문형 제목에 연도를 넣고, 날짜만 바꾸는 것은 금지로 적는다(GEO_DONTS 와 같은 기준)
     assert.ok(quick['perplexity-post'].steps[0].includes(`"${question} (2026년 기준)"`));
@@ -215,7 +215,7 @@ test('초안은 매장 사실로 채우고 광고성 표현이 없으며, 댓글
 test('스펙 표는 원자 답변·사실 표·자주 묻는 질문을 담고 평점·순위는 넣지 않는다', () => {
     const place = fullPlace({ address: '서울 강남구 분석로 2 | 1층' });
     const sheet = quickFactSheet(place, null, { nowMs: NOW });
-    assert.ok(sheet.startsWith('# 분석식당 — 강남구청역 한식 추천\n\n분석식당은'));
+    assert.ok(sheet.startsWith('# 분석식당 — 강남구청역 곰탕 추천\n\n분석식당은'));
     assert.ok(sheet.includes(buildAtomicAnswer(place, null).text));
     assert.ok(sheet.includes('| 주소 | 서울 강남구 분석로 2 \\| 1층 |')); // 표가 깨지지 않게 | 를 이스케이프
     assert.ok(sheet.includes('| 가까운 역 | 강남구청역 3-1번 출구 도보 5분 |'));

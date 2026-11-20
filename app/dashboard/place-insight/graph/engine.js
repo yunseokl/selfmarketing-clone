@@ -21,6 +21,19 @@ const SWAY_PERIOD = 26;
 const NOD = 0.005;
 const ZOOM_MIN = 0.8;
 const ZOOM_MAX = 2.6;
+// 묶음·종류를 걸러 보러 다가가는 동안 카메라가 움직이는 빠르기의 배율(평소 1)
+const ARRIVE_RUSH = 1.5;
+// 폰에서 걸러 볼 때 놓을 자리를 못 찾은 이름표를 위해, 막고 있는 이름표 하나를 옮겨 보는 자리 후보의 최대 수
+const RESCUE_TRIES = 150;
+// 폰에서 걸러 볼 때 이름표 사이의 가로·세로 최소 간격(px). 글줄 간격(1.3)이 이미 벌어져 있어 세로는 더 좁혀도 따로 읽힙니다.
+const LIT_PAD_X = 4;
+const LIT_PAD_Y = 2;
+// 이름표 상자와 무대 가장자리 사이의 최소 여백(좌우·위아래), 이름표 상자와 밝은 점의 원판 사이의 최소 여백(px)
+const LIT_EDGE_X = 5;
+const LIT_EDGE_Y = 3;
+const LIT_DOT = 1;
+// 폰에서 걸러 본 항목 이름표를 점에서 얼마나 떨어뜨려 놓아 볼지(점 반지름에 더하는 값, px)
+const LIT_GAPS = [8, 14, 21, 29, 39, 51, 65, 81, 99, 120, 144, 170, 200, 235, 270];
 // 신호가 선을 따라가는 빠르기(장면 단위/초)
 const SIGNAL_SPEED = 1.35;
 // 저절로 신호가 출발하는 간격(초, 앞뒤로 조금씩 달라짐)
@@ -96,6 +109,8 @@ export function createEngine(renderer) {
     E.more = { n: 0, w: 0, h: 0, x: 0, y: 0, a: 0, on: false };
     E.tagTotal = 0;
     E.arriving = false;
+    // 그래프 무대가 화면에 보이는 비율(0~1). PlaceGraph 의 IntersectionObserver 가 알려 줍니다.
+    E.seen = 1;
     // 손가락으로 톡 해서 이름만 띄워 둔 점(카드는 열지 않은 상태)
     E.peekId = null;
 
@@ -122,7 +137,7 @@ export function createEngine(renderer) {
                 ringAt: -9, sel: 0, focus: 0, sx: 0, sy: 0, sz: 0, k: 1, rr: 4, front: 0,
                 over: 0,
                 // 이름표: 점에서의 어긋남(rx·ry)이 목표(tx·ty)로 미끄러져 갑니다. dir: 쓰고 있는 자리 번호
-                lab: { on: false, a: 0, x: 0, y: 0, ax: 0, ay: 0, bx: 0, by: 0, rx: 0, ry: 0, tx: 0, ty: 0, dir: -1, mode: 0, lead: false, loose: false, size: null, want: -1, retryAt: 0 },
+                lab: { on: false, a: 0, x: 0, y: 0, ax: 0, ay: 0, bx: 0, by: 0, rx: 0, ry: 0, tx: 0, ty: 0, dir: -1, mode: 0, lead: false, loose: false, size: null, want: -1, retryAt: 0, showAt: 0, rescueAt: 0 },
             };
             const weight = typeof node.weight === 'number' ? clamp(node.weight, 0, 1) : [1, 0.8, 0.5, 0.3][level];
             Object.assign(p, {
@@ -1418,6 +1433,8 @@ export function createEngine(renderer) {
         const cam = E.cam;
         if (!p || p.level === 0 || cam.held) return;
         if (brief && (E.framing || E.selectedId || E.selfId !== id || E.grab || E.string)) return;
+        // 그래프 무대가 화면에 3분의 1도 안 보이면 돌리지 않고 밝히기만 합니다(안 보이는 동안 각도가 쌓였다가 다시 보일 때 돌아오는 일이 없게).
+        if (brief && E.seen < 1 / 3) return;
         const to = faceTo(p.at, 1.05, 1.1);
         const turns = Math.abs(to - cam.yaw.to) > 0.02;
         if (brief) {
@@ -1560,6 +1577,14 @@ export function createEngine(renderer) {
         if (E.framing) E.refitAt = E.time + 0.15;
     };
 
+    // 카메라가 목표 자세에 사실상 닿았는지(0.6px·0.4%·0.003rad 안). 닿은 순간 tickCamera 가 목표 자세에 딱 맞춥니다.
+    function cameraArrived() {
+        const cam = E.cam;
+        return Math.abs(cam.zoom.to - cam.zoom.x) < 0.004 * cam.zoom.to && Math.abs(cam.ox.to - cam.ox.x) < 0.6
+            && Math.abs(cam.oy.to - cam.oy.x) < 0.6 && Math.abs(cam.yaw.to - cam.yaw.x) < 0.003 && Math.abs(cam.pitch.to - cam.pitch.x) < 0.003
+            && Math.abs(cam.tx.to - cam.tx.x) < 0.002 && Math.abs(cam.ty.to - cam.ty.x) < 0.002 && Math.abs(cam.tz.to - cam.tz.x) < 0.002;
+    }
+
     function tickCamera(dt) {
         const cam = E.cam;
         if (E.refitAt !== null && !cam.held && !E.grab && !E.string && E.time >= E.refitAt && Math.abs(cam.spin) < 0.25) {
@@ -1576,22 +1601,35 @@ export function createEngine(renderer) {
             cam.sway = 0;
             return;
         }
+        // 묶음·종류를 걸러 보러 다가가는 동안에는 조금 더 빠르게 움직입니다(이름이 뜨기까지 이름 없는 점만 보이는 시간을 줄임).
+        const rush = E.arriving ? ARRIVE_RUSH : 1;
         if (!cam.held) {
             if (Math.abs(cam.spin) > 0.002) {
                 cam.yaw.x += cam.spin * dt;
                 cam.yaw.to = cam.yaw.x;
                 cam.spin *= Math.exp(-dt * 4.2);
             } else {
-                spring(cam.yaw, 5.2, dt);
+                spring(cam.yaw, 5.2 * rush, dt);
             }
-            spring(cam.pitch, 5.2, dt);
+            spring(cam.pitch, 5.2 * rush, dt);
         }
-        spring(cam.zoom, 6.5, dt);
+        spring(cam.zoom, 6.5 * rush, dt);
         spring(cam.tx, 5.6, dt);
         spring(cam.ty, 5.6, dt);
         spring(cam.tz, 5.6, dt);
-        spring(cam.ox, 6, dt);
-        spring(cam.oy, 6, dt);
+        spring(cam.ox, 6 * rush, dt);
+        spring(cam.oy, 6 * rush, dt);
+        // 걸러 보기로 다가가던 카메라가 사실상 도착하면(0.6px·0.4%·0.003rad 안) 목표 자세에 딱 맞춥니다. 남은 미세한 차이가 이름표 자리를
+        // 매번 다르게 만들지 않게 하려는 것이고, 눈에는 보이지 않는 크기입니다.
+        if (E.arriving && !cam.held && cameraArrived()) {
+            // 저절로 도는 움직임의 남은 흔들림(0.02px 안쪽)도 이때 멈춰, 도착한 자세가 도착한 순간(프레임 시각)과 상관없이 늘 같게 합니다.
+            absorbSway();
+            cam.sway = 0;
+            for (const key of ['yaw', 'pitch', 'zoom', 'tx', 'ty', 'tz', 'ox', 'oy']) {
+                cam[key].x = cam[key].to;
+                cam[key].v = 0;
+            }
+        }
         // 무언가를 보고 있거나, 손으로 돌리거나, 포인터·손가락이 무대 위에 있는 동안에는 저절로 도는 움직임을 멈춥니다
         // (겨누는 동안 표적이 움직이지 않게).
         const busy = cam.held || E.pointerOn || E.grab || E.string || E.moving || E.selfId || E.selectedId || E.group || E.klass || E.relation || E.focusId || E.peekId
@@ -1896,6 +1934,8 @@ export function createEngine(renderer) {
         0, 0.45, -0.45, 0.9, -0.9, 1.4, -1.4, 1.95, -1.95, 2.5, -2.5, Math.PI,
         0.225, -0.225, 0.675, -0.675, 1.15, -1.15, 1.675, -1.675, 2.225, -2.225, 2.82, -2.82,
     ];
+    // 폰에서 걸러 볼 때: 위 방향에 더해, 그 사이사이 방향(48개). 좁은 무대에서 빈틈을 더 촘촘히 찾습니다.
+    const ANGLES_FINE = [...ANGLES, 0.1125, -0.1125, 0.3375, -0.3375, 0.5625, -0.5625, 0.7875, -0.7875, 1.025, -1.025, 1.275, -1.275, 1.5375, -1.5375, 1.8125, -1.8125, 2.0875, -2.0875, 2.3625, -2.3625, 2.66, -2.66, 2.98, -2.98];
     // 쪽지(톡 해서 띄운 이름)를 놓아 볼 방향: 위쪽을 0 으로 해서 바로 위 → 바로 아래 → 점점 비스듬히 → 옆(ANGLES 와 같은 24개)
     const PEEK_ANGLES = [0, Math.PI];
     for (const a of [0.3, 0.6, 0.9, 1.2, 1.4]) PEEK_ANGLES.push(a, -a, Math.PI - a, a - Math.PI);
@@ -1913,13 +1953,16 @@ export function createEngine(renderer) {
     // (500~615. 이미 떠 있어 +20 이 붙어도 650 아래 — 'lit' 범위를 벗어나지 않습니다.)
     function litRank(p) {
         return 500 + (p.level <= 2 ? 45 : 0) + (p.node.type === 'keyword' || p.node.type === 'rival' ? 30 : 0)
+            // AI 점검 항목(점수가 붙은 점검 하나하나)은 종류 머리 다음으로 먼저 이름을 답니다.
+            + (p.node.type === 'aiFactor' ? 24 : 0)
             + (/\d/.test(p.node.sub || '') ? 10 : 0) + (p.spot ? 5 : 0) + p.weight * 25;
     }
 
-    function overlaps(x0, y0, x1, y1, boxes, pad) {
+    // padY: 위아래 간격(주지 않으면 pad 와 같음)
+    function overlaps(x0, y0, x1, y1, boxes, pad, padY = pad) {
         for (let i = 0; i < boxes.length; i += 1) {
             const b = boxes[i];
-            if (x0 < b[2] + pad && x1 > b[0] - pad && y0 < b[3] + pad && y1 > b[1] - pad) return true;
+            if (x0 < b[2] + pad && x1 > b[0] - pad && y0 < b[3] + padY && y1 > b[1] - padY) return true;
         }
         return false;
     }
@@ -2005,7 +2048,8 @@ export function createEngine(renderer) {
                 lab.ry += (lab.ty - lab.ry) * slide;
             }
             if (frozen && !lab.on) lab.a = 0;
-            else if (!(held && p === held.p)) lab.a += ((lab.on ? 1 : 0) - lab.a) * fade;
+            // showAt: 걸러 보기로 다가가 자리를 다 잡은 순간 이름들이 중요한 순서대로 차례로 나타나게 하려고 둔 시각(그 전에는 자리만 잡아 두고 보이지 않음)
+            else if (!(held && p === held.p)) lab.a += ((lab.on && !(lab.showAt > E.clock) ? 1 : 0) - lab.a) * fade;
             if (lab.a < 0.004) lab.a = 0;
             lab.x = p.sx + lab.rx;
             lab.y = p.sy + lab.ry;
@@ -2171,8 +2215,10 @@ export function createEngine(renderer) {
         // 중요한 순서대로 한꺼번에 놓습니다(그래야 같은 묶음이면 매번 같은 이름이 같은 자리에 뜹니다).
         const filterOn = Boolean(E.group || E.klass || E.relation);
         // 도착은 '거의 다 왔다'가 아니라 사실상 멈췄을 때로 봅니다(0.3px·0.2% 안). 그래야 이름표를 놓는 순간의 화면이 매번 같습니다.
-        if (E.arriving && !settling && Math.abs(cam.zoom.to - cam.zoom.x) < 0.002 * cam.zoom.to && Math.abs(cam.ox.to - cam.ox.x) < 0.3
-            && Math.abs(cam.oy.to - cam.oy.x) < 0.3 && Math.abs(cam.yaw.to - cam.yaw.x) < 0.0015 && Math.abs(cam.pitch.to - cam.pitch.x) < 0.0015) E.arriving = false;
+        const wasArriving = E.arriving;
+        if (E.arriving && !settling && cameraArrived()) E.arriving = false;
+        // 막 도착한 프레임: 이 프레임에 자리를 잡는 항목 이름들은 중요한 순서대로 차례로(전체 0.7초 안쪽) 나타납니다.
+        const justArrived = wasArriving && !E.arriving && !E.reduced;
         const waiting = E.arriving && filterOn && !self;
         // 다가가는 동안에는 남아 있는 이름표(매장·묶음)도 전에 쓰던 자리를 잊고 매번 처음부터 다시 놓습니다
         // (어떤 화면에서 넘어왔는지에 따라 자리가 달라지지 않게).
@@ -2385,7 +2431,146 @@ export function createEngine(renderer) {
             return false;
         };
 
+        // 폰에서 걸러 본 항목 이름표의 구조 요청: 놓을 자리가 없을 때, 이미 놓은 이름표 하나만 막고 있는 자리가 있으면 그 이름표를
+        // 다른 빈 자리로 옮기고 그 자리를 씁니다(좁은 무대에서 먼저 놓은 이름표가 빈틈을 쪼개 놓아 뒤의 이름이 못 앉는 일을 줄임).
+        // 방금 이번 프레임에 놓은(아직 보이지 않는) 이름표만 옮기므로 눈에 보이는 이동은 없습니다.
+        const spotCache = new Map();
+        const litPadX = LIT_PAD_X;
+        const litPadY = LIT_PAD_Y;
+        const spotsOf = (p) => {
+            let spots = spotCache.get(p);
+            if (spots) return spots;
+            spots = [];
+            const { w, h } = p.lab.size;
+            let ux = p.sx - bx;
+            let uy = p.sy - by;
+            const far = Math.hypot(ux, uy);
+            if (far < 6) {
+                ux = -0.55;
+                uy = 0.83;
+            } else {
+                ux /= far;
+                uy /= far;
+            }
+            for (const gapStep of LIT_GAPS) { // (메인 루프의 후보 번호와 같은 순서: 간격이 바깥 고리, 방향이 안쪽 고리)
+                const gap = p.rr + gapStep;
+                for (const angle of ANGLES_FINE) {
+                    const cos = Math.cos(angle);
+                    const sin = Math.sin(angle);
+                    const dx = ux * cos - uy * sin;
+                    const dy = ux * sin + uy * cos;
+                    spots.push([p.sx + dx * gap - w / 2 + dx * (w / 2), p.sy + dy * gap - h / 2 + dy * (h / 2)]);
+                }
+            }
+            spotCache.set(p, spots);
+            return spots;
+        };
+        // (x0, y0) 에 p 의 이름표를 놓을 수 있는지. skip: 이미 놓인 상자 가운데 없는 셈 칠 것, extra: 새로 차지할 상자(옮기는 동안 피할 것)
+        const spotFree = (p, x0, y0, skip, extra) => {
+            const { w, h } = p.lab.size;
+            if (x0 < LIT_EDGE_X || y0 < LIT_EDGE_Y || x0 + w > E.w - LIT_EDGE_X || y0 + h > E.h - LIT_EDGE_Y) return false;
+            for (let i = 0; i < placed.length; i += 1) {
+                const b = placed[i];
+                if (b === skip) continue;
+                if (x0 < b[2] + litPadX && x0 + w > b[0] - litPadX && y0 < b[3] + litPadY && y0 + h > b[1] - litPadY) return false;
+            }
+            if (extra && x0 < extra[2] + litPadX && x0 + w > extra[0] - litPadX && y0 < extra[3] + litPadY && y0 + h > extra[1] - litPadY) return false;
+            if (ringP) {
+                const nx = clamp(ringP.sx, x0, x0 + w);
+                const ny = clamp(ringP.sy, y0, y0 + h);
+                if ((nx - ringP.sx) * (nx - ringP.sx) + (ny - ringP.sy) * (ny - ringP.sy) < (ringR + 2) * (ringR + 2)) return false;
+            }
+            if (!p.lab.was && fading.some((b) => b[4] !== p && x0 < b[2] + 4 && x0 + w > b[0] - 4 && y0 < b[3] + 4 && y0 + h > b[1] - 4)) return false;
+            return dotsUnder(x0, y0, x0 + w, y0 + h, p, LIT_DOT, 1) === 0;
+        };
+        const rescue = (K) => {
+            const { w, h } = K.lab.size;
+            const spots = spotsOf(K);
+            let tries = 0;
+            for (let i = 0; i < spots.length && tries < RESCUE_TRIES; i += 1) {
+                const [x0, y0] = spots[i];
+                if (x0 < LIT_EDGE_X || y0 < LIT_EDGE_Y || x0 + w > E.w - LIT_EDGE_X || y0 + h > E.h - LIT_EDGE_Y) continue;
+                if (dotsUnder(x0, y0, x0 + w, y0 + h, K, LIT_DOT, 1) > 0) continue;
+                // 이 자리를 막고 있는 상자가 이름표 하나뿐인지
+                let blocker = null;
+                let many = false;
+                for (let j = 0; j < placed.length; j += 1) {
+                    const b = placed[j];
+                    if (x0 < b[2] + litPadX && x0 + w > b[0] - litPadX && y0 < b[3] + litPadY && y0 + h > b[1] - litPadY) {
+                        if (blocker) {
+                            many = true;
+                            break;
+                        }
+                        blocker = b;
+                    }
+                }
+                if (many || !blocker) continue;
+                const B = blocker[4];
+                // 단추·카드(이름표가 아닌 상자), 매장·묶음 이름, 이미 보이는 이름표는 옮기지 않습니다.
+                if (!B || B === K || B.level <= 1 || B.lab.was || B.lab.want >= 650) continue;
+                tries += 1;
+                const box = [x0, y0, x0 + w, y0 + h];
+                const bSpots = spotsOf(B);
+                for (let k = 0; k < bSpots.length; k += 1) {
+                    if (!spotFree(B, bSpots[k][0], bSpots[k][1], blocker, box)) continue;
+                    // 옮깁니다.
+                    const bw = B.lab.size.w;
+                    const bh = B.lab.size.h;
+                    blocker[0] = bSpots[k][0];
+                    blocker[1] = bSpots[k][1];
+                    blocker[2] = bSpots[k][0] + bw;
+                    blocker[3] = bSpots[k][1] + bh;
+                    B.lab.tx = bSpots[k][0] - B.sx;
+                    B.lab.ty = bSpots[k][1] - B.sy;
+                    B.lab.dir = k;
+                    return [x0, y0, i];
+                }
+            }
+            return null;
+        };
+        // 꼭 이름이 있어야 하는 항목: 종류 머리·숫자 항목(2단계), AI 점검 항목, 대표키워드·경쟁 매장, 먼저 볼 항목
+        const isKeyLabel = (p) => p.level <= 2 || p.node.type === 'aiFactor' || p.node.type === 'keyword' || p.node.type === 'rival' || p.spot > 0;
+        // 구조 요청으로도 안 되면, 자리를 막고 있는 덜 중요한 이름(셋까지)을 접고 그 자리를 씁니다. 끄는 이름은 이번 프레임에 막 놓은 것뿐입니다.
+        const evict = (K) => {
+            const { w, h } = K.lab.size;
+            const spots = spotsOf(K);
+            let bestSpot = null;
+            let bestVictims = null;
+            for (let i = 0; i < spots.length; i += 1) {
+                const [x0, y0] = spots[i];
+                if (x0 < LIT_EDGE_X || y0 < LIT_EDGE_Y || x0 + w > E.w - LIT_EDGE_X || y0 + h > E.h - LIT_EDGE_Y) continue;
+                if (dotsUnder(x0, y0, x0 + w, y0 + h, K, LIT_DOT, 1) > 0) continue;
+                const victims = [];
+                let fixed = false;
+                for (let j = 0; j < placed.length; j += 1) {
+                    const b = placed[j];
+                    if (!(x0 < b[2] + litPadX && x0 + w > b[0] - litPadX && y0 < b[3] + litPadY && y0 + h > b[1] - litPadY)) continue;
+                    const B = b[4];
+                    if (!B || B === K || B.level <= 1 || B.lab.was || B.lab.want >= 650 || isKeyLabel(B) || victims.length >= 3) {
+                        fixed = true;
+                        break;
+                    }
+                    victims.push(b);
+                }
+                if (fixed || !victims.length) continue;
+                if (!bestVictims || victims.length < bestVictims.length) {
+                    bestSpot = [x0, y0, i];
+                    bestVictims = victims;
+                    if (victims.length === 1) break;
+                }
+            }
+            if (!bestSpot) return null;
+            for (const b of bestVictims) {
+                placed.splice(placed.indexOf(b), 1);
+                b[4].lab.on = false;
+                b[4].lab.retryAt = E.clock + 0.25;
+            }
+            return bestSpot;
+        };
+
         const shown = [];
+        const revealStep = Math.min(0.03, 0.7 / Math.max(1, justArrived ? ranked.filter((q) => q.level >= 2 && q.lab.want < 650).length : 1));
+        let revealOrder = 0;
         for (const p of ranked) {
             const lab = p.lab;
             if (!tagsDone && lab.want < 880) placeTags();
@@ -2448,6 +2633,8 @@ export function createEngine(renderer) {
             } else if (lit) {
                 // 걸러 본 점들은 빽빽하게 모여 있으므로, 둘레의 빈 곳까지 지시선을 길게 뽑을 수 있게 합니다.
                 gaps.push(p.rr + 138, p.rr + 170, p.rr + 206);
+                // 폰: 좁은 무대의 빈틈을 더 촘촘히 찾도록 간격 단계를 늘립니다.
+                if (E.lite) gaps = LIT_GAPS.map((gap) => p.rr + gap);
             }
             // 쪽지는 점에 바짝 붙여 둡니다(점과 쪽지 사이가 멀면 어느 점의 이름인지 헷갈립니다). 쪽지의 테두리(6px)만큼 띄우고 시작합니다.
             // 손가락이 점 아래쪽을 가리므로 바로 위(점과 가운데를 맞춤) → 바로 아래 → 비스듬히 → 옆 순서로 찾습니다(PEEK_ANGLES).
@@ -2466,7 +2653,8 @@ export function createEngine(renderer) {
                 lab.on = false;
                 continue;
             }
-            const count = ANGLES.length * gaps.length;
+            const angleSet = peeked ? PEEK_ANGLES : E.lite && lit && p.level >= 2 ? ANGLES_FINE : ANGLES;
+            const count = angleSet.length * gaps.length;
             // 쓰던 자리부터 다시 확인합니다. 그 자리가 막혔으면 다음 빈 자리로 옮겨 갑니다(껐다 켜지 않음).
             const mode = callout ? 1 : outside ? 2 : 0;
             const kept = lab.was && lab.dir >= 0 && lab.mode === mode;
@@ -2480,11 +2668,14 @@ export function createEngine(renderer) {
             // 자리 고르기: 점을 덮지 않는 자리 가운데, 쓰던 자리가 있으면 거기서 가장 가까운 곳(멀리 날아가지 않게).
             // 늘 보여야 하는 이름(매장·묶음·고른 점, 40개 이하로 걸러 본 점)은 점을 피할 자리가 하나도 없으면 가장 덜 덮는 자리에 둡니다.
             // 나머지는 점을 덮지 않는 자리가 있을 때만 띄웁니다(걸러 보기로 다가가는 동안에는 이미 떠 있는 이름을 끄지 않고 기다립니다).
-            const fallback = strong || (kept && lit && settling);
+            // (폰에서 걸러 본 항목은 점을 덮는 자리를 쓰지 않습니다. 옮겨서 자리를 내는 구조 요청이 있어, 점 위에 얹히는 이름이 없어도 됩니다.)
+            const fallback = (strong || (kept && lit && settling)) && !(E.lite && lit && p.level >= 2 && !kept);
             // 폰에서는 이름표 사이를 조금 좁혀(8px) 더 많은 점에 이름을 답니다.
             // 폰에서 여럿을 걸러 볼 때는 이름표 사이와 점 둘레의 여백을 조금 더 좁힙니다(값을 뺀 이름만 띄우므로 좁혀도 읽힙니다).
             const tight = E.lite && lit;
-            const pad = tight ? 6 : E.lite ? 8 : LABEL_GAP;
+            const pad = tight ? litPadX : E.lite ? 8 : LABEL_GAP;
+            // 위아래 간격은 가로보다 더 좁혀도 됩니다(줄 사이가 이미 글줄 간격으로 벌어져 있어, 쌓아 놓아도 따로 읽힙니다).
+            const padY = tight ? litPadY : pad;
             let pick = -1;
             let pickX = 0;
             let pickY = 0;
@@ -2505,8 +2696,8 @@ export function createEngine(renderer) {
                 let y0 = p.sy + lab.ty;
                 if (step >= 0) {
                     index = (start + step) % count;
-                    const angle = (peeked ? PEEK_ANGLES : ANGLES)[index % ANGLES.length];
-                    const gap = gaps[Math.floor(index / ANGLES.length)];
+                    const angle = angleSet[index % angleSet.length];
+                    const gap = gaps[Math.floor(index / angleSet.length)];
                     const cos = Math.cos(angle);
                     const sin = Math.sin(angle);
                     const dx = ux * cos - uy * sin;
@@ -2517,8 +2708,8 @@ export function createEngine(renderer) {
                 // 쓰던 자리인지(점이 조금 스치는 정도로는 버리지 않음), 그리고 도는 길까지 확인해 둔 자리인지
                 const same = kept && step === (rigid ? -1 : 0);
                 const trusted = same && (!sweeping || lab.swept);
-                if (x0 < 8 || y0 < 6 || x0 + w > E.w - 8 || y0 + h > E.h - 6) continue;
-                if (overlaps(x0, y0, x0 + w, y0 + h, placed, pad)) continue;
+                if (x0 < (tight ? LIT_EDGE_X : 8) || y0 < (tight ? LIT_EDGE_Y : 6) || x0 + w > E.w - (tight ? LIT_EDGE_X : 8) || y0 + h > E.h - (tight ? LIT_EDGE_Y : 6)) continue;
+                if (overlaps(x0, y0, x0 + w, y0 + h, placed, pad, padY)) continue;
                 // 고른 점의 고리 위에는 얹지 않습니다(고른 점 자신의 이름도 고리 밖에 둡니다).
                 if (ringP) {
                     const nx = clamp(ringP.sx, x0, x0 + w);
@@ -2551,7 +2742,7 @@ export function createEngine(renderer) {
                         }
                     }
                 }
-                let covered = peeked ? 0 : dotsUnder(x0, y0, x0 + w, y0 + h, p, same ? 0.5 : tight ? 1.5 : 3, fallback ? least + 1 : 1);
+                let covered = peeked ? 0 : dotsUnder(x0, y0, x0 + w, y0 + h, p, same ? 0.5 : tight ? LIT_DOT : 3, fallback ? least + 1 : 1);
                 // 쉬는 화면: 지금은 비어 있어도, 뇌가 도는 동안 점이 밑으로 들어오거나 다른 이름표·단추·무대 끝과 부딪칠 자리는 쓰지 않습니다.
                 if (sweeping && !trusted && !peeked) {
                     if (covered === 0) covered = sweptUnder(x0, y0, x0 + w, y0 + h, p, same ? 1.5 : 3.5, fallback ? least + 1 : 1);
@@ -2592,6 +2783,15 @@ export function createEngine(renderer) {
                 pickX = bumpX;
                 pickY = bumpY;
             }
+            // 폰에서 걸러 본 항목: 놓을 자리가 없으면, 막고 있는 이름표를 옮겨서라도 자리를 냅니다(점을 덮는 자리를 쓰기 전에).
+            if (pick < 0 && E.lite && lit && p.level >= 2 && E.hotSet && !peeked && !lab.was && angleSet === ANGLES_FINE) {
+                const spot = rescue(p);
+                if (spot) {
+                    pick = spot[2];
+                    pickX = spot[0];
+                    pickY = spot[1];
+                }
+            }
             // 도는 길까지 확인한 자리인지 적어 둡니다(확인하지 못한 자리는 쉬는 화면에서 다시 확인합니다).
             let checked = steady;
             // (폰의 걸러 보기에서는 점을 둘 이상 덮어야만 놓을 수 있는 이름은 띄우지 않습니다. 좁은 무대에서 이름이 점 줄을 통째로 덮기 때문입니다.)
@@ -2612,8 +2812,37 @@ export function createEngine(renderer) {
                 done = true;
             }
             lab.on = done;
-            if (done) shown.push(p);
-            else lab.retryAt = E.clock + 0.25;
+            if (done) {
+                shown.push(p);
+                // 새로 뜨는 이름: 막 도착한 프레임이면 자리 잡은 순서(중요한 순서)대로 조금씩 늦춰 나타나게 합니다.
+                if (!lab.was) {
+                    if (justArrived && p.level >= 2 && lab.want < 650) {
+                        lab.showAt = E.clock + revealOrder * revealStep;
+                        revealOrder += 1;
+                    } else lab.showAt = 0;
+                }
+            } else lab.retryAt = E.clock + 0.25;
+        }
+        // 폰에서 걸러 본 뒤에도 이름을 못 단 꼭 필요한 항목(종류 머리·숫자·AI 점검 항목 …)은 한 번 더: 옮겨서 자리를 내 보고, 안 되면 덜 중요한 이름을 접습니다.
+        if (E.lite && E.hotSet && !selfP && !E.peekId) {
+            for (const p of ranked) {
+                const lab = p.lab;
+                if (lab.on || lab.was || !lab.size || p.level < 2 || lab.want < 500 || lab.want >= 650 || !isKeyLabel(p) || E.clock < lab.rescueAt) continue;
+                const spot = rescue(p) || evict(p);
+                lab.rescueAt = E.clock + 0.25;
+                if (!spot) continue;
+                lab.on = true;
+                lab.dir = spot[2];
+                lab.mode = 0;
+                lab.tx = spot[0] - p.sx;
+                lab.ty = spot[1] - p.sy;
+                lab.swept = false;
+                lab.showAt = justArrived ? E.clock + revealOrder * revealStep : 0;
+                if (justArrived) revealOrder += 1;
+                placed.push([spot[0], spot[1], spot[0] + lab.size.w, spot[1] + lab.size.h, p]);
+                shown.push(p);
+            }
+            for (let i = shown.length - 1; i >= 0; i -= 1) if (!shown[i].lab.on) shown.splice(i, 1);
         }
         // 이번 프레임에 막 꺼진 라벨 자리와 겹치는 새 라벨은 한 박자 늦춥니다.
         const closing = [];

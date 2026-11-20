@@ -98,6 +98,29 @@ class PrescriptionBoundary extends Component {
 
 const CIRCLED = ['①', '②', '③', '④'];
 
+// 쪽 넘김 규칙: 3줄 이하 표는 통째로 한 쪽에, 4줄 이상 표는 쪼개져도 되지만 양쪽에 2줄 이상 남게
+// (앞 2줄·뒤 2줄을 각각 한 묶음으로 둠). 쪽이 넘어간 표는 머리 줄(칸 이름)이 다시 나오고, 표 제목은 표와 떨어지지 않습니다.
+export const TABLE_WHOLE_MAX = 3;
+
+function rowChunks(rows) {
+    if (rows.length <= TABLE_WHOLE_MAX) return [rows];
+    return [rows.slice(0, 2), rows.slice(2, rows.length - 2), rows.slice(-2)].filter((chunk) => chunk.length > 0);
+}
+
+function chunkClass(index, total) {
+    return total === 1 || index === 0 || index === total - 1 ? styles.rowKeep : undefined;
+}
+
+// 3줄 이하 표가 든 묶음은 통째로(제목·표·풀이가 한 쪽에), 더 긴 표는 위 묶음으로 나눠 끊습니다.
+function partClass(rowCount, extra) {
+    return [styles.part, rowCount <= TABLE_WHOLE_MAX ? styles.keep : null, extra].filter(Boolean).join(' ');
+}
+
+// 항목 목록(그 밖의 할 일·AI 점검 일): 2개 이하는 통째로, 그보다 많으면 항목 사이에서 끊습니다(항목 하나는 쪼개지 않음).
+function listPartClass(itemCount) {
+    return [styles.part, itemCount <= 2 ? styles.keep : null].filter(Boolean).join(' ');
+}
+
 function count(value) {
     return Number.isFinite(value) ? formatNumber(value) : '-';
 }
@@ -149,6 +172,7 @@ function WeekTasks({ week, index }) {
                         <div className={styles.weekBody}>
                             <p className={styles.weekTitle}>
                                 <strong>{task.title}</strong>
+                                {task.sourceLabel && <span className={styles.tag}>{task.sourceLabel}</span>}
                                 <span className={styles.weekTime}>{task.timeLabel}</span>
                             </p>
                             <p className={styles.weekMeta}>
@@ -159,6 +183,7 @@ function WeekTasks({ week, index }) {
                     </li>
                 ))}
             </ol>
+            {week.aiNote && <p className={styles.note}>{week.aiNote}</p>}
         </section>
     );
 }
@@ -200,15 +225,17 @@ function Slots({ slots, index }) {
                     {slots.empty > 0 && (
                         <tr>
                             <td className={styles.num}>-</td>
-                            <td colSpan={4} className={styles.sub}>남은 빈 칸 {slots.empty}개는 넣을 만한 추천 키워드가 없어 비워 둡니다.</td>
+                            <td colSpan={4} className={styles.sub}>남은 빈 칸 {slots.empty}개는 넣을 만한 추천 키워드가 없어 비워 둡니다.{slots.emptyText ? ` ${slots.emptyText}` : ''}</td>
                         </tr>
                     )}
                 </tbody>
             </table>
-            {slots.unranked.length > 0 && (
-                <p className={styles.note}>
-                    {slots.unranked.map((keyword) => `'${keyword}'`).join(', ')}은(는) 아직 순위를 조회하지 않았습니다. 바꾸기 전에 혼잘마에서 순위를 먼저 확인하세요.
-                    {slots.see && ` 근거는 ${slots.see}.`}
+            {slots.unranked.length > 0 && slots.unrankedText && <p className={styles.note}>{slots.unrankedText}</p>}
+            {/* I. 이유 칸에 쓴 약어의 풀이(이 쪽만 떼어 줘도 읽히게) */}
+            {slots.legend?.length > 0 && (
+                <p className={styles.legend}>
+                    <span className={styles.legendHead}>읽는 법</span>
+                    {slots.legend.map((text) => <span key={text}>{text}</span>)}
                 </p>
             )}
         </section>
@@ -229,17 +256,27 @@ function Metrics({ metrics, recheck, index }) {
                     </tr>
                 </thead>
                 <tbody>
-                    {metrics.map((metric) => (
-                        <tr key={metric.key}>
-                            <th scope="row">{metric.label}</th>
-                            <td>
-                                <b>{metric.now}</b>
-                                {metric.note && <span className={styles.metricNote}>{metric.note}</span>}
-                            </td>
-                            <td className={styles.sub}>{metric.compare || ''}</td>
-                            <td className={styles.blank} />
-                        </tr>
-                    ))}
+                    {metrics.map((metric) => {
+                        const wide = Boolean(metric.wideNote && metric.note);
+                        return (
+                            <Fragment key={metric.key}>
+                                <tr className={wide ? styles.hasWide : undefined}>
+                                    <th scope="row">{metric.label}</th>
+                                    <td>
+                                        <b>{metric.now}</b>
+                                        {metric.note && !wide && <span className={styles.metricNote}>{metric.note}</span>}
+                                    </td>
+                                    <td className={styles.sub}>{metric.compare || ''}</td>
+                                    <td className={styles.blank} />
+                                </tr>
+                                {wide && (
+                                    <tr className={styles.wideRow}>
+                                        <td colSpan={4} className={styles.sub}>{metric.note}</td>
+                                    </tr>
+                                )}
+                            </Fragment>
+                        );
+                    })}
                 </tbody>
             </table>
         </section>
@@ -317,7 +354,38 @@ function Rivals({ section }) {
                 </table>
             )}
             {section.firsts.length > 0 && <p className={styles.note}>내 매장이 1위인 키워드: {section.firsts.join(', ')}</p>}
-            {section.more > 0 && <p className={styles.note}>이 밖에 키워드 {section.more}개는 혼잘마 플레이스 분석 화면에서 볼 수 있습니다.</p>}
+            {section.more > 0 && <p className={styles.note}>이 밖에 키워드 {section.more}개는 이 표에 싣지 않았습니다.</p>}
+            {section.pool && (
+                <div className={`${styles.part} ${styles.keep}`}>
+                    <h3 className={styles.partTitle}>
+                        조회한 상위 {formatNumber(section.pool.count)}곳 전체와 비교
+                        <span>{section.pool.keyword} 검색 결과 기준(광고 제외, 내 매장 제외)</span>
+                    </h3>
+                    <table className={styles.table}>
+                        <thead>
+                            <tr>
+                                <th scope="col">항목</th>
+                                <th scope="col" className={styles.colCount}>내 매장</th>
+                                <th scope="col" className={styles.colCount}>상위 중간값</th>
+                                <th scope="col" className={styles.colCount}>상위 최고</th>
+                                <th scope="col" className={styles.colVerdict}>판정</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {section.pool.rows.map((row) => (
+                                <tr key={row.key}>
+                                    <th scope="row">{row.label}</th>
+                                    <td className={styles.numCell}><b>{row.key === 'score' ? score(row.mine) : count(row.mine)}</b></td>
+                                    <td className={styles.numCell}>{row.key === 'score' ? score(row.median) : count(row.median)}</td>
+                                    <td className={styles.numCell}>{row.key === 'score' ? score(row.best) : count(row.best)}</td>
+                                    <td>{row.verdictLabel || '-'}</td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                    <p className={styles.note}>판정: 중간값 이상이면 &lsquo;앞섬&rsquo;, 중간값의 70% 이상이면 &lsquo;비슷&rsquo;, 그보다 낮으면 &lsquo;뒤처짐&rsquo;입니다(평점은 중간값과 0.2점 안쪽이면 &lsquo;비슷&rsquo;).</p>
+                </div>
+            )}
         </section>
     );
 }
@@ -327,26 +395,26 @@ function DraftBody({ draft }) {
         case 'reply':
             return (
                 <>
-                    {draft.items.map((item) => (
+                    {draft.items.map((item, index) => (
                         <div key={item.key} className={styles.draftItem}>
                             <p className={styles.draftLabel}>{item.label}</p>
                             <p className={styles.draftText}>{item.text}</p>
+                            {draft.note && index === draft.items.length - 1 && <p className={styles.draftNote}>{draft.note}</p>}
                         </div>
                     ))}
-                    {draft.note && <p className={styles.note}>{draft.note}</p>}
                 </>
             );
         case 'feed':
             return (
                 <>
-                    {draft.items.map((item) => (
+                    {draft.items.map((item, index) => (
                         <div key={item.key} className={styles.draftItem}>
                             <p className={styles.draftLabel}>{item.label}</p>
                             <p className={styles.draftText}><b>제목</b> {item.title}</p>
                             <p className={styles.draftText}><b>본문</b> {item.body}</p>
+                            {draft.altTitle && index === draft.items.length - 1 && <p className={styles.draftNote}>AI 질문형 제목으로 써도 됩니다: {draft.altTitle}</p>}
                         </div>
                     ))}
-                    {draft.altTitle && <p className={styles.note}>AI 질문형 제목으로 써도 됩니다: {draft.altTitle}</p>}
                 </>
             );
         case 'intro':
@@ -355,6 +423,9 @@ function DraftBody({ draft }) {
                     <div className={styles.draftItem}>
                         <p className={styles.draftLabel}>소개글 ({draft.length}자 · {draft.sentences}문장)</p>
                         <p className={styles.draftText}>{draft.text}</p>
+                        {draft.existingLength > 0 && (
+                            <p className={styles.draftNote}>지금 소개글({formatNumber(draft.existingLength)}자)은 지우지 마세요. 이 글을 지금 소개글 맨 앞에 붙이세요.</p>
+                        )}
                     </div>
                     {draft.oneLine && (
                         <div className={styles.draftItem}>
@@ -366,12 +437,13 @@ function DraftBody({ draft }) {
             );
         case 'menu':
             return (
-                <>
-                    <table className={`${styles.table} ${styles.tableTight}`}>
+                <div className={styles.draftItem}>
+                    <table className={`${styles.table} ${styles.tableTight} ${styles.tableFlush}`}>
                         <thead>
                             <tr>
                                 <th scope="col" className={styles.colMenu}>이름</th>
                                 <th scope="col" className={styles.colPrice}>가격</th>
+                                <th scope="col" className={styles.colWhy}>고른 까닭</th>
                                 <th scope="col">설명 틀(이름·가격에서 읽히는 것만 채움)</th>
                             </tr>
                         </thead>
@@ -380,19 +452,22 @@ function DraftBody({ draft }) {
                                 <tr key={row.name}>
                                     <th scope="row">{row.name}</th>
                                     <td className={styles.numCell}>{row.price || '-'}</td>
+                                    <td className={styles.sub}>{row.why || '-'}</td>
                                     <td>{row.frame}</td>
                                 </tr>
                             ))}
                         </tbody>
                     </table>
-                    <p className={styles.note}>어느 것에 이미 설명이 있는지는 조회한 자료로 알 수 없어, 설명이 비어 있는 것만 채우세요.</p>
-                </>
+                    <p className={styles.draftNote}>어느 것에 이미 설명이 있는지는 조회한 자료로 알 수 없어, 설명이 비어 있는 것만 채우세요.</p>
+                </div>
             );
         case 'list':
             return (
                 <div className={styles.draftItem}>
                     <p className={styles.draftLabel}>{draft.label}</p>
-                    <p className={styles.draftText}>{draft.items.join(' · ')}</p>
+                    {draft.items.some((entry) => entry.length > 20)
+                        ? <ul className={styles.draftList}>{draft.items.map((entry) => <li key={entry}>{entry}</li>)}</ul>
+                        : <p className={styles.draftText}>{draft.items.join(' · ')}</p>}
                 </div>
             );
         default:
@@ -405,37 +480,55 @@ function Tasks({ section }) {
         <section className={styles.section}>
             <SectionTitle section={section} />
             <p className={styles.lead}>{section.lead}</p>
+            {section.guide?.length > 0 && (
+                <div className={styles.guide}>
+                    <p className={styles.guideHead}>스마트플레이스에서 하는 일 — 모든 &lsquo;하는 법&rsquo;에 앞서</p>
+                    {section.guide.map((line) => (
+                        <p key={line.label}><b>{line.label}</b> {line.text}</p>
+                    ))}
+                </div>
+            )}
             {section.items.map((task, index) => (
                 <article key={task.key} className={styles.task}>
-                    <header className={styles.taskHead}>
-                        <span className={styles.box} aria-hidden="true" />
-                        <span className={styles.actionNo}>{index + 1}</span>
-                        <span className={styles.level} data-level={task.level}>{task.levelLabel}</span>
-                        <strong className={styles.taskTitle}>{task.title}</strong>
-                        <span className={styles.taskMeta}>{task.timeLabel} · {task.where}</span>
-                    </header>
-                    <dl className={styles.advice}>
-                        {(task.problem || task.why.length > 0) && (
-                            <>
-                                <dt>왜</dt>
-                                <dd>
-                                    {task.problem && task.why.length === 0 && <p>{task.problem}</p>}
-                                    {task.why.map((line) => <p key={line}>{line}</p>)}
-                                    {task.gain && <p className={styles.sub}>{task.gain}</p>}
-                                </dd>
-                            </>
-                        )}
-                        {task.steps.length > 0 && (
-                            <>
-                                <dt>하는 법</dt>
-                                <dd>
-                                    <ol className={styles.steps}>
-                                        {task.steps.map((step, i) => <li key={step}><span>{i + 1}</span>{step}</li>)}
-                                    </ol>
-                                </dd>
-                            </>
-                        )}
-                    </dl>
+                    {/* 머리·왜·하는 법은 한 덩어리로 두어 쪽 넘김이 한가운데를 가르지 않게 합니다. */}
+                    <div className={styles.taskTop} data-draft={task.draft ? 'true' : undefined}>
+                        <header className={styles.taskHead}>
+                            <span className={styles.box} aria-hidden="true" />
+                            <span className={styles.actionNo}>{index + 1}</span>
+                            <span className={styles.level} data-level={task.level}>{task.levelLabel}</span>
+                            <strong className={styles.taskTitle}>{task.title}</strong>
+                            {task.sourceLabel && <span className={styles.tag}>{task.sourceLabel}</span>}
+                            <span className={styles.taskMeta}>{task.timeLabel} · {task.where}</span>
+                        </header>
+                        <dl className={styles.advice}>
+                            {(task.problem || task.why.length > 0) && (
+                                <div className={styles.adviceRow}>
+                                    <dt>왜</dt>
+                                    <dd>
+                                        {task.problem && task.why.length === 0 && <p>{task.problem}</p>}
+                                        {task.why.map((line) => <p key={line}>{line}</p>)}
+                                        {task.gain && <p className={styles.sub}>{task.gain}</p>}
+                                    </dd>
+                                </div>
+                            )}
+                            {task.steps.length > 0 && (
+                                <div className={styles.adviceRow}>
+                                    <dt>하는 법</dt>
+                                    <dd>
+                                        {task.preface && <p className={styles.preface}>{task.preface}</p>}
+                                        <ol className={styles.steps}>
+                                            {task.steps.map((step, i) => <li key={step}><span>{i + 1}</span>{step}</li>)}
+                                        </ol>
+                                        {task.wait && (
+                                            <p className={styles.waitLine}>
+                                                <b>기다리는 시간</b> {task.wait}<span className={styles.sub}> — 내가 하는 시간({task.timeLabel})과 별개로 네이버가 처리하는 시간입니다.</span>
+                                            </p>
+                                        )}
+                                    </dd>
+                                </div>
+                            )}
+                        </dl>
+                    </div>
                     {task.draft && (
                         <div className={styles.draft}>
                             <p className={styles.draftMark}>{DRAFT_MARK}</p>
@@ -445,15 +538,18 @@ function Tasks({ section }) {
                 </article>
             ))}
             {section.rest.length > 0 && (
-                <div className={`${styles.part} ${styles.keep}`}>
+                <div className={listPartClass(section.rest.length)}>
                     <h3 className={styles.partTitle}>그 밖의 할 일</h3>
                     <ul className={styles.restList}>
                         {section.rest.map((task) => (
                             <li key={task.key}>
                                 <span className={styles.box} aria-hidden="true" />
                                 <div>
-                                    <p><strong>{task.title}</strong> <span className={styles.sub}>{task.timeLabel} · {task.where}</span></p>
-                                    {task.how && <p className={styles.sub}>{task.how}</p>}
+                                    <p><strong>{task.title}</strong> <span className={styles.sub}>{task.timeLabel} · {task.where}{task.wait ? ` · 기다리는 시간 ${task.wait}` : ''}</span></p>
+                                    {task.preface && <p className={styles.preface}>{task.preface}</p>}
+                                    {task.steps?.length > 0
+                                        ? <ol className={`${styles.steps} ${styles.stepsSmall}`}>{task.steps.map((step, i) => <li key={step}><span>{i + 1}</span>{step}</li>)}</ol>
+                                        : task.how && <p className={styles.sub}>{task.how}</p>}
                                 </div>
                             </li>
                         ))}
@@ -469,7 +565,7 @@ function Keywords({ section }) {
         <section className={styles.section}>
             <SectionTitle section={section} />
             {section.rows.length > 0 && (
-                <div className={styles.part}>
+                <div className={partClass(section.rows.length)}>
                     <h3 className={styles.partTitle}>바꾸는 칸과 근거</h3>
                     <table className={styles.table}>
                         <thead>
@@ -494,13 +590,45 @@ function Keywords({ section }) {
                             ))}
                         </tbody>
                     </table>
+                    {section.legend.length > 0 && (
+                        <p className={styles.legend}>
+                            <span className={styles.legendHead}>읽는 법</span>
+                            {section.legend.map((entry) => (
+                                <span key={entry.term}><b>{entry.term}</b> = {entry.meaning}</span>
+                            ))}
+                        </p>
+                    )}
+                </div>
+            )}
+            {section.next && (
+                <div className={partClass(section.next.rows.length)}>
+                    <h3 className={styles.partTitle}>
+                        5칸에 들지 못한 다음 후보
+                        <span>{section.next.why} 교체할 칸이 더 생기면 위에서부터 넣으세요(근거는 위 표와 같은 표기)</span>
+                    </h3>
+                    <table className={styles.table}>
+                        <thead>
+                            <tr>
+                                <th scope="col" className={styles.colWord}>키워드</th>
+                                <th scope="col">근거</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {section.next.rows.map((row) => (
+                                <tr key={row.keyword}>
+                                    <th scope="row">{row.keyword}</th>
+                                    <td>{row.basis}</td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
                 </div>
             )}
             {section.placements.length > 0 && (
-                <div className={styles.part}>
+                <div className={partClass(section.placements.length)}>
                     <h3 className={styles.partTitle}>
                         새 키워드를 넣을 자리와 예문
-                        <span>대표키워드만 바꾸지 말고 소개글·소식·메뉴 설명에도 같은 표현을 씁니다</span>
+                        <span>{section.hint}</span>
                     </h3>
                     <table className={styles.table}>
                         <thead>
@@ -516,7 +644,7 @@ function Keywords({ section }) {
                                     <th scope="row">{row.keyword}</th>
                                     <td>{row.where}</td>
                                     <td>
-                                        {row.sentence || <span className={styles.sub}>예문 없음 — 매장 자료로 확인되는 문장만 만들어서, 이 낱말은 넣을 자리만 적었습니다.</span>}
+                                        {row.sentence || <span className={styles.sub}>(직접 적기)</span>}
                                         {row.basis.length > 0 && <span className={styles.metricNote}>근거: {row.basis.join(' · ')}</span>}
                                     </td>
                                 </tr>
@@ -525,21 +653,76 @@ function Keywords({ section }) {
                     </table>
                 </div>
             )}
+            {section.rivalKeywords && (
+                <div className={partClass(section.rivalKeywords.rows.length)}>
+                    <h3 className={styles.partTitle}>
+                        상위 매장이 등록한 대표키워드
+                        <span>검색 상위 매장이 어떤 말로 등록했는지 참고하세요{section.rivalKeywords.total > section.rivalKeywords.rows.length ? ` · ${section.rivalKeywords.total}곳 중 ${section.rivalKeywords.rows.length}곳` : ''}</span>
+                    </h3>
+                    <table className={styles.table}>
+                        <thead>
+                            <tr>
+                                <th scope="col" className={styles.colWord}>매장(검색 순위)</th>
+                                <th scope="col">등록한 대표키워드</th>
+                            </tr>
+                        </thead>
+                        {rowChunks(section.rivalKeywords.rows).map((chunk, index, all) => (
+                            <tbody key={chunk[0].name} className={chunkClass(index, all.length)}>
+                                {chunk.map((row) => (
+                                    <tr key={row.name}>
+                                        <th scope="row">
+                                            {row.name}
+                                            {row.best && <span className={styles.metricNote}>{row.best.keyword} {row.best.rank}위</span>}
+                                        </th>
+                                        <td>
+                                            {row.words.map((entry, wordIndex) => (
+                                                <span key={entry.word}>
+                                                    {wordIndex > 0 && ' · '}
+                                                    {entry.mine || entry.next ? <b>{entry.word}</b> : entry.word}
+                                                    {entry.mine && <small className={styles.wordMark}>내 매장도 씀</small>}
+                                                    {entry.next && !entry.mine && <small className={styles.wordMark}>5칸 최종안에 든 말</small>}
+                                                </span>
+                                            ))}
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        ))}
+                    </table>
+                    {section.rivalKeywords.common.length > 0 && (
+                        <p className={styles.note}>
+                            두 곳 이상이 함께 쓰는 키워드: {section.rivalKeywords.common.map((entry) => `${entry.word} ${entry.count}곳${entry.mine ? '(내 매장도 씀)' : entry.next ? '(5칸 최종안에 든 말)' : ''}`).join(' · ')}
+                        </p>
+                    )}
+                </div>
+            )}
             {section.notes.map((note) => <p key={note} className={styles.note}>{note}</p>)}
             {section.excluded && (
-                <div className={`${styles.part} ${styles.keep}`}>
+                <div className={partClass(section.excluded.rows.length)}>
                     <h3 className={styles.partTitle}>
                         추천에서 뺀 키워드와 이유
-                        <span>자세한 이유는 혼잘마 플레이스 분석 화면에서 볼 수 있습니다{section.excluded.more > 0 ? ` · 이 밖에 ${section.excluded.more}개` : ''}</span>
+                        {section.excluded.more > 0 && <span>이 밖에 {section.excluded.more}개</span>}
                     </h3>
-                    <dl className={styles.excluded}>
-                        {section.excluded.groups.map((group) => (
-                            <div key={group.label}>
-                                <dt>{group.label}</dt>
-                                <dd>{group.terms.join(' · ')}</dd>
-                            </div>
+                    <table className={styles.table}>
+                        <thead>
+                            <tr>
+                                <th scope="col" className={styles.colKind}>구분</th>
+                                <th scope="col" className={styles.colExcluded}>낱말·조합</th>
+                                <th scope="col">이유</th>
+                            </tr>
+                        </thead>
+                        {rowChunks(section.excluded.rows).map((chunk, index, all) => (
+                            <tbody key={`${chunk[0].label}-${chunk[0].words}`} className={chunkClass(index, all.length)}>
+                                {chunk.map((row) => (
+                                    <tr key={`${row.label}-${row.words}`}>
+                                        <td className={styles.sub}>{row.label}</td>
+                                        <th scope="row">{row.words}</th>
+                                        <td>{row.reason}</td>
+                                    </tr>
+                                ))}
+                            </tbody>
                         ))}
-                    </dl>
+                    </table>
                 </div>
             )}
         </section>
@@ -559,7 +742,7 @@ function Ai({ section }) {
                 ))}
             </p>
             {section.questions.length > 0 && (
-                <div className={styles.part}>
+                <div className={partClass(section.questions.length)}>
                     <h3 className={styles.partTitle}>손님이 AI에게 묻는 질문 가운데 지금 답이 없거나 모자란 것</h3>
                     <table className={styles.table}>
                         <thead>
@@ -569,31 +752,34 @@ function Ai({ section }) {
                                 <th scope="col">채울 자리</th>
                             </tr>
                         </thead>
-                        <tbody>
-                            {section.questions.map((row) => (
-                                <tr key={row.key}>
-                                    <th scope="row">{row.question}</th>
-                                    <td>
-                                        <span className={styles.tag}>{row.status}</span>
-                                        {row.now && <span className={styles.metricNote}>{row.now}</span>}
-                                    </td>
-                                    <td>{row.fix}</td>
-                                </tr>
-                            ))}
-                        </tbody>
+                        {rowChunks(section.questions).map((chunk, index, all) => (
+                            <tbody key={chunk[0].key} className={chunkClass(index, all.length)}>
+                                {chunk.map((row) => (
+                                    <tr key={row.key}>
+                                        <th scope="row">{row.question}</th>
+                                        <td>
+                                            <span className={styles.tag}>{row.status}</span>
+                                            {row.now && <span className={styles.metricNote}>{row.now}</span>}
+                                        </td>
+                                        <td>{row.fix}</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        ))}
                     </table>
                 </div>
             )}
             {section.more.length > 0 && (
-                <div className={`${styles.part} ${styles.keep}`}>
+                <div className={listPartClass(section.more.length)}>
                     <h3 className={styles.partTitle}>AI 검색 점검 점수가 오르는 일(처방 상세에 없는 것)</h3>
                     <ul className={styles.restList}>
                         {section.more.map((item) => (
                             <li key={item.id}>
                                 <span className={styles.box} aria-hidden="true" />
                                 <div>
-                                    <p><strong>{item.title}</strong></p>
+                                    <p><strong>{item.title}</strong>{item.timeLabel && <span className={styles.sub}> · {item.timeLabel}</span>}</p>
                                     {item.now && item.target && <p className={styles.sub}>지금 {item.now} → 목표 {item.target}</p>}
+                                    {item.how && <p className={styles.sub}>{item.how}</p>}
                                     {item.caution && <p className={styles.caution}>{item.caution}</p>}
                                 </div>
                             </li>
@@ -602,13 +788,15 @@ function Ai({ section }) {
                 </div>
             )}
             {section.quick.length > 0 && (
-                <div className={`${styles.part} ${styles.keep}`}>
-                    <h3 className={styles.partTitle}>
-                        하루 안에 해 볼 수 있는 일(네이버)
-                        <span>방법과 글 초안은 혼잘마 플레이스 분석의 &lsquo;AI 검색&rsquo;에 있습니다</span>
-                    </h3>
+                <div className={listPartClass(section.quick.length)}>
+                    <h3 className={styles.partTitle}>하루 안에 해 볼 수 있는 일(네이버)</h3>
                     <ul className={styles.plainList}>
-                        {section.quick.map((item) => <li key={item.id}>{item.title}{item.timeLabel ? ` — ${item.timeLabel}` : ''}</li>)}
+                        {section.quick.map((item) => (
+                            <li key={item.id}>
+                                {item.title}{item.timeLabel ? ` — ${item.timeLabel}` : ''}
+                                {item.how && <span className={styles.metricNote}>{item.how}</span>}
+                            </li>
+                        ))}
                     </ul>
                 </div>
             )}
@@ -621,6 +809,7 @@ function Plan({ section }) {
         <section className={styles.section}>
             <SectionTitle section={section} />
             <p className={styles.lead}>{section.lead}</p>
+            <div className={styles.planBlock}>
             <table className={`${styles.table} ${styles.planTable}`}>
                 <tbody>
                     {section.weeks.map((week) => (
@@ -638,36 +827,72 @@ function Plan({ section }) {
                             </td>
                         </tr>
                     ))}
-                    {section.repeat.length > 0 && (
+                    {section.overflow.length > 0 && (
                         <tr>
-                            <th scope="row" className={styles.colWeek}>매주</th>
+                            <th scope="row" className={styles.colWeek}>이 밖에 {section.overflow.length}개</th>
                             <td>
-                                <table className={styles.repeat}>
-                                    <thead>
-                                        <tr>
-                                            <th scope="col">반복할 일</th>
-                                            {[1, 2, 3, 4].map((no) => <th key={no} scope="col" className={styles.colTick}>{no}주</th>)}
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {section.repeat.map((item) => (
-                                            <tr key={item.title}>
-                                                <td>{item.title}<span className={styles.sub}> · {item.timeLabel}</span></td>
-                                                {[1, 2, 3, 4].map((no) => <td key={no} className={styles.colTick}><span className={styles.box} aria-hidden="true" /></td>)}
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
+                                <ul className={styles.checks}>
+                                    {section.overflow.map((item) => (
+                                        <li key={item.title}>
+                                            <span className={styles.box} aria-hidden="true" />
+                                            <span>{item.title}{item.timeLabel ? <span className={styles.sub}> · {item.timeLabel}</span> : null}</span>
+                                        </li>
+                                    ))}
+                                </ul>
                             </td>
                         </tr>
                     )}
                 </tbody>
             </table>
+            </div>
+            {/* 실행표와 다시 조회 상자는 각각 통째로 두고, 둘 사이에서는 쪽이 넘어가도 됩니다. */}
             <div className={styles.recheck}>
-                <p><b>다시 조회해 비교</b> <span className={styles.sub}>{section.recheck.label} 무렵, 1쪽 &lsquo;4주 뒤 다시 볼 숫자&rsquo; 표의 오른쪽 칸에 적습니다.</span></p>
+                <p><b>다시 조회해 비교</b> <span className={styles.sub}>{section.recheck.label} 무렵, 1쪽 &lsquo;4주 뒤 다시 볼 숫자&rsquo; 표의 오른쪽 칸에 적습니다. {section.recheck.note}</span></p>
+                {section.recheck.keywords.length > 0 && (
+                    <table className={`${styles.table} ${styles.tableTight} ${styles.recheckTable}`}>
+                        <thead>
+                            <tr>
+                                <th scope="col">1쪽 &lsquo;대표키워드 5칸 최종안&rsquo;의 키워드(이 키워드로 다시 조회)</th>
+                                <th scope="col" className={styles.colRank}>지금 순위</th>
+                                <th scope="col" className={styles.colRank}>{section.recheck.label}</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {section.recheck.keywords.map((row) => (
+                                <tr key={row.keyword}>
+                                    <th scope="row">{row.keyword}</th>
+                                    <td>{row.now || <><span className={styles.fillIn} />위</>}</td>
+                                    <td><span className={styles.fillIn} />위</td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                )}
                 <p className={styles.writeLine}>다시 조회한 날 <span /> 달라진 점 <span className={styles.wide} /></p>
                 <p className={styles.writeLine}>다음 4주에 할 일 <span className={styles.wider} /></p>
             </div>
+            {/* 매주 반복할 일: 실행표·다시 조회 상자 바로 아래의 작은 표(한 쪽에 다 못 들어가면 다음 쪽으로 통째로) */}
+            {section.repeat.length > 0 && (
+                <div className={`${styles.part} ${styles.keep} ${styles.repeatPart}`}>
+                    <h3 className={styles.partTitle}>매주 반복할 일<span>한 주를 끝낼 때마다 칸에 표시하세요</span></h3>
+                    <table className={`${styles.table} ${styles.tableTight}`}>
+                        <thead>
+                            <tr>
+                                <th scope="col">반복할 일</th>
+                                {[1, 2, 3, 4].map((no) => <th key={no} scope="col" className={styles.colTick}>{no}주</th>)}
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {section.repeat.map((item) => (
+                                <tr key={item.title}>
+                                    <td>{item.title}<span className={styles.sub}> · {item.timeLabel}</span></td>
+                                    {[1, 2, 3, 4].map((no) => <td key={no} className={styles.colTick}><span className={styles.box} aria-hidden="true" /></td>)}
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            )}
         </section>
     );
 }
@@ -715,20 +940,22 @@ export default function Prescription(props) {
 }
 
 // AI 검색 진단은 화면의 GEO·AEO 패널과 같은 계산입니다(같은 값이 나옵니다). 진단이 실패하면 AI 검색 구역만 빼고 만듭니다.
-function safeGeo(place, activity, ranks) {
+function safeGeo(place, activity, ranks, nowMs) {
     try {
-        return analyzeGeoAeo({ place, activity, ranks });
+        return analyzeGeoAeo({ place, activity, ranks, ...(Number.isFinite(nowMs) ? { nowMs } : {}) });
     } catch (error) {
         console.warn('[처방전] AI 검색 진단을 건너뜁니다:', error?.message || error);
         return null;
     }
 }
 
-function PrescriptionDocument({ place, activity, ranks, recommendation, actions, fetchedAt }) {
-    const geo = useMemo(() => safeGeo(place, activity, ranks), [place, activity, ranks]);
+// rivals: 상위 매장이 등록한 대표키워드 모음 [{ placeId, name, keywords }] — 화면의 rivalPool. 없으면 그 표만 뺍니다.
+// nowMs: 문서를 만드는 시각(ms). 정하지 않으면 지금. 견본·시험에서 AI 검색 진단과 문서가 같은 시각으로 계산되게 한 번만 넘깁니다.
+function PrescriptionDocument({ place, activity, ranks, recommendation, actions, rivals, fetchedAt, nowMs }) {
+    const geo = useMemo(() => safeGeo(place, activity, ranks, nowMs), [place, activity, ranks, nowMs]);
     const doc = useMemo(
-        () => buildPrescription({ place, activity, ranks, recommendation, actions, geo, fetchedAt }),
-        [place, activity, ranks, recommendation, actions, geo, fetchedAt],
+        () => buildPrescription({ place, activity, ranks, recommendation, actions, geo, rivals, fetchedAt, ...(Number.isFinite(nowMs) ? { nowMs } : {}) }),
+        [place, activity, ranks, recommendation, actions, geo, rivals, fetchedAt, nowMs],
     );
     const storeName = doc?.store.name || '';
 

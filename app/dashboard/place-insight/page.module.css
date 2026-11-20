@@ -779,14 +779,28 @@
     white-space: nowrap;
 }
 
+/* 두 버튼('내 매장으로 저장'·'처방전 PDF로 저장')은 같은 너비의 두 칸에 나란히 놓고,
+   처방전 버튼의 안내 문구는 그 버튼 바로 아래 칸에 둡니다. 폰에서는 한 칸씩 가득 채웁니다(아래 720px 규칙).
+   처방전 버튼은 <span> 으로 감싼 버튼 + 안내 문구라, 감싼 span 을 display: contents 로 풀어 같은 격자에 올립니다. */
 .railFoot {
     display: grid;
+    grid-template-columns: repeat(2, minmax(0, 190px));
     gap: 8px;
     margin-top: auto;
 }
 
-.railFoot .secondaryBtn {
-    justify-self: start;
+.railFoot > span {
+    display: contents;
+}
+
+/* 처방전 버튼 아래 안내 문구(만들지 못했을 때의 안내도 같은 자리) */
+.railFoot > span > span {
+    grid-column: 2;
+    margin-top: -2px;
+}
+
+.railFoot > .basis {
+    grid-column: 1 / -1;
 }
 
 .basis {
@@ -1040,8 +1054,16 @@
     box-shadow: 0 10px 18px -16px rgba(21, 25, 30, 0.55);
 }
 
-/* 목차가 위에 붙으면 매장 이름이 나타나, 어느 매장을 보고 있는지 잊지 않게 합니다 */
+/* 목차가 위에 붙으면 매장 이름이 나타나, 어느 매장을 보고 있는지 잊지 않게 합니다.
+   목차를 가로로 넘겨도 이 칸은 왼쪽에 멈춰 서고(sticky), 뒤 칸들이 그 밑으로 지나갑니다.
+   그래서 본문 깊은 곳에서도 이 칸을 눌러 그래프로 돌아올 수 있습니다.
+   밑으로 지나가는 칸이 틈으로 비쳐 보이지 않게, 오른쪽 8px 틈(border)과 왼쪽 안쪽 여백 전체(--home-mask)를 바탕색으로 덮습니다. */
 .indexHome {
+    --home-mask: -24px 0 0 0 var(--ground), -48px 0 0 0 var(--ground), -72px 0 0 0 var(--ground);
+    position: sticky;
+    /* 멈춰 서는 자리는 목차의 안쪽 여백이 끝나는 곳이라, 폰에서 왼쪽 위 메뉴 버튼을 비켜 둔 여백(아래 1024px 규칙)이 그대로 지켜집니다. */
+    left: 0;
+    z-index: 1;
     flex-shrink: 0;
     display: inline-flex;
     align-items: center;
@@ -1057,12 +1079,14 @@
     white-space: nowrap;
     color: var(--ink);
     background: var(--raised);
+    background-clip: padding-box;
+    border-right: 0 solid var(--ground);
     border-radius: var(--r);
     opacity: 0;
     /* 접혀 있는 동안에는 탭 키로도 닿지 않게 숨깁니다(접히는 움직임이 끝난 뒤에) */
     visibility: hidden;
     cursor: pointer;
-    transition: max-width 0.35s var(--ease), padding 0.35s var(--ease), margin 0.35s var(--ease), opacity 0.25s ease, box-shadow 0.2s ease, transform 0.15s var(--ease), visibility 0s linear 0.35s;
+    transition: max-width 0.35s var(--ease), padding 0.35s var(--ease), border-right-width 0.35s var(--ease), opacity 0.25s ease, box-shadow 0.2s ease, transform 0.15s var(--ease), visibility 0s linear 0.35s;
 }
 
 .indexHome span {
@@ -1071,17 +1095,17 @@
 }
 
 .index[data-stuck='true'] .indexHome {
-    max-width: 220px;
-    margin-right: 8px;
+    max-width: 228px;
     padding: 0 10px;
+    border-right-width: 8px;
     opacity: 1;
     visibility: visible;
     transition-delay: 0s;
-    box-shadow: inset 0 0 0 1px var(--rule);
+    box-shadow: inset 0 0 0 1px var(--rule), var(--home-mask);
 }
 
 .index[data-stuck='true'] .indexHome:hover {
-    box-shadow: inset 0 0 0 1px var(--ink);
+    box-shadow: inset 0 0 0 1px var(--ink), var(--home-mask);
 }
 
 .indexHome svg {
@@ -1623,6 +1647,15 @@
     box-shadow: inset 0 0 0 1px var(--good);
 }
 
+/* 살펴볼 점이 걸린 등록 키워드(순위 30위 밖 등)는 초록(잘 등록됨) 바탕이 아니라 주의 바탕으로 */
+.slotRow li[data-concern='true'] {
+    background: var(--warn-wash);
+}
+
+.slotRow li[data-concern='true']:hover {
+    box-shadow: inset 0 0 0 1px var(--warn);
+}
+
 .slotRow li[data-empty='true'] {
     font-weight: 500;
     color: var(--ink-3);
@@ -1941,6 +1974,31 @@
 
 .foldMuted {
     color: var(--ink-3);
+}
+
+/* 뺀 키워드의 사실 한 줄(손님이 찾는다는 근거)은 이유보다 진하게, 쓰기 좋은 곳은 작은 꼬리표 줄로 */
+.foldFact {
+    color: var(--ink);
+}
+
+.foldUse {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 6px;
+    margin-top: 2px;
+    font-size: 12px;
+    color: var(--ink-3);
+}
+
+.useTag {
+    padding: 0 7px;
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 20px;
+    color: var(--ink-2);
+    background: var(--sunk);
+    border-radius: var(--r);
 }
 
 /* 지역만 바꾼 조합: "강남 + 낱말 · 낱말"을 한 문단으로 흘려 씁니다(낱말이 많으면 지역 이름 옆에서 이어 줄바꿈). */
@@ -2524,6 +2582,8 @@
 .verdict[data-tone='warn'] { color: var(--warn-ink); background: var(--warn-wash); }
 .verdict[data-tone='bad'],
 .mineState[data-state='no'] { color: var(--bad-ink); background: var(--bad-wash); }
+/* 해당 없음은 기본(회색) 모양 그대로 둡니다 */
+.mineState[data-state='na'] { color: var(--ink-3); }
 
 .verdict[data-tone='good'] svg {
     animation: bounceUp 0.9s var(--spring) 0.6s 3 backwards;
@@ -2820,6 +2880,22 @@
 .tile[data-tone='good'] .tileValue { color: var(--good-ink); }
 .tile[data-tone='warn'] .tileValue { color: var(--warn-ink); }
 .tile[data-tone='bad'] .tileValue { color: var(--bad-ink); }
+
+/* 이 업종에는 해당 없는 항목(병의원의 소식·쿠폰, 약국의 쿠폰): 경고색 없이 작고 옅게 */
+.tile[data-na='true'] .tileValue {
+    font-size: 16px;
+    font-weight: 600;
+    line-height: 1.6;
+    color: var(--ink-3);
+}
+
+.naReason {
+    display: block;
+    margin-top: 3px;
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--ink-3);
+}
 
 .tileNote {
     font-size: 12px;
@@ -3555,6 +3631,15 @@
         padding: 14px;
     }
 
+    /* 휴대폰: 요약 칸 아래 두 버튼은 한 줄씩 가득 채웁니다(너비가 같고 위쪽 숫자 칸과 줄이 맞습니다) */
+    .railFoot {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .railFoot > span > span {
+        grid-column: 1;
+    }
+
     .rail > .kpiGrid {
         grid-row: auto;
     }
@@ -3566,7 +3651,7 @@
     }
 
     .index[data-stuck='true'] .indexHome {
-        max-width: 132px;
+        max-width: 140px;
     }
 
     .loading {
@@ -3696,7 +3781,7 @@
         height: 18px;
     }
 
-    .indexHome,
+    /* .indexHome 은 sticky(위)라 ::after 의 기준이 이미 됩니다 */
     .index a,
     .graphBtn,
     .textLink,

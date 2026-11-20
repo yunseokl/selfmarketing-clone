@@ -247,11 +247,20 @@ export default function Inspector({
         };
         measure();
         if (typeof ResizeObserver === 'undefined') return undefined;
-        const observer = new ResizeObserver(measure);
+        // 크기가 바뀐 알림 안에서 카드 높이를 다시 쓰면, 같은 프레임에 또 크기가 바뀌어 브라우저가
+        // 'ResizeObserver loop completed with undelivered notifications' 경고를 냅니다. 다음 프레임으로 미룹니다.
+        let frame = 0;
+        const observer = new ResizeObserver(() => {
+            cancelAnimationFrame(frame);
+            frame = requestAnimationFrame(measure);
+        });
         observer.observe(slot);
         observer.observe(card);
         if (body) observer.observe(body);
-        return () => observer.disconnect();
+        return () => {
+            cancelAnimationFrame(frame);
+            observer.disconnect();
+        };
     }, [node.id]);
 
     // 본문 내용의 높이도 정수 px 로 맞춥니다(모자란 소수점만큼 끝에 덧댐).
@@ -271,9 +280,16 @@ export default function Inspector({
         };
         snap();
         if (typeof ResizeObserver === 'undefined') return undefined;
-        const observer = new ResizeObserver(snap);
+        let frame = 0;
+        const observer = new ResizeObserver(() => {
+            cancelAnimationFrame(frame);
+            frame = requestAnimationFrame(snap);
+        });
         observer.observe(inner);
-        return () => observer.disconnect();
+        return () => {
+            cancelAnimationFrame(frame);
+            observer.disconnect();
+        };
     }, [node.id]);
 
     // 본문이 끝(또는 처음)에 닿아 있을 때 그 방향으로 쓸면 페이지가 이어서 넘어가야 합니다. 보통은 브라우저가 알아서 넘기지만,

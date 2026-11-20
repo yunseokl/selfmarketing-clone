@@ -616,7 +616,8 @@ label.stepTitle {
 }
 
 .fanoutAnswer,
-.fanoutFix {
+.fanoutFix,
+.fanoutNa {
     margin-top: 6px;
     font-size: 13px;
     line-height: 1.6;
@@ -630,6 +631,11 @@ label.stepTitle {
 .fanoutFix {
     font-weight: 600;
     color: var(--warn-ink);
+}
+
+/* 이 업종에는 해당 없는 질문: 채울 것(주황)이 아니라 옅은 안내 */
+.fanoutNa {
+    color: var(--ink-3);
 }
 
 /* 경쟁 비교 */

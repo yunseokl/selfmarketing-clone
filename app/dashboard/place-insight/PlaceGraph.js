@@ -452,11 +452,14 @@ const PlaceGraph = forwardRef(function PlaceGraph(
         });
         const sizeObserver = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(resize);
         sizeObserver?.observe(wrap);
-        const viewObserver = typeof IntersectionObserver === 'undefined' ? null : new IntersectionObserver(([entry]) => {
+        // 무대가 화면에 얼마나 보이는지(0~1)도 엔진에 알립니다. 거의 안 보일 때는 본문 카드에 올려 둔 점 쪽으로 그래프를 돌리지 않습니다(엔진의 turnTo).
+        const viewObserver = typeof IntersectionObserver === 'undefined' ? null : new IntersectionObserver((entries) => {
+            const entry = entries[entries.length - 1];
             visible = entry.isIntersecting;
+            E.seen = entry.intersectionRatio;
             if (visible) start();
             else stop();
-        });
+        }, { threshold: [0, 0.1, 0.2, 0.3, 0.34, 0.4, 0.5, 0.6, 0.8, 1] });
         viewObserver?.observe(wrap);
         window.addEventListener('resize', resize);
         document.addEventListener('visibilitychange', onVisibility);

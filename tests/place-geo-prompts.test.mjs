@@ -74,8 +74,18 @@ const ANSWER = [
 
 // ---- 질문 세트 ----
 
-test('질문 세트는 기록용 순위 질문을 앞에 두고, 기본 두 질문은 측정 질문과 글자까지 같다', () => {
+test('질문 세트: 업종 이름이 넓은 "한식"이면 질문은 중심 낱말(곰탕)로 묻고, 같은 낱말의 대표 메뉴 질문은 따로 만들지 않는다', () => {
     const place = fullPlace();
+    assert.equal(place.category, '한식');
+    const prompts = buildPromptSet(place);
+    assert.deepEqual(prompts.map((p) => p.id), ['rank-basic', 'rank-combo', 'rank-late', 'source-cite', 'fact-info', 'fact-know', 'follow-price', 'follow-visit']);
+    assert.equal(prompts[0].text, `강남구청역 곰탕 추천해줘. ${SOM_PROMPT_SUFFIX}`);
+    // 매장을 설명하는 문구(아는지 묻는 질문의 괄호)는 실제 업종 이름 그대로
+    assert.match(prompts.find((p) => p.id === 'fact-info').text, /^분석식당\(강남구청역 한식\)/);
+});
+
+test('질문 세트는 기록용 순위 질문을 앞에 두고, 기본 두 질문은 측정 질문과 글자까지 같다', () => {
+    const place = { ...fullPlace(), category: '국밥' }; // 업종 이름이 쓸 만한 말이면 업종 이름 그대로 묻는다
     const prompts = buildPromptSet(place);
     assert.deepEqual(prompts.map((p) => p.id), [
         'rank-basic', 'rank-combo', 'rank-menu', 'rank-late', 'source-cite', 'fact-info', 'fact-know', 'follow-price', 'follow-visit',
@@ -84,7 +94,7 @@ test('질문 세트는 기록용 순위 질문을 앞에 두고, 기본 두 질�
     assert.deepEqual(prompts.filter((p) => p.core).map((p) => p.text), measurePrompts(place));
     assert.deepEqual(prompts.filter((p) => p.kind === 'rank').map((p) => p.core), [true, true, false, false]);
     assert.equal(prompts[2].text, `강남구청역에서 곰탕 잘하는 곳 추천해줘. ${SOM_PROMPT_SUFFIX}`);
-    assert.equal(prompts[3].text, `늦게까지 하는 강남구청역 한식 추천해줘. ${SOM_PROMPT_SUFFIX}`);
+    assert.equal(prompts[3].text, `늦게까지 하는 강남구청역 국밥 추천해줘. ${SOM_PROMPT_SUFFIX}`);
     // 순위 질문은 모두 번호 목록으로 답해 달라고 덧붙인다(순위를 읽기 위해)
     for (const prompt of prompts.filter((p) => p.kind === 'rank')) assert.ok(prompt.text.endsWith(SOM_PROMPT_SUFFIX), prompt.id);
     // 종류는 정해진 네 가지뿐이고, 모든 질문에 "답변에서 볼 것"이 있다
@@ -121,10 +131,10 @@ test('정보가 거의 없는 매장도 기본 질문은 만들고, 확인 안 �
 });
 
 test('네이버는 문장 대신 검색어를 쓰고, 이어 묻기·출처 질문은 네이버에서 건너뛴다', () => {
-    const prompts = buildPromptSet(fullPlace());
+    const prompts = buildPromptSet({ ...fullPlace(), category: '국밥' });
     const byId = Object.fromEntries(prompts.map((p) => [p.id, p]));
-    assert.deepEqual(promptFor(byId['rank-basic'], 'naver'), { text: '강남구청역 한식 추천', note: null, keyword: true });
-    assert.equal(promptFor(byId['rank-combo'], 'naver').text, '주차되는 예약 가능한 강남구청역 한식 추천');
+    assert.deepEqual(promptFor(byId['rank-basic'], 'naver'), { text: '강남구청역 국밥 추천', note: null, keyword: true });
+    assert.equal(promptFor(byId['rank-combo'], 'naver').text, '주차되는 예약 가능한 강남구청역 국밥 추천');
     assert.equal(promptFor(byId['rank-menu'], 'naver').text, '강남구청역 곰탕 잘하는 곳');
     assert.equal(promptFor(byId['fact-know'], 'naver').text, '분석식당');
     for (const id of ['source-cite', 'follow-price', 'follow-visit']) {

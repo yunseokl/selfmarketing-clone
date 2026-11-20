@@ -22,17 +22,17 @@ function attempt(fn, fallback) {
 }
 
 // 화면(Prescription.js)과 같은 순서로 자료를 만들고 처방전을 만듭니다.
-function build({ place, activity, ranks, recommendation, actions }) {
+function build({ place, activity, ranks, recommendation, actions, rivals }) {
     const reco = recommendation === undefined ? attempt(() => recommendKeywords({ place, activity, ranks }), null) : recommendation;
     const todo = actions === undefined ? attempt(() => buildActionItems(place, activity, { recommendation: reco, nowMs: NOW }), []) : actions;
     const geo = attempt(() => analyzeGeoAeo({ place, activity, ranks, nowMs: NOW }), null);
-    return buildPrescription({ place, activity, ranks, recommendation: reco, actions: todo, geo, fetchedAt: NOW, nowMs: NOW });
+    return buildPrescription({ place, activity, ranks, recommendation: reco, actions: todo, geo, rivals, fetchedAt: NOW, nowMs: NOW });
 }
 
 function variants(input) {
     const out = [];
     const { place, activity, ranks } = input;
-    const add = (label, patch) => out.push({ label, data: { place, activity, ranks, recommendation: undefined, actions: undefined, ...patch } });
+    const add = (label, patch) => out.push({ label, data: { place, activity, ranks, recommendation: undefined, actions: undefined, rivals: input.rivalPool, ...patch } });
     for (const key of Object.keys(place)) {
         for (const value of BAD_VALUES) add(`place.${key}=${JSON.stringify(value)}`, { place: { ...place, [key]: value } });
     }
@@ -66,6 +66,16 @@ function variants(input) {
     add('recommendation=null', { recommendation: null });
     add('actions=[{}]', { actions: [{}, null, { key: 'reply' }, { key: 'feed', level: 'high', detail: null }] });
     add('actions=null', { actions: null });
+    // 상위 매장이 등록한 대표키워드(rivals) — 모양이 어긋나도 그 표만 빠지고 던지지 않는다
+    for (const value of [undefined, null, 0, '', {}, [], [null], [{}], [{ name: 'a', keywords: null }], [{ name: 'a', keywords: [1, null, 'x'] }], [{ name: 7, keywords: ['x'] }]]) {
+        add(`rivals=${JSON.stringify(value)}`, { rivals: value });
+    }
+    // 순위 결과의 상위 전체 통계(topSignals)가 일부만 있거나 엉뚱한 값이어도 던지지 않는다
+    if (row) {
+        for (const value of [{ count: 5 }, { count: 5, visitorReviews: null }, { count: 5, visitorReviews: {}, blogReviews: {}, score: {} }, { count: 'x' }, []]) {
+            add(`ranks[].result.topSignals=${JSON.stringify(value)}`, { ranks: ranks.map((entry) => (entry === row ? { ...entry, result: { ...entry.result, topSignals: value } } : entry)) });
+        }
+    }
     return out;
 }
 

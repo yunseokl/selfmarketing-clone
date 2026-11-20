@@ -807,6 +807,17 @@
     break-inside: avoid;
 }
 
+/* 낮은 노트북 화면(높이 940px 이하)에서는 그래프 칸이 낮아 두 줄 목록(412px)이 넘칩니다. 세 줄로 펴서 18가지가 스크롤 없이 다 보이게 합니다(약 290px). */
+@media (min-width: 900px) and (max-height: 940px) {
+    .relationList {
+        width: min(600px, 100%);
+    }
+
+    .relationCols {
+        column-count: 3;
+    }
+}
+
 .relationCols section > p {
     padding: 3px 6px 2px;
     font-size: 12px;

@@ -7,10 +7,11 @@ import {
     schemaType, buildLocalBusinessJsonLd, buildLlmsTxt, compareGeoSignals, placeOnlyScores, summarizeRival, rivalGaps,
     analyzeGeoAeo, ATOMIC_MAX, ATOMIC_MIN, HYPE_WORDS, GEO_DONTS, PLATFORMS, ROADMAP_STAGES, REPLY_TARGET,
     placeCriteria, buildCriteriaAnswer, measurePrompts, somPoints, somRankLabel, brandAliases, evaluateAnswerRank, shareOfModel,
-    channelProgress, platformProgress, profileSites, factRows, buildTemplates,
+    channelProgress, platformProgress, profileSites, factRows, buildTemplates, healthWords,
     SOM_MENTION, SOM_NONE, SOM_PROMPT_SUFFIX, SOM_RANKS, TEMPLATE_BLANK,
 } from '../lib/place-geo.js';
 import { geoRivalsSchema } from '../lib/validations/place-insight.js';
+import { PHARMACY } from './place-graph.fixtures.mjs';
 
 // 고정 시각(2026-11-15 12:00 KST)으로 날짜 계산을 고정합니다. 네트워크 호출은 없습니다.
 const NOW = Date.parse('2026-11-15T03:00:00Z');
@@ -124,7 +125,7 @@ test('지역은 가까운 역 > 동 > 구 순서로 고르고, 질문은 "지역
     assert.equal(placeArea({ address: '서울 마포구 연남동 123' }), '연남동');
     assert.equal(placeArea({ address: '서울 강남구 테헤란로 1' }), '강남구');
     assert.equal(placeArea({ address: '', detail: { subway: { station: '홍대입구' } } }), '홍대입구역');
-    assert.equal(targetQuestion(fullPlace()), '강남구청역 한식 추천');
+    assert.equal(targetQuestion(fullPlace()), '강남구청역 곰탕 추천');
     assert.equal(targetQuestion({ category: '육류,고기요리', address: '' }), '육류·고기요리 추천');
     assert.equal(targetQuestion(BARE), '매장 추천');
 });
@@ -213,7 +214,7 @@ test('원자 답변은 매장명으로 시작하는 두괄식 문단이고 155�
     assert.ok(atomic.length <= ATOMIC_MAX);
     assert.ok(atomic.length >= ATOMIC_MIN);
     assert.equal(atomic.inRange, true);
-    assert.equal(atomic.question, '강남구청역 한식 추천');
+    assert.equal(atomic.question, '강남구청역 곰탕 추천');
     assert.deepEqual(findHypeWords([{ where: 'a', text: atomic.text }]), []);
     assert.ok(atomic.faq.length >= 6);
 });
@@ -559,7 +560,7 @@ test('체크리스트는 자동 판정 항목과 직접 확인 항목을 함께 
     assert.equal(items.menuPrice.done, true);
     assert.equal(items.gbp.auto, undefined); // 구글 비즈니스 프로필은 직접 확인
     assert.equal(items.youtube.auto, true); // 유튜브 연결이 보이면 자동 완료
-    assert.ok(items.measure.title.includes('강남구청역 한식 추천'));
+    assert.ok(items.measure.title.includes('강남구청역 곰탕 추천'));
     const bare = byId(buildChecklist(BARE, null, {}));
     assert.equal(bare.kw5.done, false);
     assert.equal(bare.reply.done, null); // 활동을 못 받으면 확인 불가
@@ -707,9 +708,9 @@ test('조건형 답변은 질문의 지역·업종으로 시작하고 확인되�
     const place = fullPlace();
     assert.deepEqual(placeCriteria(place).map((c) => c.key), ['walk', 'parking', 'booking', 'late', 'group', 'takeout']);
     const answer = buildCriteriaAnswer(place);
-    assert.ok(answer.text.startsWith('강남구청역에서 ① 3-1번 출구 도보 5분 ② 무료 주차 ③ 네이버 예약 가능 조건으로 한식 매장을 찾는다면 분석식당이 해당합니다.'));
+    assert.ok(answer.text.startsWith('강남구청역에서 ① 3-1번 출구 도보 5분 ② 무료 주차 ③ 네이버 예약 가능 조건으로 곰탕 매장을 찾는다면 분석식당이 해당합니다.'));
     assert.equal(answer.lead, answer.text.split('. ')[0] + '.');
-    assert.equal(answer.question, '강남구청역 한식 중 3-1번 출구 도보 5분·무료 주차·네이버 예약 가능 조건에 맞는 곳은 어디인가요?');
+    assert.equal(answer.question, '강남구청역 곰탕 중 3-1번 출구 도보 5분·무료 주차·네이버 예약 가능 조건에 맞는 곳은 어디인가요?');
     assert.ok(answer.length >= ATOMIC_MIN && answer.length <= ATOMIC_MAX, `${answer.length}`);
     assert.equal(answer.inRange, true);
     assert.deepEqual(findHypeWords([{ where: 'a', text: answer.text }]), []);
@@ -737,8 +738,8 @@ test('SoM 점수표는 대화와 같다: 1위 100 · 2위 75 · 3위 55 · 4위 
 test('측정 질문은 번호 목록으로 답해 달라고 덧붙이고, 확인되는 조건이 있으면 조건 질문도 만든다', () => {
     const prompts = measurePrompts(fullPlace());
     assert.equal(prompts.length, 2);
-    assert.equal(prompts[0], `강남구청역 한식 추천해줘. ${SOM_PROMPT_SUFFIX}`);
-    assert.equal(prompts[1], `주차되는, 예약 가능한 강남구청역 한식 추천해줘. ${SOM_PROMPT_SUFFIX}`);
+    assert.equal(prompts[0], `강남구청역 곰탕 추천해줘. ${SOM_PROMPT_SUFFIX}`);
+    assert.equal(prompts[1], `주차되는, 예약 가능한 강남구청역 곰탕 추천해줘. ${SOM_PROMPT_SUFFIX}`);
     assert.deepEqual(measurePrompts(BARE), [`매장 추천해줘. ${SOM_PROMPT_SUFFIX}`]);
     assert.deepEqual(measurePrompts(null), []);
 });
@@ -828,7 +829,7 @@ test('초안은 매장 사실만 채우고 모르는 값은 "직접 적기"로 �
     assert.ok(templates.sourceRequest.text.includes('광고 표기'));
     // 질문형 글: 질문형 제목 → 요약 → 표 → 질문·답 → 최종 수정일
     const post = templates.answerPost.text;
-    assert.ok(post.includes('강남구청역 한식 추천 — 분석식당 위치·영업시간·주차·예약 (2026년 11월 기준)'));
+    assert.ok(post.includes('강남구청역 곰탕 추천 — 분석식당 위치·영업시간·주차·예약 (2026년 11월 기준)'));
     assert.ok(post.indexOf('[맨 위 요약') < post.indexOf('[표') && post.indexOf('[표') < post.indexOf('[질문과 답') && post.indexOf('[질문과 답') < post.indexOf('최종 수정일: 2026.11.15'));
     assert.ok(post.includes('영업시간 | 매일 10:00~22:00'));
     // 리뷰 안내문은 문구·별점을 정해 주지 않는다
@@ -970,4 +971,60 @@ test('analyzeGeoAeo 는 화면에 필요한 묶음을 한 번에 돌려준다', 
     assert.equal(result.platforms.length, 5);
     assert.deepEqual(result.aliases, ['분석식당']);
     assert.equal(analyzeGeoAeo({ place: null }), null);
+});
+
+/* ───────── 업종에 맞는 조언 문구(약국·병원 계열은 메뉴·가격 대신 취급 품목·서비스, 역 자료가 없으면 정류장·건물 입구·주차) ───────── */
+
+test('약국·병원 계열은 메뉴·가격 대신 취급 품목·서비스(진료 과목)를 등록하라고 안내하고, 음식점 문구는 그대로다', () => {
+    assert.deepEqual(healthWords(PHARMACY.place), { item: '취급 품목·서비스', examples: '영양제·복약지도·약 상담' });
+    assert.deepEqual(healthWords({ category: '내과' })?.item, '진료 과목·서비스');
+    assert.equal(healthWords(fullPlace()), null);
+    assert.equal(healthWords(null), null);
+
+    // 할 일: 등록한 메뉴가 없는 약국
+    const pharmacy = byId(plan(PHARMACY.place, PHARMACY.activity).actions);
+    assert.equal(pharmacy.menuAdd.title, '취급 품목·서비스 5개를 한 줄 설명과 함께 등록하기 (예: 영양제·복약지도·약 상담)');
+    assert.deepEqual([pharmacy.menuAdd.now, pharmacy.menuAdd.target], ['등록된 취급 품목·서비스 없음', '취급 품목·서비스 5개 · 설명 모두']);
+    assert.doesNotMatch(`${pharmacy.menuAdd.title}${pharmacy.menuAdd.now}${pharmacy.menuAdd.target}${pharmacy.menuAdd.how}`, /메뉴|메뉴판|맛/);
+    assert.match(pharmacy.menuAdd.how, /효과를 단정하는 표현은 쓰지 않습니다/);
+    // 병원도 같다(진료 과목)
+    const clinic = byId(plan({ ...PHARMACY.place, category: '내과', name: '시험내과' }, PHARMACY.activity).actions);
+    assert.equal(clinic.menuAdd.title, '진료 과목·서비스 5개를 한 줄 설명과 함께 등록하기 (예: 진료 과목·검진·예약 방법)');
+    // 음식점·빈 매장은 전과 같다
+    assert.equal(byId(plan(BARE, null).actions).menuAdd.title, '대표 메뉴(서비스) 5개를 가격·한 줄 설명과 함께 등록하기');
+    assert.equal(byId(plan(BARE, null).actions).menuAdd.now, '등록된 메뉴 없음');
+
+    // AI 질문의 고칠 점(가격·대표 메뉴)과 '칸이 나뉜 정보' 점검의 근거·조언
+    const fanout = byKey(buildFanout(PHARMACY.place, PHARMACY.activity));
+    assert.match(fanout.price.fix, /^취급 품목·서비스마다 안내/);
+    assert.match(fanout.signature.fix, /^대표 취급 품목·서비스\(예: 영양제·복약지도·약 상담\)/);
+    assert.equal(byKey(buildFanout(fullPlace(), fullActivity())).signature.fix, '대표 메뉴(서비스) 이름을 메뉴 탭·소개글·소식에 같은 표현으로 적고 사진·설명을 채우세요.');
+    const aeo = (place) => scoreAeo(place, PHARMACY.activity, buildFanout(place, PHARMACY.activity));
+    const structured = aeo(PHARMACY.place).factors.find((factor) => factor.key === 'structured');
+    assert.match(structured.evidence, /^등록된 취급 품목·서비스 없음/);
+    assert.match(structured.tip, /^취급 품목·서비스마다 설명/);
+    // 점수 계산은 문구와 무관하다: 같은 매장의 업종 이름만 음식점으로 바꿔도 AEO 항목별 점수와 총점이 같다(문구만 다름).
+    // (약국은 쿠폰·예약 질문이 업종 때문에 점수에서 빠지므로 — tests/place-industry.test.mjs — 문구만 다르고 해당 없음이 없는 동물병원으로 견준다)
+    const asFood = { ...PHARMACY.place, category: '한식' };
+    const asPet = { ...PHARMACY.place, category: '동물병원' };
+    const numbers = (result) => [result.score, result.factors.map((factor) => [factor.key, factor.points, factor.max])];
+    assert.deepEqual(numbers(aeo(asPet)), numbers(aeo(asFood)));
+    assert.match(aeo(asFood).factors.find((factor) => factor.key === 'structured').tip, /^메뉴마다 가격·설명을 글자로/);
+});
+
+test('소식 할 일: 오래된 소식은 "오늘 올렸다"고 칠 때 날짜도 오늘로 바뀌어 점수가 오른다(경과일을 날짜에서 다시 세므로)', () => {
+    const stale = fullActivity({ feeds: { ...fullActivity().feeds, latest: '2026-08-24', daysSinceLatest: 83 } });
+    const feed = byId(plan(fullPlace(), stale).actions).feed;
+    assert.equal(feed.stage, 'now');
+    assert.equal(feed.gain.geo + feed.gain.aeo > 0, true, JSON.stringify(feed.gain));
+});
+
+test('길 안내: 가까운 역 자료가 없으면 역·출구·도보 시간이 아니라 정류장·건물 입구·주차 위치를 적으라고 한다', () => {
+    const noSubway = byKey(buildFanout(PHARMACY.place, PHARMACY.activity)).location;
+    assert.equal(PHARMACY.place.detail.subway, null);
+    assert.equal(noSubway.fix, '스마트플레이스 업체정보에 찾아오는 길(가까운 정류장·건물 입구·주차 위치)을 적으세요.');
+    // 역 자료가 있는 매장은 그대로
+    const withSubway = byKey(buildFanout(fullPlace(), fullActivity())).location;
+    assert.ok(fullPlace().detail.subway);
+    assert.equal(withSubway.fix, '스마트플레이스 업체정보에 찾아오는 길(가까운 역·출구·도보 시간)을 적으세요.');
 });

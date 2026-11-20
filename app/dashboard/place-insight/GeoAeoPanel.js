@@ -47,6 +47,9 @@ const FANOUT_STATUS = {
     unknown: { label: '확인 불가', cls: 'sUnknown', Icon: HelpCircle },
 };
 
+// 업종 때문에 해당 없는 질문(lib/place-industry.js, 병의원의 결제·약국의 예약 질문 등): '확인 불가'나 '채울 것'이 아니라 "해당 없음"과 이유로 보입니다.
+const FANOUT_NOT_APPLICABLE = { label: '해당 없음', cls: 'sUnknown', Icon: HelpCircle };
+
 const ACTION_LEVEL = {
     high: { cls: 'actHigh' },
     mid: { cls: 'actMid' },
@@ -160,6 +163,13 @@ function FactorList({ title, factors, actions }) {
                                 </p>
                             )}
                             {partial && <p className={styles.partial}>일부 확인 불가 — 확인된 부분({factor.max}/{factor.fullWeight}점 만점)만 계산했습니다.</p>}
+                            {Array.isArray(factor.notApplicable) && factor.notApplicable.length > 0 && (
+                                // 이 업종에 해당 없어 점수 계산에서 뺀 세부 항목(병의원의 소식·쿠폰, 약국의 쿠폰·예약). 이유는 lib 이 준 문장 그대로.
+                                <p className={styles.partial}>
+                                    점수에서 뺀 항목(이 업종에는 해당 없음) —{' '}
+                                    {factor.notApplicable.map((entry) => `${entry.label}: ${entry.reason}`).join(' / ')}
+                                </p>
+                            )}
                             {next && (
                                 <p className={styles.next}>
                                     <ArrowRight size={14} aria-hidden="true" />
@@ -444,7 +454,7 @@ function AnswerCard({ analysis }) {
             <div className={base.cardHead}>
                 <div>
                     <h2><MessageCircleQuestion size={18} aria-hidden="true" /> AI가 나눠 묻는 질문과 답변 초안</h2>
-                    <p>AI는 &ldquo;{atomic.question}&rdquo;을 아래처럼 세부 질문으로 나눠 찾습니다(쿼리 팬아웃). 매장 정보로 답할 수 있는지와 답변 초안을 보여 줍니다.</p>
+                    <p>AI는 &ldquo;{atomic.question}&rdquo;을 아래처럼 세부 질문으로 나눠 찾습니다. 매장 정보로 답할 수 있는지와 답변 초안을 보여 줍니다.</p>
                 </div>
             </div>
 
@@ -497,7 +507,8 @@ function AnswerCard({ analysis }) {
 
             <ul className={styles.fanout} data-node="geo:fanout">
                 {fanout.map((item) => {
-                    const status = FANOUT_STATUS[item.status] || FANOUT_STATUS.unknown;
+                    const notApplicable = typeof item.notApplicable === 'string' && item.notApplicable ? item.notApplicable : null;
+                    const status = notApplicable ? FANOUT_NOT_APPLICABLE : FANOUT_STATUS[item.status] || FANOUT_STATUS.unknown;
                     return (
                         <li key={item.key} data-node={`fq:${item.key}`}>
                             <div className={styles.fanoutHead}>
@@ -506,7 +517,9 @@ function AnswerCard({ analysis }) {
                                 <span className={`${styles.badge} ${styles[status.cls]}`}>{status.label}</span>
                             </div>
                             {item.answer && <p className={styles.fanoutAnswer}>{item.answer}</p>}
-                            {item.status !== 'yes' && <p className={styles.fanoutFix}>채울 것: {item.fix}</p>}
+                            {notApplicable
+                                ? <p className={styles.fanoutNa}>이 업종에는 해당 없음: {notApplicable}</p>
+                                : item.status !== 'yes' && <p className={styles.fanoutFix}>채울 것: {item.fix}</p>}
                         </li>
                     );
                 })}

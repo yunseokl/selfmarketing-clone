@@ -214,9 +214,10 @@ export function attachGestures(canvas, E, on) {
         if (S.kind === 'rotate') {
             E.dragMove(x - S.x, S.touch ? 0 : y - S.y, (now - S.t) / 1000);
         } else if (S.kind === 'pull') {
-            // 포인터가 무대 밖으로 나가면 그만두고 제자리로 돌려보냅니다. 손가락은 가장자리에서 조금 벗어나는 것까지 봐 줍니다
-            // (좁은 폰 무대에서 가장자리를 스쳤다고 당기던 것이 끊기지 않게).
-            const slack = S.touch ? 28 : 0;
+            // 포인터가 무대 밖으로 나가면 그만두고 제자리로 돌려보냅니다. 손가락은 가장자리에서 한참(120px) 벗어나는 것까지 봐 줍니다
+            // (좁은 폰 무대에서 위쪽 가장자리의 점을 위로 끌어도 당기던 것이 끊기지 않게. 점은 엔진이 무대 안에 붙잡아 둡니다 — stepPull).
+            // 마우스는 무대 밖으로 나가면 바로 그만둡니다.
+            const slack = S.touch ? 120 : 0;
             if (x < -slack || y < -slack || x > w + slack || y > h + slack) {
                 cancel();
                 return;
