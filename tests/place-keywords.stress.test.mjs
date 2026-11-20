@@ -60,11 +60,20 @@ test('F2 상호명 앞말을 지역으로 읽지 않고, 주소를 못 읽은 �
         assert.equal(result.regionSource, 'address', mode);
     }
     // 주소가 비어 등록 키워드에서만 지역을 읽으면 regionSource 가 keywords, 하나도 못 읽으면 none(+ 추천 0개의 까닭 noRegion).
-    // 7차: 앞말은 같은 앞말이 서로 다른 확인된 낱말(업종·품목) 앞에 되풀이될 때만 지역으로 읽는다. 한 번만 나온 "논현횟집"의 "논현"은 지역인지 확인할 수 없다.
+    // 7차: 앞말은 같은 앞말이 서로 다른 확인된 낱말(업종·품목) 앞에 되풀이되고 지리 자료(주소·역·상위 매장의 지역·순위 조회가 알려 준 지역)와 맞을 때만 지역으로 읽는다.
+    // 한 번만 나온 "논현횟집"의 "논현"도, 두 번 되풀이돼도 지리 자료가 없는 "논현"도 지역인지 확인할 수 없다(7차 K-B).
     const once = recommendKeywords({ place: mkPlace({ id: 'kw1', name: '시험횟집', category: '횟집', address: '', keywords: ['논현횟집'], reviewMenus: [{ label: '광어', count: 20 }] }) });
     assert.deepEqual([once.regionSource, once.regions.map((region) => region.term), once.registered[0].regionStatus], ['none', [], 'unknown']);
-    const twice = recommendKeywords({ place: mkPlace({ id: 'kw', name: '시험횟집', category: '횟집', address: '', keywords: ['논현횟집', '논현회식'], reviewMenus: [{ label: '광어', count: 20 }] }) });
-    assert.deepEqual([twice.regionSource, twice.regions.map((region) => [region.term, region.confirmedBy])], ['keywords', [['논현', 'keywords']]]);
+    const twicePlace = mkPlace({ id: 'kw', name: '시험횟집', category: '횟집', address: '', keywords: ['논현횟집', '논현회식'], reviewMenus: [{ label: '광어', count: 20 }] });
+    const twice = recommendKeywords({ place: twicePlace });
+    assert.deepEqual([twice.regionSource, twice.regions.map((region) => [region.term, region.confirmedBy]), twice.registered.map((entry) => entry.regionStatus)], ['none', [], ['unknown', 'unknown']]);
+    // 순위 조회가 네이버가 읽은 지역(region)으로 "논현"을 알려 주면 그때 지역이 된다
+    const asked = (keyword, region) => ({ keyword, state: 'done', result: { keyword, status: 'found', rank: 5, scanned: 100, total: 100, top: [], region } });
+    const located = recommendKeywords({ place: twicePlace, ranks: [asked('논현횟집', '논현')] });
+    assert.deepEqual([located.regionSource, located.regions.map((region) => [region.term, region.confirmedBy]), located.registered.map((entry) => entry.regionStatus)], ['keywords', [['논현', 'rank']], ['known', 'known']]);
+    // 상위 매장의 주소·지역(area)에 그 글자가 있어도 같다
+    const near = recommendKeywords({ place: twicePlace, rivals: [{ placeId: 'r1', name: '시험상위', area: '서울 강남구 논현동', keywords: [] }] });
+    assert.deepEqual(near.regions.map((region) => [region.term, region.confirmedBy]), [['논현', 'rivals']]);
     for (const [mode, result] of both('noaddr')) {
         assert.deepEqual([result.regionSource, result.emptyReason, result.items.length], ['none', 'noRegion', 0], mode);
     }

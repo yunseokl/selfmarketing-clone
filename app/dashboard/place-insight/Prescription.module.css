@@ -562,6 +562,26 @@
     width: 34mm;
 }
 
+/* 직접 판단할 말: 같은 까닭의 후보를 한 묶음에(까닭은 한 번만) */
+.colJudgeWhy {
+    width: 68mm;
+}
+
+.judgeLine {
+    margin: 0;
+}
+
+.judgeLine + .judgeLine {
+    margin-top: 0.6mm;
+}
+
+/* 표에 싣지 않은 나머지 후보의 개수("외 5개") */
+.judgeMore {
+    margin: 1mm 0 0;
+    font-size: 9.5pt;
+    color: var(--rx-ink-2);
+}
+
 .colState {
     width: 40mm;
 }
@@ -1168,6 +1188,9 @@
 .doc[data-split='true'] .splitPart {
     break-inside: auto;
     page-break-inside: auto;
+    /* 갈라진 조각마다 테두리가 닫힙니다(메뉴·시술 설명 초안 상자) */
+    box-decoration-break: clone;
+    -webkit-box-decoration-break: clone;
 }
 
 /* 줄 끝에서 끊기면 어색한 값(예: "GEO 90 · AEO 91점") */

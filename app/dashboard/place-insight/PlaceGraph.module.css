@@ -139,9 +139,19 @@
     background: var(--cv, var(--c));
 }
 
+/* 걸러 볼 항목이 없는 묶음: 흐리게 두고 눌러도 아무 일도 없습니다(색 막대는 그래프의 묶음 색 안내로 그대로 둡니다). */
+.legend button[data-empty='true'] {
+    cursor: default;
+    opacity: 0.5;
+}
+
+.legend button[data-empty='true']:active {
+    transform: none;
+}
+
 /* 올렸을 때: 포인터가 있는 자리에서 묶음 색이 옅게 번져 따라다닙니다(마우스가 있는 기기에서만). */
 @media (hover: hover) {
-    .legend button:hover {
+    .legend button:not([data-empty='true']):hover {
         color: var(--g-text);
         background-image: radial-gradient(72px circle at var(--mx) var(--my), color-mix(in srgb, var(--c) 26%, transparent), transparent 72%);
         box-shadow: inset 0 0 0 1px var(--g-hair-2);
@@ -151,7 +161,7 @@
         box-shadow: inset 0 0 0 1px var(--c);
     }
 
-    .legend button:hover i {
+    .legend button:not([data-empty='true']):hover i {
         height: 14px;
     }
 }

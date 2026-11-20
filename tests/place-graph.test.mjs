@@ -685,7 +685,7 @@ test('묶음과 도착지: 카드 머리의 묶음과 버튼이 가는 구역이
     }
     // 점 수(5차): 약국 111 → 107(지역만 바꾼 조합 4개가 빠짐), 음식점은 근거가 얇은 "룸식당"이 빠지고(추천 이유가 된 둘째 메뉴 "대방어 숙성회"가 점으로 들어와) 162 그대로, 미용실은 그대로
     // 7차: 미용실은 리뷰만 있는 "가일컷"이 후보로 빠지고 업종 이름의 확장어 "남성전문미용실"이 등록한 "미용실"로 묶여 추천 점이 둘 줄었다(134 → 132)
-    assert.equal(checked, 107 + 162 + 132);
+    assert.equal(checked, 107 + 163 + 132); // (7차 K-B·K-E: 음식점 162 → 163 — 강남횟집 점이 들어옴)
 });
 
 test('기존 id 를 그대로 내고(본문 카드의 data-node 와 이어짐), 이름은 label·값은 sub 로 나눠 적는다', () => {
@@ -943,7 +943,7 @@ test('같은 수치를 두 번 적지 않는다: 견본 3종의 모든 점에서
             assert.equal(labels.length <= 4 && new Set(labels).size === labels.length, true, `${name} ${node.id}: facts`);
         }
     }
-    assert.equal(checked, 107 + 162 + 132);
+    assert.equal(checked, 107 + 163 + 132); // (7차 K-B·K-E: 음식점 162 → 163 — 강남횟집 점이 들어옴)
 
     // 값(sub)이 없는 점은 값이라 할 것이 없는 종류뿐이다: 묶음 점 일부, 할 일(제목이 곧 내용), 편의시설·좌석 이름, AI 브리핑 문장
     const valueless = new Set();
@@ -1021,7 +1021,7 @@ test('키워드의 종류(대표·추천·조회)와 순위 조회 상태를 점
     // 순위만 확인해 보라고 권하는 조합(등록할 낱말은 아님)
     const rankOnly = nodeOf(graphOf(RESTAURANT), 'kw:강남구청맛집');
     assert.deepEqual([rankOnly.sub, rankOnly.facts.at(-1)], ['추천', { label: '등록 상태', value: '순위 확인용' }]);
-    assert.match(rankOnly.detail, /^손님이 흔히 쓰는 검색어라 순위만 확인해 보라고 권하는 조합입니다/);
+    assert.match(rankOnly.detail, /^순위만 확인해 보라고 권하는 조합입니다\(대표키워드로 등록할 낱말은 아님\)/); // (7차 s2: 검색 행태를 단정하지 않는다)
     // 순위를 본 추천 키워드는 순위가 좋을수록 무겁다
     assert.equal(nodeOf(graph, 'kw:청주약국').type, 'recoKeyword');
     assert.equal(nodeOf(graph, 'kw:오창약국').weight > nodeOf(graph, 'kw:청주약국').weight, true); // 2위 > 6위
@@ -1236,7 +1236,9 @@ test('추천 키워드 카드의 "이 키워드를 추천한 이유" 수 = 본�
             checked += 1;
         }
     }
-    assert.equal(checked, 5 + 7 + 10); // 7차: 미용실 추천 12 → 10개(가일컷은 후보, 남성전문미용실은 미용실로 묶임)
+    // 7차: 미용실 추천 12 → 10개(가일컷은 후보, 남성전문미용실은 미용실로 묶임). 그 뒤 7차 K-B·K-E: 음식점은 압구정횟집이 지역 미확인이라 강남횟집이 들어 6 → 7개,
+    // 미용실은 등록 "댄디컷"의 가족에서 리뷰가 가장 많은 "시스루댄디컷"이 따로 추천되어 10 → 11개
+    assert.equal(checked, 5 + 7 + 11);
     assert.equal(exact >= 15, true, String(exact)); // 수까지 같게 확인한 추천 키워드가 대부분이다
     // 음식점의 "강남구청대방어": 본문 이유 셋 = 카드 이유 셋
     const restaurant = graphInput(RESTAURANT);
@@ -1709,7 +1711,8 @@ test('묶음별 상한과 전체 상한을 지킨다', () => {
             ...RESTAURANT.place.detail,
             seats: many(10, (i) => `좌석 ${i}`),
             styles: many(8, (i) => ({ name: `스타일${i}`, count: 100 - i })),
-            menus: many(40, (i) => ({ name: `등록메뉴${i}`, price: '1,000원', hasImage: true, recommended: false })),
+            // (7차 K-A: 추천은 가게 쪽(메뉴판)과 손님 쪽(리뷰)이 모두 확인한 말뿐이라, 리뷰 메뉴 20개와 같은 이름의 메뉴를 앞에 둔다)
+            menus: many(40, (i) => ({ name: i < 20 ? `리뷰메뉴${i}` : `등록메뉴${i}`, price: '1,000원', hasImage: true, recommended: false })),
         },
     };
     const activity = { ...RESTAURANT.activity, briefing: many(6, (i) => `브리핑 문장 ${i}번입니다.`) };
@@ -1794,10 +1797,11 @@ test('견본 그래프의 크기(묶음·관계 종류)', () => {
     // 미용실은 "강남"이 "강남역"과 같은 뿌리의 이름이라 한 지역으로 합쳐져 지역 점이 하나 줄었다(134 → 133, 연결 수는 그대로).
     assert.deepEqual(summarizeGraph(graphOf(PHARMACY)).groups, { store: 1, search: 13, rival: 16, voice: 29, todo: 9, ops: 9, geo: 30 });
     assert.deepEqual(summarizeGraph(graphOf(RESTAURANT)).groups, { store: 1, search: 17, rival: 11, voice: 50, pay: 21, todo: 6, ops: 27, geo: 30 });
-    assert.deepEqual(summarizeGraph(graphOf(SALON)).groups, { store: 1, search: 18, rival: 6, voice: 53, todo: 1, ops: 22, geo: 30 });
+    assert.deepEqual(summarizeGraph(graphOf(SALON)).groups, { store: 1, search: 19, rival: 6, voice: 53, todo: 1, ops: 22, geo: 30 }); // (7차 K-E: 가족 pick "시스루댄디컷" 점이 하나 늘어 18 → 19)
     const sizes = (sample) => { const s = summarizeGraph(graphOf(sample)); return [s.nodes, s.links, s.cross]; };
     // 그 뒤(7차): 미용실은 리뷰만 있는 "가일컷"이 후보로 빠지고 업종 이름의 확장어 "남성전문미용실"이 "미용실"로 묶여 키워드 점 둘·연결 여섯이 줄었다(133/232 → 131/226).
-    assert.deepEqual([sizes(PHARMACY), sizes(RESTAURANT), sizes(SALON)], [[107, 211, 105], [163, 299, 137], [131, 226, 96]]);
+    // 그 뒤(7차 K-E): 미용실은 가족 pick "시스루댄디컷"이 따로 추천되어 키워드 점·연결이 늘었다(131/226 → 132/231).
+    assert.deepEqual([sizes(PHARMACY), sizes(RESTAURANT), sizes(SALON)], [[107, 211, 105], [163, 299, 137], [132, 231, 100]]);
     const rels = (sample) => Object.keys(summarizeGraph(graphOf(sample)).rels).sort();
     assert.deepEqual(rels(RESTAURANT), ['answers', 'atTime', 'feeds', 'lagsOn', 'mentions', 'missingFor', 'namedIn', 'outranks', 'partOf', 'ranksIn', 'readFrom', 'registers', 'sameItem', 'sharesTerm', 'spokenIn', 'supports', 'targets', 'usesRegion', 'weakens']);
     assert.deepEqual(rels(PHARMACY), ['alternativeTo', 'answers', 'feeds', 'lagsOn', 'outranks', 'partOf', 'ranksIn', 'registers', 'sharesTerm', 'spokenIn', 'suggests', 'supports', 'targets', 'usesRegion', 'weakens']);

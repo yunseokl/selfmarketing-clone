@@ -17,7 +17,7 @@ import { createPortal, flushSync } from 'react-dom';
 import { FileDown } from 'lucide-react';
 import { toast } from 'sonner';
 import { analyzeGeoAeo } from '@/lib/place-geo';
-import { buildPrescription, prescriptionFileName, DRAFT_MARK, PAGE1_BUDGET_MM, PAGE1_LIMIT_MM, PAGE1_TIGHTEN_MM } from '@/lib/place-prescription';
+import { buildPrescription, prescriptionFileName, slotsNote, DRAFT_MARK, PAGE1_BUDGET_MM, PAGE1_LIMIT_MM, PAGE1_TIGHTEN_MM } from '@/lib/place-prescription';
 import { formatNumber } from '@/lib/place-graph';
 import styles from './Prescription.module.css';
 
@@ -212,7 +212,7 @@ function WeekTasks({ week, index }) {
 function Slots({ slots, index }) {
     return (
         <section className={styles.block}>
-            <BlockTitle index={index} note={slots.changes ? `${slots.fillOnly ? '채울' : '바꿀'} 칸 ${slots.changes}개` : '지금 그대로 둡니다'}>대표키워드 5칸 최종안</BlockTitle>
+            <BlockTitle index={index} note={slotsNote(slots)}>대표키워드 5칸 최종안</BlockTitle>
             <table className={`${styles.table} ${styles.tableFlush}`}>
                 <thead>
                     <tr>
@@ -475,7 +475,7 @@ function DraftBody({ draft }) {
             );
         case 'menu':
             return (
-                <div className={styles.draftItem}>
+                <div className={draft.rows.length >= 4 ? `${styles.draftItem} ${styles.splitPart}` : styles.draftItem}>
                     <table className={`${styles.table} ${styles.tableTight} ${styles.tableFlush}`}>
                         <thead>
                             <tr>
@@ -682,32 +682,36 @@ function Keywords({ section }) {
                 </div>
             )}
             {section.judge && (
-                <div className={partClass(section.judge.length)}>
+                <div className={partClass(section.judgeGroups.length)}>
                     <h3 className={styles.partTitle}>
                         직접 판단할 말
-                        <span>메뉴판·예약·결제 품목으로 확인하지 못해 5칸에 넣지 않았습니다. 실제로 하는 것이면 직접 넣을지 정하세요</span>
+                        <span>{section.judgeNote}</span>
                     </h3>
                     <table className={styles.table}>
                         <thead>
                             <tr>
-                                <th scope="col" className={styles.colWord}>키워드</th>
-                                <th scope="col">근거</th>
-                                <th scope="col" className={styles.colNextWhy}>넣지 않은 까닭</th>
+                                <th scope="col">키워드와 근거</th>
+                                <th scope="col" className={styles.colJudgeWhy}>넣지 않은 까닭</th>
                             </tr>
                         </thead>
                         <tbody>
-                            {section.judge.map((row) => (
-                                <tr key={row.keyword}>
-                                    <th scope="row">{row.keyword}</th>
+                            {section.judgeGroups.map((group) => (
+                                <tr key={group.why}>
                                     <td>
-                                        {row.basis || '-'}
-                                        {Number.isFinite(row.points) && <span className={styles.metricNote}>근거 점수 {row.points}</span>}
+                                        {group.items.map((row) => (
+                                            <p key={row.keyword} className={styles.judgeLine}>
+                                                <b>{row.keyword}</b>
+                                                {row.tag && <> <span className={styles.tag}>{row.tag}</span></>}
+                                                <span className={styles.sub}>{row.basis ? ` — ${row.basis}` : ''}{Number.isFinite(row.points) ? ` · 근거 점수 ${row.points}` : ''}</span>
+                                            </p>
+                                        ))}
                                     </td>
-                                    <td className={styles.sub}>{row.why}</td>
+                                    <td className={styles.sub}>{group.why}</td>
                                 </tr>
                             ))}
                         </tbody>
                     </table>
+                    {section.judgeMore > 0 && <p className={styles.judgeMore}>외 {section.judgeMore}개</p>}
                 </div>
             )}
             {section.placements.length > 0 && (

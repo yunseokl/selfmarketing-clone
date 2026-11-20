@@ -86,9 +86,14 @@ test('지방 매장은 시 → 읍·면·동 → 구 순서로 지역 낱말을 
 
 test('서울 매장은 역 → 구 → 동 순서이고, 등록 키워드에 쓴 지역이 맨 앞으로 온다', () => {
     const regions = regionTerms(RESTAURANT);
-    // "강남구청횟집"은 구(강남)가 아니라 역(강남구청)을 쓴 것으로 센다. 주소에 없는 "압구정"은 등록 키워드에서 찾는다.
+    // "강남구청횟집"은 구(강남)가 아니라 역(강남구청)을 쓴 것으로 센다. 주소에 없는 "압구정"은 등록 키워드 두 개에 되풀이돼도(압구정횟집·압구정회식)
+    // 그것만으로는 지역으로 읽지 않는다(7차 K-B: 지리 자료와 맞을 때만). 순위 조회가 네이버가 읽은 지역(region)으로 "압구정"을 알려 주면 그때 지역이 된다.
     assert.deepEqual(regions.map((region) => [region.term, region.scope, region.used]), [
-        ['강남구청', 'station', 3], ['압구정', 'custom', 2], ['강남', 'district', 0], ['논현', 'town', 0],
+        ['강남구청', 'station', 3], ['강남', 'district', 0], ['논현', 'town', 0],
+    ]);
+    const ranked = regionTerms(FULL_RESTAURANT.place, { ranks: FULL_RESTAURANT.ranks });
+    assert.deepEqual(ranked.map((region) => [region.term, region.scope, region.used, region.confirmedBy]), [
+        ['강남구청', 'station', 3, 'station'], ['압구정', 'custom', 2, 'rank'], ['강남', 'district', 0, 'address'], ['논현', 'town', 0, 'address'],
     ]);
     // 두 글자 역 이름은 구 이름과 겹치기 쉬워 "강남역"으로 쓴다
     assert.equal(regionTerms(SALON)[0].term, '강남역');
@@ -127,7 +132,9 @@ test('키워드에 지역이 들어 있는지와 지역을 뺀 낱말을 가린�
     assert.equal(keywordHasRegion('논현동 맛집', regions), true);
     assert.equal(keywordHasRegion('숙성회', regions), false);
     assert.equal(keywordCore('강남구청횟집', regions), '횟집');
-    assert.equal(keywordCore('압구정 회식 추천', regions), '회식');
+    // 지역으로 읽지 못한 앞말은 떼지 않는다(되풀이만으로는 지역이 아님). 순위 조회가 알려 준 지역이면 뗀다.
+    assert.equal(keywordCore('압구정 회식 추천', regions), '압구정회식');
+    assert.equal(keywordCore('압구정 회식 추천', regionTerms(FULL_RESTAURANT.place, { ranks: FULL_RESTAURANT.ranks })), '회식');
 });
 
 test('약국: 지역 + 업종 조합을 추천하고 근거 없는 낱말(심야약국)은 뺀다', () => {
@@ -211,21 +218,27 @@ test('음식점: "맛집"은 순위 확인용으로만 내고, 넓은 업종 이
     // 셋째부터는 그 조합을 그대로 등록한 상위 매장이 있을 때만 권한다(상위 매장 자료가 있는 견본으로 아래에서 확인)
     assert.equal(keywordsOf(result).includes('강남구청횟집'), false);
     assert.equal(keywordsOf(result).some((word) => word.endsWith('횟집')), false);
-    // 같은 낱말은 등록한 칸을 포함해 두 칸까지다(그 조합을 그대로 등록한 상위 매장이 있어도). 순위 표가 없으면 등록한 두 칸(강남구청횟집·압구정횟집)이 모두 살아 있어 새 조합이 없다.
+    // 같은 낱말은 등록한 칸을 포함해 두 칸까지다(그 조합을 그대로 등록한 상위 매장이 있어도). 순위 표가 없으면 압구정횟집은 지역을 확인하지 못한 키워드(7차 K-B)지만
+    // 그 낱말("횟집")의 칸이라 두 칸으로 센다(7차 F03: 지역이 확인되지 않은 등록 칸도 같은 낱말 칸 수에 들어간다). 그래서 새 조합이 없다.
     assert.deepEqual(keywordsOf(full(FULL_RESTAURANT, { limit: 60 })).filter((word) => word.endsWith('횟집')), []);
     // 순위 표에서 압구정횟집이 41위로 확인되면 그 칸은 바꿀 칸이라 세지 않는다: 강남구청횟집(3위) 한 칸 + 상위 매장 2곳이 등록한 강남횟집 한 칸(논현횟집은 칸이 없어 뺌).
     assert.deepEqual(keywordsOf(full(FULL_RESTAURANT, { limit: 60, ranks: FULL_RESTAURANT.ranks })).filter((word) => word.endsWith('횟집')), ['강남횟집']);
     // 정렬: 등록할 수 있는 추천이 먼저, 순위 확인용(맛집)은 맨 뒤
     assert.equal(result.items.at(-1).keyword, '강남구청맛집');
     assert.equal(result.items.slice(0, -1).every((item) => item.registrable), true);
-    assert.equal(result.registered.every((entry) => entry.hasRegion), true);
+    // 압구정횟집·압구정회식은 순위 조회가 지역을 알려 주기 전에는 지역인지 확인하지 못한 키워드(unknown)다(7차 K-B). 순위 표가 있으면 모두 지역이 있는 키워드다.
+    assert.deepEqual(result.registered.map((entry) => [entry.keyword, entry.regionStatus]), [
+        ['강남구청횟집', 'known'], ['강남구청점심', 'known'], ['강남구청회식', 'known'], ['압구정횟집', 'unknown'], ['압구정회식', 'unknown'],
+    ]);
+    assert.equal(full(FULL_RESTAURANT, { limit: 60, ranks: FULL_RESTAURANT.ranks }).registered.every((entry) => entry.hasRegion), true);
     assert.equal(result.hasRegionKeyword, true);
     // "회식"은 이미 두 지역으로 등록해 지역만 바꾼 조합("강남회식")은 더 권하지 않는다(쓸모 관문 '바').
     // 전에는 여기서 "강남회식"의 근거를 확인했는데, 그 조합이 추천에서 빠져 등록 키워드가 하나뿐인 매장으로 같은 근거를 확인한다.
     assert.equal(keywordsOf(result).includes('강남회식'), false);
     assert.deepEqual(result.excluded.find((entry) => entry.term === '회식'), {
         term: '회식', keywords: ['강남회식', '논현회식'], rule: 'region',
-        reason: "'강남구청회식'·'압구정회식'은 이미 등록한 키워드라, '회식'에 지역만 바꾼 조합은 더 권하지 않습니다.",
+        // (압구정회식은 지역을 확인하지 못한 키워드라 "이미 등록한 조합"으로 세지 않는다 — 7차 K-B)
+        reason: "'강남구청회식'은 이미 등록한 키워드라, '회식'에 지역만 바꾼 조합은 더 권하지 않습니다.",
     });
     const fresh = recommendKeywords({ place: { ...RESTAURANT, keywords: ['강남구청횟집'] } });
     // "회식"은 손님이 고른 좋은 점으로 뒷받침된다
@@ -264,7 +277,8 @@ test('순위를 볼 키워드: 지역 있는 등록 키워드를 먼저, 남는 
 
     const salon = pickRankKeywords(SALON, recommendKeywords({ place: SALON }));
     assert.equal(salon.keywords[0], '강남역미용실');
-    assert.deepEqual(salon.skipped, ['볼륨매직', '댄디컷', '다운펌', '가르마펌']);
+    // (7차 M5: 끝말을 알 수 없는 한글 4자 이상("볼륨매직"·"가르마펌" — 이 견본에는 메뉴·리뷰 자료가 없어 낱말로 설명되지 않음)은 지역이 없다고 단정하지 않아 순위 조회에서 빼지 않는다)
+    assert.deepEqual(salon.skipped, ['댄디컷', '다운펌']);
 
     const restaurant = pickRankKeywords(RESTAURANT, recommendKeywords({ place: RESTAURANT }));
     assert.deepEqual(restaurant, { keywords: RESTAURANT.keywords, skipped: [], added: [] });
@@ -318,6 +332,8 @@ const excludedOf = (result, term) => result.excluded.find((entry) => entry.term 
 const SHOP = { placeId: 't', address: '서울 강남구 테헤란로 1', jibunAddress: '서울 강남구 역삼동 1', keywords: [], conveniences: [], reviewVotes: [], reviewThemes: [], reviewMenus: [] };
 const menu = (name, recommended = false) => ({ name, price: '9,000원', hasImage: true, recommended });
 const RULES = ['broad', 'extra', 'vague', 'drink', 'otherBusiness', 'condition', 'rivalOnly', 'noBlog', 'channel', 'merged', 'region', 'offMain', 'classification', 'rank', 'thin'];
+// 그 뒤에 더해진 규칙(관문 '파·하'의 attribute·place, 상호 brand, 한 글자 short, 7차 K-C unrelated). 모양 검사는 이것도 받아들이고, 규칙마다 한 줄 이상 지나가는지는 RULES 만 봅니다.
+const EXTRA_RULES = ['attribute', 'place', 'brand', 'unrelated', 'short', 'prefix', 'label'];
 
 test('관문 1 — 횟집의 곁들임 메뉴(김밥·소금김밥·보쌈)는 추천하지 않는다', () => {
     const result = full(FULL_RESTAURANT, { limit: 100 });
@@ -437,7 +453,8 @@ test('관문 10 — 메뉴판·소식에 되풀이해 나오는 낱말도 후보
     assert.equal(moreSaid.items.some((item) => item.term === '대방어'), false);
     // 계절(제철)은 짐작하지 않는다
     for (const item of result.items) assert.equal(item.reasons.some((reason) => /제철|겨울|여름|계절/.test(reason.text)), false, item.keyword);
-    // 메뉴판 세 항목에 되풀이돼도 시·도 이름·원산지·크기 같은 말은 메뉴 낱말이 아니다(흑돼지만 후보)
+    // 메뉴판 세 항목에 되풀이돼도 시·도 이름·원산지·크기 같은 말은 메뉴 낱말이 아니다. 7차 K-D: 메뉴 이름 앞에만 쓰이고 끝말(품목의 머리)로는
+    // 한 번도 안 쓰인 낱말("제주 흑돼지 오겹살"·"제주 흑돼지 목살"의 "흑돼지", "마장동 소고기"의 "마장동")은 추천도 후보도 만들지 않는다.
     const pork = recommendKeywords({
         place: {
             ...SHOP, name: '시험고깃집', category: '돼지고기구이', reviewMenus: [],
@@ -445,13 +462,28 @@ test('관문 10 — 메뉴판·소식에 되풀이해 나오는 낱말도 후보
         },
         limit: 100,
     });
-    assert.deepEqual(pork.items.filter((item) => item.source === 'board').map((item) => item.term), ['흑돼지']);
+    assert.deepEqual(pork.items.filter((item) => item.source === 'board').map((item) => item.term), []);
+    assert.equal([...pork.candidates, ...pork.items].some((item) => item.term === '흑돼지'), false);
+    // 추천도 후보도 아니지만 흔적 없이 사라지지는 않는다: 뺀 낱말로 이유를 남긴다(규칙 prefix)
+    assert.equal(excludedOf(pork, '흑돼지').rule, 'prefix');
+    assert.equal(excludedOf(pork, '흑돼지').reason, "'흑돼지'는 메뉴 이름 앞에서만 쓰이고(메뉴 3개) 끝말로는 한 번도 쓰이지 않아, 메뉴가 아니라 지명·원산지·꾸밈으로 보고 키워드의 낱말로 쓰지 않습니다.");
+    // 같은 낱말이 끝말로도 쓰이면(메뉴 "흑돼지"가 따로 있으면) 낱말이다
+    const porkHead = recommendKeywords({
+        place: {
+            ...SHOP, name: '시험고깃집', category: '돼지고기구이', reviewMenus: [{ label: '흑돼지', count: 30 }],
+            detail: { menus: ['제주 흑돼지 오겹살(국내산)', '제주 흑돼지 목살 1인', '제주 흑돼지 항정살 1인', '흑돼지', '냉면'].map((name) => menu(name)) },
+        },
+        limit: 100,
+    });
+    assert.equal(porkHead.items.some((item) => item.term === '흑돼지'), true);
 });
 
 test('관문 1 반대 사례 — 그 메뉴가 주력인 매장에서는 그대로 추천한다(김밥집·분식집·칼국수집·대표 메뉴)', () => {
     // 업종이 김밥
     const gimbap = recommendKeywords({ place: { ...SHOP, name: '시험김밥 역삼점', category: '김밥', reviewMenus: [{ label: '김밥', count: 90 }, { label: '참치김밥', count: 40 }], detail: { menus: [menu('김밥'), menu('참치김밥')] } } });
-    assert.deepEqual(keywordsOf(gimbap).slice(0, 2), ['강남김밥', '역삼김밥']);
+    // (7차 K-E: 등록·업종 낱말 하나 + 그 가족에서 리뷰가 가장 많은 구체 품목 하나 — 같은 낱말의 둘째 지역 대신 "참치김밥")
+    assert.deepEqual(keywordsOf(gimbap).slice(0, 2), ['강남김밥', '강남참치김밥']);
+    assert.deepEqual(gimbap.items.find((item) => item.keyword === '강남참치김밥').reasons.at(-1), { kind: 'note', text: "'김밥' 가운데 리뷰가 가장 많은 메뉴" });
     // 업종이 분식(이름에 김밥이 없어도 분식집이 당연히 파는 메뉴)
     const snack = recommendKeywords({ place: { ...SHOP, name: '시험분식', category: '분식', reviewMenus: [{ label: '떡볶이', count: 50 }, { label: '김밥', count: 40 }], detail: { menus: [menu('떡볶이'), menu('김밥')] } } });
     for (const word of ['강남떡볶이', '강남김밥']) assert.equal(keywordsOf(snack).includes(word), true, word);
@@ -530,9 +562,16 @@ test('관문 3 — 낱말 다듬기: 띄어쓰기·괄호·매장 이름이 붙�
     assert.deepEqual(grill.items.find((item) => item.keyword === '강남구청볼락구이').reasons.map((reason) => reason.text), ['리뷰 9회', '주간 인기 메뉴']);
     // 매장 이름의 첫 낱말과 두 글자만 겹치는 것("한우마을"의 "한우곰탕")은 재료 이름일 수 있어 떼지 않는다
     const hanwoo = recommendKeywords({
-        place: { ...SHOP, name: '한우마을 역삼점', category: '한식', detail: { menus: [], pos: { popularMenus: [{ name: '한우곰탕', share: 30 }, { name: '한우마을 정식(2인)', share: 10 }] } } },
+        place: { ...SHOP, name: '한우마을 역삼점', category: '한식', reviewMenus: [{ label: '한우곰탕', count: 20 }], detail: { menus: [], pos: { popularMenus: [{ name: '한우곰탕', share: 30 }, { name: '한우마을 정식(2인)', share: 10 }] } } },
     });
     assert.equal(keywordsOf(hanwoo).includes('강남한우곰탕'), true);
+    // 결제 인기 메뉴(가게 쪽)만 있고 리뷰·블로그·상위 매장 어디에서도 손님 쪽 확인이 없으면 추천이 아니라 후보(lacks 'voice')다(7차 K-A)
+    const hanwooQuiet = recommendKeywords({
+        place: { ...SHOP, name: '한우마을 역삼점', category: '한식', detail: { menus: [], pos: { popularMenus: [{ name: '한우곰탕', share: 30 }, { name: '한우마을 정식(2인)', share: 10 }] } } },
+    });
+    assert.equal(keywordsOf(hanwooQuiet).includes('강남한우곰탕'), false);
+    assert.deepEqual(hanwooQuiet.candidates.map((entry) => [entry.keyword, entry.lacks]), [['강남한우곰탕', 'voice']]);
+    assert.equal(hanwooQuiet.candidates[0].why, '주간 인기 메뉴에는 있지만 리뷰·상위 매장 키워드에서는 이 말을 확인하지 못했고 블로그 후기 언급은 조회하지 않았습니다. 손님이 찾는 말이 맞으면 쓰세요.');
     // 매장 이름을 떼고 남은 "정식"은 뜻이 넓어 걸린다
     assert.equal(excludedOf(hanwoo, '정식').rule, 'vague');
 
@@ -563,7 +602,7 @@ test('관문 4 — 넓은 업종 이름(한식)은 "지역+한식"으로 추천�
     // 전에는 28번째 "강남구청한식", 38번째 "압구정한식"(점수만 낮췄음)
     assert.equal(result.items.some((item) => item.term === '한식'), false);
     assert.deepEqual(excludedOf(result, '한식'), {
-        term: '한식', keywords: ['강남구청한식', '압구정한식'], rule: 'broad',
+        term: '한식', keywords: ['강남구청한식', '강남한식'], rule: 'broad',
         reason: "'한식'은 범위가 넓은 업종 이름이라, 지역을 붙여도 어떤 매장을 찾는 말인지 가려지지 않습니다.",
     });
     // 좁은 업종 이름은 그대로 추천한다(순서는 근거 점수 순)
@@ -580,8 +619,9 @@ test('관문 5 — 한쪽이 다른 쪽을 품는 메뉴 낱말은 하나로 묶
     assert.equal(excludedOf(restaurant, '광어회').reason, "'광어회'(리뷰 13회)는 '광어'(리뷰 34회)가 들어 있는 말이라, 손님이 더 많이 말한 '광어' 하나로 묶었습니다.");
     assert.deepEqual(restaurant.items.find((item) => item.keyword === '강남구청광어').merged, ['광어회']);
     // 갈치(12회)·갈치조림(10회)·순살갈치조림(결제) → 갈치. 횟집에서는 셋 다 주력 갈래(회) 밖이라 먼저 걸리므로, 메뉴판을 읽지 못한 같은 매장으로 본다
+    // (7차 M1: 묶음은 가게 쪽 확인을 물려주지 않는다. 그래서 "갈치"가 메뉴판 품목으로 확인되도록 한 줄(갈치구이)만 둔 같은 매장으로 본다 — 한 줄이라 주력 갈래는 읽지 않는다)
     const unread = recommendKeywords({
-        place: { ...FULL_RESTAURANT.place, detail: { ...FULL_RESTAURANT.place.detail, menus: [] } }, activity: FULL_RESTAURANT.activity, rivals: FULL_RESTAURANT.rivalPool, limit: 100,
+        place: { ...FULL_RESTAURANT.place, detail: { ...FULL_RESTAURANT.place.detail, menus: [menu('갈치구이')] } }, activity: FULL_RESTAURANT.activity, rivals: FULL_RESTAURANT.rivalPool, limit: 100,
     });
     // 둘 다 '갈치'로 묶였고 서로 품는 낱말이라 excluded 에서도 한 줄이다(리뷰 수는 낱말마다 그대로 적음)
     assert.deepEqual(excludedOf(unread, '갈치조림'), {
@@ -594,16 +634,20 @@ test('관문 5 — 한쪽이 다른 쪽을 품는 메뉴 낱말은 하나로 묶
     // 짧은 쪽이 덜 말해진 메뉴 낱말이면 긴 쪽으로 묶는다
     const longer = recommendKeywords({ place: { ...SHOP, name: '시험수산', category: '생선회', reviewMenus: [{ label: '광어회', count: 20 }, { label: '광어', count: 4 }], detail: { menus: [menu('광어회')] } } });
     assert.equal(excludedOf(longer, '광어').reason, "'광어'(리뷰 4회)는 '광어회'(리뷰 20회)에 들어 있는 말이라, 손님이 더 많이 말한 '광어회' 하나로 묶었습니다.");
-    // 등록 키워드 "댄디컷"과 예약 스타일 "시스루댄디컷"(리뷰 827회·예약 315건): 시스루댄디컷은 댄디컷의 한 갈래 스타일이고
-    // 댄디컷(등록 키워드, 리뷰 2,452회·예약 554건)이 그 말을 품어, 추천 자리를 같은 낱말로 두 번 쓰지 않게 하나로 묶는다
+    // 등록 키워드 "댄디컷"과 예약 스타일 "시스루댄디컷"(리뷰 827회·예약 315건): 시스루댄디컷은 댄디컷의 한 갈래 스타일이고 댄디컷(등록 키워드,
+    // 리뷰 2,452회·예약 554건)이 그 말을 품는다. 7차 K-E: 한 가족에서 손님이 가장 많이 말한 구체 품목 하나는 묶지 않고 따로 권한다
+    // (같은 낱말처럼 두 칸까지: 댄디컷 한 칸 + 시스루댄디컷 한 칸). 이유에 왜 별개로 권하는지 한 줄(note)을 남긴다.
     const salon = full(FULL_SALON, { limit: 100 });
-    assert.deepEqual(excludedOf(salon, '시스루댄디컷'), {
-        // ("강남"은 "강남역"과 같은 뿌리의 이름이라 한 지역으로 본다 → 둘째 지역은 역삼)
-        term: '시스루댄디컷', keywords: ['강남역시스루댄디컷', '역삼시스루댄디컷'], rule: 'merged', into: '댄디컷',
-        reason: "'시스루댄디컷'(예약 315건·리뷰 827회)은 '댄디컷'(예약 554건·리뷰 2,452회)이 들어 있는 말이라, 등록 키워드인 '댄디컷' 하나로 묶었습니다.",
-    });
-    assert.deepEqual(salon.items.find((item) => item.keyword === '강남역댄디컷').merged, ['시스루댄디컷']);
-    assert.equal(salon.items.some((item) => item.term === '시스루댄디컷'), false);
+    assert.equal(excludedOf(salon, '시스루댄디컷'), undefined);
+    const sheerDandy = salon.items.find((item) => item.keyword === '강남역시스루댄디컷');
+    assert.deepEqual(sheerDandy.reasons.at(-1), { kind: 'note', text: "'댄디컷' 가운데 리뷰가 가장 많은 메뉴" });
+    assert.equal(sheerDandy.evidence.parts.some((part) => part.kind === 'note'), false); // note 는 근거 점수에 넣지 않는다
+    assert.equal(sheerDandy.score, sheerDandy.evidence.points);
+    assert.equal('merged' in salon.items.find((item) => item.keyword === '강남역댄디컷'), false);
+    // 가족이 이미 두 칸을 쓰면(등록 키워드가 댄디컷 두 칸) 따로 권할 칸이 없어 예전처럼 하나로 묶고 그 사실을 알린다
+    const dandyFull = full({ ...FULL_SALON, place: { ...FULL_SALON.place, keywords: ['강남역댄디컷', '역삼댄디컷', '볼륨매직'] } }, { limit: 100 });
+    assert.equal(dandyFull.items.some((item) => item.term === '시스루댄디컷'), false);
+    assert.deepEqual([excludedOf(dandyFull, '시스루댄디컷').rule, excludedOf(dandyFull, '시스루댄디컷').into], ['merged', '댄디컷']);
     // 업종 낱말·업종 연관어끼리는 묶지 않는다(약국·대형약국·동물약국은 서로 다른 검색어)
     const pharmacy = full(FULL_PHARMACY, { limit: 100 });
     for (const word of ['청주약국', '청주대형약국', '청주동물약국']) assert.equal(keywordsOf(pharmacy).includes(word), true, word);
@@ -651,13 +695,13 @@ test('관문 6 — 추천이 같은 낱말의 지역 바꿔치기로 채워지�
     // 순위 표에서 압구정횟집이 41위로 확인돼 그 칸이 비면, 그 조합을 그대로 등록한 상위 매장이 있는 강남횟집이 한 칸을 채운다(논현횟집은 칸이 없어 뺌)
     const ranked = full(FULL_RESTAURANT, { ranks: FULL_RESTAURANT.ranks });
     assert.deepEqual(ranked.items.filter((item) => item.term === '횟집').map((item) => [item.keyword, item.reasons[0].text]), [['강남횟집', '상위 2곳 등록']]);
-    assert.deepEqual(keywordsOf(full({ ...FULL_RESTAURANT, rivalPool: [] })).filter((word) => word.endsWith('횟집')), []);
+    assert.deepEqual(keywordsOf(full({ ...FULL_RESTAURANT, rivalPool: [] }, { ranks: FULL_RESTAURANT.ranks })).filter((word) => word.endsWith('횟집')), []);
     // 주력 메뉴 "숙성회"도 지역은 하나(전에는 주력 낱말이라 "압구정숙성회"까지 2개), "점심"·"회식"은 이미 등록한 조합이 있어 더 권하지 않는다
     assert.deepEqual(excludedOf(restaurant, '숙성회'), {
-        term: '숙성회', keywords: ['압구정숙성회'], rule: 'region', reason: "'강남구청숙성회'가 추천에 이미 있어, '숙성회'에 지역만 바꾼 조합은 더 권하지 않습니다.",
+        term: '숙성회', keywords: ['강남숙성회'], rule: 'region', reason: "'강남구청숙성회'가 추천에 이미 있어, '숙성회'에 지역만 바꾼 조합은 더 권하지 않습니다.",
     });
     assert.equal(excludedOf(restaurant, '점심').reason, "'강남구청점심'은 이미 등록한 키워드라, '점심'에 지역만 바꾼 조합은 더 권하지 않습니다.");
-    assert.deepEqual(excludedOf(restaurant, '점심').keywords, ['압구정점심', '강남점심']);
+    assert.deepEqual(excludedOf(restaurant, '점심').keywords, ['강남점심', '논현점심']);
     assert.deepEqual(excludedOf(restaurant, '회식').keywords, ['강남회식', '논현회식']);
     // 미용실: 이미 등록한 "강남역미용실"과 지역만 다른 "강남미용실"·"역삼미용실"을 더 권하지 않는다(전에는 가장 중요한 낱말이라 3개까지 허용했다).
     // 업종 이름의 확장어 "남성전문미용실"은 등록한 "미용실"과 같은 업종이라 하나로 묶는다(전에는 "강남역남성전문미용실"이 따로 추천됐다)
@@ -735,7 +779,8 @@ test('관문 6(바) — 가장 중요한 낱말의 둘째 지역은 내 순위�
 
 test('관문 7 — 블로그 언급을 물어봤는데 0개이고 다른 근거도 없는 낱말은 뺀다', () => {
     // (전에는 약국의 "건강기능식품"(블로그 0/11)으로 확인했다. 그 낱말은 이제 분류 이름(관문 '차')이 먼저 걸려, 시험용 미용실로 본다)
-    const place = { ...SHOP, name: '시험헤어', category: '미용실', keywords: ['레이어드컷'], detail: { menus: [] } };
+    // (7차 M5: 이 매장 자료에 없는 한글 4자 이상 등록 낱말은 지역을 읽을 수 없는 unknown 이라 따지지 않는다 — 메뉴판에 "레이어드컷"이 있는 매장으로 본다)
+    const place = { ...SHOP, name: '시험헤어', category: '미용실', keywords: ['레이어드컷'], detail: { menus: [menu('레이어드컷')] } };
     const asked = recommendKeywords({ place, activity: { mentions: { blogTotal: 20, terms: [{ term: '미용실', count: 15 }, { term: '레이어드컷', count: 0 }] } }, limit: 100 });
     assert.equal(asked.items.some((item) => item.term === '레이어드컷'), false);
     assert.deepEqual(excludedOf(asked, '레이어드컷'), {
@@ -761,7 +806,7 @@ test('관문 8 — 음식점의 "지역+포장"·"지역+배달"은 받는 방�
     assert.equal(FULL_RESTAURANT.place.conveniences.includes('포장') || (FULL_RESTAURANT.place.detail.facilities || []).includes('포장'), true);
     assert.equal(keywordsOf(restaurant).some((word) => word.endsWith('포장')), false);
     assert.deepEqual(excludedOf(restaurant, '포장'), {
-        term: '포장', keywords: ['강남구청포장', '압구정포장'], rule: 'channel',
+        term: '포장', keywords: ['강남구청포장', '강남포장'], rule: 'channel',
         reason: "'포장'은 가게 종류나 메뉴가 아니라 받는 방법이라, 이 말만으로는 어떤 가게를 찾는지 알 수 없습니다.",
     });
     // 배달도 같다. 매장에 그 사실이 있어도(편의시설 '배달') 가게를 찾는 말로는 권하지 않는다
@@ -832,12 +877,12 @@ test('등록 키워드 진단: 이미 등록한 키워드가 관문에 걸리면
     const board = [...Array.from({ length: 19 }, (_, index) => menu(`회 ${index}`)), menu('소금김밥')];
     const sushi = { ...SHOP, name: '시험수산', category: '생선회', keywords: ['역삼횟집', '역삼김밥'], reviewMenus: [{ label: '김밥', count: 30 }] };
     const flagged = recommendKeywords({ place: { ...sushi, detail: { menus: board } } });
-    assert.deepEqual(flagged.registered.map((entry) => entry.concern), [
-        null,
-        // (등록 키워드 '김밥' 자체가 이 매장의 갈래로 읽히므로 "이 매장을 찾는 말은 ○ 메뉴"라는 말은 붙이지 않는다)
-        { rule: 'otherBusiness', reason: "'김밥'은 손님이 많이 찾는 메뉴입니다(리뷰 '김밥' 30회). 다만 이 말은 김밥집을 가리키는 메뉴 이름인데, 이 매장의 주력이라는 근거를 찾지 못해 지역을 붙인 키워드로는 권하지 않습니다(읽어 온 메뉴 20개 중 1개). 메뉴 설명·소식·소개글에는 쓰기 좋은 낱말입니다." },
-    ]);
-    assert.equal(keywordsOf(flagged).some((word) => word.includes('김밥')), false);
+    // 7차 M9: 사장님이 등록한 낱말 자신이 이 매장의 메뉴판(소금김밥)·리뷰(김밥 30회)에 있으면 "다른 업종의 낱말"이라고 살펴볼 점을 달지 않는다(순대국집의 등록 "국밥" ← 메뉴 "내장국밥")
+    assert.deepEqual(flagged.registered.map((entry) => entry.concern), [null, null]);
+    assert.equal(flagged.excluded.some((entry) => entry.term === '김밥' && entry.rule === 'otherBusiness'), false);
+    // 이 매장 자료 어디에도 그 낱말이 없으면(메뉴판 줄과 리뷰에 김밥이 없음) 예전처럼 다른 업종의 낱말로 본다
+    const without = recommendKeywords({ place: { ...sushi, reviewMenus: [], detail: { menus: board.slice(0, 19) } } });
+    assert.equal(without.registered[1].concern?.rule, 'otherBusiness');
     // 메뉴판을 읽지 못했으면 사장님의 선택과 어긋난다고 말할 자료가 없으므로 걸지 않는다
     const unread = recommendKeywords({ place: { ...sushi, detail: { menus: [] } } });
     assert.equal(unread.registered.every((entry) => entry.concern === null), true);
@@ -1004,18 +1049,19 @@ test('등록 키워드가 "지역 + 업종 연관어"일 때 앞부분을 지역
     assert.equal(result.registered[0].core, '대형약국');
     assert.deepEqual(regionTerms({ ...FULL_RESTAURANT.place, keywords: ['강남구청룸식당'] }).map((region) => region.term), ['강남구청', '강남', '논현']);
     assert.deepEqual(regionTerms({ ...FULL_SALON.place, keywords: ['강남역1인미용실'] }).map((region) => region.term), ['강남역', '역삼']); // "강남"은 "강남역"과 같은 뿌리라 한 지역
-    // 주소에 없는 지역("압구정")을 등록 키워드에서 읽는 것은 그대로다
-    assert.equal(regionTerms(FULL_RESTAURANT.place).some((region) => region.term === '압구정' && region.scope === 'custom'), true);
+    // 주소에 없는 지역("압구정")은 등록 키워드에 되풀이되는 것만으로는 읽지 않고(7차 K-B), 순위 조회가 알려 준 지역이면 읽는다
+    assert.equal(regionTerms(FULL_RESTAURANT.place).some((region) => region.term === '압구정'), false);
+    assert.equal(regionTerms(FULL_RESTAURANT.place, { ranks: FULL_RESTAURANT.ranks }).some((region) => region.term === '압구정' && region.scope === 'custom'), true);
 });
 
 test('걸러낸 것(excluded)의 모양과, 추천·자동 순위 조회에는 관문을 통과한 것만 나온다는 것', () => {
     for (const all of [FULL_PHARMACY, FULL_RESTAURANT, FULL_SALON].flatMap((sample) => [full(sample, { limit: 100 }), full(sample, { limit: 100, ranks: sample.ranks })])) {
         const passedWords = new Set(keywordsOf(all));
         for (const entry of all.excluded) {
-            assert.equal(RULES.includes(entry.rule), true, entry.rule);
+            assert.equal([...RULES, ...EXTRA_RULES].includes(entry.rule), true, entry.rule);
             assert.equal(typeof entry.term === 'string' && entry.term.length >= 2, true);
             assert.equal(Array.isArray(entry.keywords) && entry.keywords.length >= 1, true, entry.term);
-            assert.equal(['offMain', 'otherBusiness', 'thin'].includes(entry.rule) ? /\.$/.test(entry.reason) : /^[^.]+\.$/.test(entry.reason), true, entry.reason);
+            assert.equal(['offMain', 'otherBusiness', 'thin', 'brand', 'unrelated'].includes(entry.rule) ? /\.$/.test(entry.reason) : /^[^.]+\.$/.test(entry.reason), true, entry.reason);
             assert.equal(/검색량|조회수|제철|계절/.test(entry.reason), false, entry.reason);
             assert.equal(Object.keys(entry).every((key) => ['term', 'keywords', 'rule', 'reason', 'into', 'words', 'popular', 'useIn', 'lead', 'why'].includes(key)), true);
             // into 는 묶인 낱말(merged)이나 대신 쓸 손님 말(classification)에만 있다(그 낱말이 화면에 보일 때만 — 아래 '이유 문장 전수 확인')
@@ -1027,11 +1073,11 @@ test('걸러낸 것(excluded)의 모양과, 추천·자동 순위 조회에는 �
         const all = full(sample, { limit: 100 });
         const passedWords = new Set(keywordsOf(all));
         for (const entry of all.excluded) {
-            assert.equal(RULES.includes(entry.rule), true, entry.rule);
+            assert.equal([...RULES, ...EXTRA_RULES].includes(entry.rule), true, entry.rule);
             assert.equal(typeof entry.term === 'string' && entry.term.length >= 2, true);
             assert.equal(Array.isArray(entry.keywords) && entry.keywords.length >= 1, true, entry.term);
             // 이유는 사장님이 읽을 한 문장이고, 가진 자료로 말할 수 없는 "검색량"은 쓰지 않는다
-            assert.equal(['offMain', 'otherBusiness', 'thin'].includes(entry.rule) ? /\.$/.test(entry.reason) : /^[^.]+\.$/.test(entry.reason), true, entry.reason);
+            assert.equal(['offMain', 'otherBusiness', 'thin', 'brand', 'unrelated'].includes(entry.rule) ? /\.$/.test(entry.reason) : /^[^.]+\.$/.test(entry.reason), true, entry.reason);
             assert.equal(/검색량|조회수/.test(entry.reason), false, entry.reason);
             assert.equal(Object.keys(entry).every((key) => ['term', 'keywords', 'rule', 'reason', 'into', 'words', 'popular', 'useIn', 'lead', 'why'].includes(key)), true);
             // 걸러낸 조합은 추천에 없다
@@ -1092,9 +1138,9 @@ function auditExcluded(input, result, label) {
         const words = quotedIn(entry.reason);
         const withFacts = ['offMain', 'otherBusiness'].includes(entry.rule);
         assert.equal(Object.keys(entry).every((key) => ['term', 'keywords', 'rule', 'reason', 'into', ...(withFacts ? ['words', 'popular', 'useIn', 'lead', 'why'] : [])].includes(key)), true, at);
-        assert.equal(RULES.includes(entry.rule), true, at);
+        assert.equal([...RULES, ...EXTRA_RULES].includes(entry.rule), true, at);
         // 이유는 사장님이 읽을 한 문장. 손님이 찾는 메뉴를 키워드에서 빼는 두 규칙(사실 → 이유 → 대신 쓸 자리)은 문장 셋까지, 근거가 얇은 낱말(thin)은 둘까지
-        if (withFacts || entry.rule === 'thin') {
+        if (withFacts || ['thin', 'brand', 'unrelated'].includes(entry.rule)) {
             assert.equal(/\.$/.test(entry.reason) && !/\.\./.test(entry.reason) && entry.reason.split(/(?<=\.) /).length <= (withFacts ? 3 : 2), true, at);
             assert.equal(/주력 메뉴로 보기 어렵|곁들임/.test(entry.reason), false, at);
         } else assert.equal(/^[^.]+\.$/.test(entry.reason), true, at);
@@ -1277,12 +1323,12 @@ test('지역만 바꾼 조합 줄은 남긴 조합이 화면에 보일 때만 �
             assert.equal(excludedOf(salon, word), undefined, word);
             assert.equal(salon.excluded.some((entry) => entry.reason.includes(`강남역${word}`)), false, word);
         }
-        assert.equal(salon.excluded.length, 13);
+        assert.equal(salon.excluded.length, 11); // (7차 K-E: "시스루댄디컷"은 묶이지 않고 가족 pick 으로 추천되어 merged 줄이 하나 준다)
         assert.equal(salon.excluded.some((entry) => /[이가] 이미 있어,/.test(entry.reason)), false); // 무엇에 있는지 말하지 않는 "이미 있어"는 쓰지 않는다
     }
     // 추천 자리가 넉넉하면 그 조합이 추천에 실제로 있고, 그때는 줄을 낸다
     const wide = full(FULL_SALON);
-    assert.equal(wide.items.length, 10);
+    assert.equal(wide.items.length, 11); // (7차 K-E: 가족 pick "강남역시스루댄디컷"이 더해짐)
     assert.equal(keywordsOf(wide).includes('강남역바버샵'), true);
     assert.deepEqual(excludedOf(wide, '바버샵'), {
         term: '바버샵', keywords: ['역삼바버샵'], rule: 'region', reason: "'강남역바버샵'이 추천에 이미 있어, '바버샵'에 지역만 바꾼 조합은 더 권하지 않습니다.",
@@ -1290,7 +1336,9 @@ test('지역만 바꾼 조합 줄은 남긴 조합이 화면에 보일 때만 �
     // 세 가지 문장: 추천에 있는 조합 / 이미 등록한 키워드 / 둘 다
     const restaurant = full(FULL_RESTAURANT);
     assert.equal(excludedOf(restaurant, '숙성회').reason, "'강남구청숙성회'가 추천에 이미 있어, '숙성회'에 지역만 바꾼 조합은 더 권하지 않습니다.");
-    assert.equal(excludedOf(restaurant, '회식').reason, "'강남구청회식'·'압구정회식'은 이미 등록한 키워드라, '회식'에 지역만 바꾼 조합은 더 권하지 않습니다.");
+    assert.equal(excludedOf(restaurant, '회식').reason, "'강남구청회식'은 이미 등록한 키워드라, '회식'에 지역만 바꾼 조합은 더 권하지 않습니다.");
+    // 지역이 확인된 두 등록 키워드는 함께 적는다(순위 표가 압구정을 알려 줄 때)
+    assert.equal(excludedOf(full(FULL_RESTAURANT, { ranks: FULL_RESTAURANT.ranks }), '회식').reason, "'강남구청회식'·'압구정회식'은 이미 등록한 키워드라, '회식'에 지역만 바꾼 조합은 더 권하지 않습니다.");
     const both = recommendKeywords({
         place: {
             ...SHOP, name: '시험헤어', category: '미용실', keywords: ['역삼미용실', '역삼다운펌'], reviewMenus: [{ label: '다운펌', count: 50 }],
@@ -1334,7 +1382,7 @@ test('into 는 그 낱말이 화면에 보일 때만 붙이고, 안 보이면 �
     const narrow = full(FULL_RESTAURANT, { limit: 1 });
     assert.deepEqual(keywordsOf(narrow), ['강남구청숙성회']);
     assert.deepEqual(excludedOf(narrow, '광어회'), {
-        term: '광어회', keywords: ['강남구청광어회', '압구정광어회'], rule: 'merged',
+        term: '광어회', keywords: ['강남구청광어회', '강남광어회'], rule: 'merged',
         reason: "'광어회'(리뷰 13회)는 '광어'(리뷰 34회)가 들어 있는 말이라 '광어'와 한 낱말로 보았는데, '광어'도 추천 목록에는 없습니다.",
     });
     assert.equal(excludedOf(full(FULL_RESTAURANT), '광어회').into, '광어');
@@ -1371,7 +1419,7 @@ test('한 낱말이 다른 낱말을 품고 이유가 같은 줄은 한 줄로 �
     assert.deepEqual(excludedOf(restaurant, '갈치').keywords, ['강남구청갈치', '강남구청갈치조림', '강남구청순살갈치조림']);
     assert.match(excludedOf(restaurant, '김밥').reason, /^'김밥'·'소금김밥'은 손님이 많이 찾는 메뉴입니다\(리뷰 '김밥' 37회, .*다만 이 말은 김밥집을 가리키는 메뉴 이름인데, 이 매장은 회 메뉴가 중심이라/);
     // 약국·미용실은 품는 낱말이 걸린 것이 없다(약국은 지역만 바꾼 조합 줄이 낱말마다 하나 늘고, 미용실은 "미용실"의 줄과 근거가 얇은 낱말 줄 둘이 늘었다)
-    assert.deepEqual([full(FULL_PHARMACY, { ranks: FULL_PHARMACY.ranks }).excluded.length, full(FULL_SALON, { ranks: FULL_SALON.ranks }).excluded.length], [9, 15]);
+    assert.deepEqual([full(FULL_PHARMACY, { ranks: FULL_PHARMACY.ranks }).excluded.length, full(FULL_SALON, { ranks: FULL_SALON.ranks }).excluded.length], [9, 14]); // (미용실은 7차 K-E 로 "시스루댄디컷"의 merged 줄이 하나 준다)
     // 세 견본: 같은 규칙으로 걸린 낱말 줄끼리 한 낱말이 다른 낱말을 품는 것이 남아 있지 않다
     for (const sample of [FULL_PHARMACY, FULL_RESTAURANT, FULL_SALON]) {
         for (const result of [full(sample), full(sample, { ranks: sample.ranks }), full(sample, { limit: 100 })]) {
@@ -1397,9 +1445,9 @@ test('한 낱말이 다른 낱말을 품고 이유가 같은 줄은 한 줄로 �
             detail: { menus: [...Array.from({ length: 19 }, (_, index) => menu(`회 ${index}`)), menu('소금김밥')] },
         },
     });
-    // (묶인 줄은 낱말 둘의 리뷰 수를 함께 적고, 등록 키워드 진단은 그 키워드의 낱말만 적는다)
-    assert.equal(excludedOf(owned, '김밥').reason, "'김밥'·'소금김밥'은 손님이 많이 찾는 메뉴입니다(리뷰 '소금김밥' 30회). 다만 이 말은 김밥집을 가리키는 메뉴 이름인데, 이 매장의 주력이라는 근거를 찾지 못해 지역을 붙인 키워드로는 권하지 않습니다(읽어 온 메뉴 20개 중 1개). 메뉴 설명·소식·소개글에는 쓰기 좋은 낱말입니다.");
-    assert.equal(owned.registered[1].concern.reason, "'김밥'은 김밥집을 가리키는 메뉴 이름인데, 이 매장의 주력이라는 근거를 찾지 못해 지역을 붙인 키워드로는 권하지 않습니다(읽어 온 메뉴 20개 중 1개). 메뉴 설명·소식·소개글에는 쓰기 좋은 낱말입니다.");
+    // (7차 M9: 등록한 "김밥"이 메뉴판(소금김밥)·리뷰에 있으므로 다른 업종의 낱말로 빼지 않는다. 그래서 묶인 줄도 등록 키워드 진단도 없다)
+    assert.equal(owned.excluded.some((entry) => entry.term === '김밥' && entry.rule === 'otherBusiness'), false);
+    assert.equal(owned.registered[1].concern, null);
 });
 
 test('견본 3종의 이유 문장에 적힌 수치는 자료에서 직접 센 값과 같다', () => {

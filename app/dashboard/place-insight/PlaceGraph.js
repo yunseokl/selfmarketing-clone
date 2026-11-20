@@ -779,6 +779,17 @@ const PlaceGraph = forwardRef(function PlaceGraph(
     };
 
     const shownLegend = legend.filter((item) => groups.has(item.group));
+    // 묶음마다 걸러 볼 항목의 수(띠의 '항목 N'과 같은 기준: 작은 제목 점과 종류를 모르는 점은 뺌). 0이면 범례 단추를 눌러도 볼 것이 없어 흐리게 두고 누를 수 없게 합니다.
+    const groupItemCount = useMemo(() => {
+        const classes = ontology?.classes;
+        const map = new Map();
+        for (const node of nodes) {
+            if (node.level < 2) continue;
+            if (classes && (!classes[node.type] || classes[node.type].quiet)) continue;
+            map.set(node.group, (map.get(node.group) || 0) + 1);
+        }
+        return map;
+    }, [nodes, ontology]);
     const filtering = Boolean(activeRelation || filterGroup);
     // 걸러 보는 동안 밝혀진 점 가운데 이름이 켜진 점의 수. 좁은 화면에서는 이름표 자리가 모자라 일부 점의 이름이 빠질 수 있어,
     // 이름이 다 켜지지 않았을 때만 띠와 아래 줄에서 말없이 빠지지 않게 알립니다(엔진 상태를 읽기만 하고 자리 찾기는 건드리지 않음).
@@ -862,32 +873,38 @@ const PlaceGraph = forwardRef(function PlaceGraph(
                 </p>
                 {shownLegend.length > 0 && (
                     <ul className={styles.legend} aria-label="묶음. 누르면 그 묶음만 가까이 봅니다.">
-                        {shownLegend.map((item) => (
-                            <li key={item.group} data-group={item.group}>
-                                <button
-                                    type="button"
-                                    style={{ '--c': colorOf(item.group).hex, '--cv': colorOf(item.group).vividHex }}
-                                    aria-pressed={filterGroup === item.group}
-                                    onClick={() => {
-                                        if (!live) return;
-                                        setPicked(null);
-                                        setRelation(null);
-                                        setKlass(null);
-                                        setPinnedGroup((prev) => (prev === item.group ? null : item.group));
-                                    }}
-                                    onPointerMove={trackPointer}
-                                    onPointerEnter={(event) => {
-                                        if (event.pointerType !== 'touch') setHoverGroup(item.group);
-                                    }}
-                                    onPointerLeave={() => setHoverGroup(null)}
-                                    onFocus={() => setHoverGroup(item.group)}
-                                    onBlur={() => setHoverGroup(null)}
-                                >
-                                    <i aria-hidden="true" />
-                                    {item.label}
-                                </button>
-                            </li>
-                        ))}
+                        {shownLegend.map((item) => {
+                            const empty = (groupItemCount.get(item.group) || 0) === 0;
+                            return (
+                                <li key={item.group} data-group={item.group}>
+                                    <button
+                                        type="button"
+                                        style={{ '--c': colorOf(item.group).hex, '--cv': colorOf(item.group).vividHex }}
+                                        aria-pressed={filterGroup === item.group}
+                                        aria-disabled={empty ? 'true' : undefined}
+                                        data-empty={empty ? 'true' : undefined}
+                                        title={empty ? '이 묶음에는 따로 살펴볼 항목이 없습니다.' : undefined}
+                                        onClick={() => {
+                                            if (!live || empty) return;
+                                            setPicked(null);
+                                            setRelation(null);
+                                            setKlass(null);
+                                            setPinnedGroup((prev) => (prev === item.group ? null : item.group));
+                                        }}
+                                        onPointerMove={trackPointer}
+                                        onPointerEnter={(event) => {
+                                            if (event.pointerType !== 'touch' && !empty) setHoverGroup(item.group);
+                                        }}
+                                        onPointerLeave={() => setHoverGroup(null)}
+                                        onFocus={() => { if (!empty) setHoverGroup(item.group); }}
+                                        onBlur={() => setHoverGroup(null)}
+                                    >
+                                        <i aria-hidden="true" />
+                                        {item.label}
+                                    </button>
+                                </li>
+                            );
+                        })}
                     </ul>
                 )}
             </header>

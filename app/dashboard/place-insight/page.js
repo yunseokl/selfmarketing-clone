@@ -666,7 +666,17 @@ const RULE_LABEL = {
     condition: '조건 안 맞음', rivalOnly: '상위 매장만 씀', noBlog: '근거 부족', thin: '근거 부족', channel: '받는 방법', merged: '겹치는 낱말', region: '지역만 바꿈',
     attribute: '꾸밈·조건 낱말', place: '메뉴 이름 속 지명', lowRank: '순위 30위 밖',
     brand: '매장 이름과 같은 말', short: '한 글자 낱말', duplicate: '같은 키워드 두 칸',
+    unrelated: '자료에 없는 말', prefix: '메뉴 앞에 붙는 말', label: '업종 분류 이름',
 };
+
+// 후보(candidates[].lacks)의 꼬리표. 값이 없으면(옛 결과) '자료가 적음', 모르는 값이면 꼬리표를 달지 않습니다.
+//   menu 품목(메뉴판·예약·결제)에서 확인 못 함 · voice 품목에는 있지만 손님 리뷰·상위 매장 키워드에서는 확인 못 함 · share 리뷰 수가 주력 메뉴들에 견줘 적음 · data 자료가 아예 없음
+const LACKS_LABEL = { menu: '품목 자료에 없음', voice: '리뷰·상위 매장에 없음', share: '리뷰 비중 낮음', data: '자료가 적음' };
+
+function lacksLabel(lacks) {
+    if (lacks === undefined || lacks === null || lacks === '') return LACKS_LABEL.data;
+    return LACKS_LABEL[lacks] || null;
+}
 
 function ruleLabel(rule, fallback = '추천 제외') {
     return (typeof rule === 'string' && RULE_LABEL[rule]) || fallback;
@@ -841,19 +851,24 @@ function ExcludedFold({ excluded }) {
 // 추천 목록과 따로 두고, 순위를 조회하지 않으며 복사 목록에도 넣지 않습니다. 값이 없으면 그리지 않습니다.
 // terse: 추천이 0개이고 후보가 모두 '자료가 아예 없음'(lacks 'data')이면, 까닭은 빈 추천 자리에서 한 번 말하므로 줄마다 같은 문장을 되풀이하지 않습니다.
 // (후보의 까닭이 섞여 있거나 추천이 있으면 줄마다 why 를 그대로 보입니다.)
+// 후보가 많아도 추천보다 길어 보이지 않게 앞의 CANDIDATE_SHOWN 개만 먼저 보이고 나머지는 'N개 더 보기'로 접습니다(제목 옆 숫자는 전체 수).
+const CANDIDATE_SHOWN = 3;
+
 function CandidateList({ candidates, terse = false }) {
-    const shown = (candidates || []).filter((entry) => entry && typeof entry.keyword === 'string' && entry.keyword).slice(0, 8);
-    if (shown.length === 0) return null;
+    const [more, setMore] = useState(false);
+    const all = (candidates || []).filter((entry) => entry && typeof entry.keyword === 'string' && entry.keyword).slice(0, 8);
+    if (all.length === 0) return null;
+    const shown = more ? all : all.slice(0, CANDIDATE_SHOWN);
     return (
         <div className={styles.candidates}>
-            <h4>사장님이 직접 판단할 말 <span className={styles.slotCount}>{shown.length}</span></h4>
-            <p className={styles.note}>추천 목록에는 넣지 않았습니다. 순위를 조회하지 않고 복사 목록에도 들어가지 않습니다.</p>
+            <h4>사장님이 직접 판단할 말 <span className={styles.slotCount}>{all.length}</span></h4>
+            <p className={styles.note}>추천은 아닙니다. 가게 자료와 손님 리뷰 양쪽에서 충분히 확인하지 못한 말이라, 순위를 조회하지 않고 복사 목록에도 넣지 않았습니다.</p>
             <ul className={styles.foldList}>
                 {shown.map((entry) => (
                     <li key={entry.keyword}>
                         <p className={styles.foldHead}>
                             <strong>{entry.keyword}</strong>
-                            <span className={styles.ruleTag}>{entry.lacks === 'menu' ? '품목 자료에 없음' : '자료가 적음'}</span>
+                            {lacksLabel(entry.lacks) && <span className={styles.ruleTag}>{lacksLabel(entry.lacks)}</span>}
                         </p>
                         {entry.why && !terse && <p>{entry.why}</p>}
                         {Array.isArray(entry.reasons) && entry.reasons.length > 0 && (
@@ -866,6 +881,14 @@ function CandidateList({ candidates, terse = false }) {
                     </li>
                 ))}
             </ul>
+            {all.length > CANDIDATE_SHOWN && (
+                <div className={styles.recoFoot}>
+                    <button type="button" className={styles.toggleBtn} onClick={() => setMore((prev) => !prev)} aria-expanded={more}>
+                        <ChevronDown size={16} aria-hidden="true" />
+                        {more ? '접기' : `${all.length - CANDIDATE_SHOWN}개 더 보기`}
+                    </button>
+                </div>
+            )}
         </div>
     );
 }
@@ -894,6 +917,12 @@ function KeywordReco({ recommendation, ranks, rankPick, comparing, ranking, unav
     const candidates = Array.isArray(recommendation.candidates) ? recommendation.candidates : [];
     // 앞말이 지역인지 확인하지 못한 등록 키워드(regionStatus 'unknown'): 지역이 없다고 말하지 않고, 순위는 조회하되 지역을 확인하지 못했다고 알립니다.
     const unknownRegion = registered.filter((entry) => regionStatusOf(entry) === 'unknown').map((entry) => entry.keyword);
+    // 순위 조회에서 뺀 키워드(rankPick.skipped)는 까닭이 둘입니다: 지역이 없다고 확실한 것(none)과, 지역을 확인하지 못했는데 이 매장 자료에도 없는 말(내 순위가 아닐 수 있음).
+    // 뒤의 것에는 '순위는 조회하지만'이라고 말하지 않고, 앞의 것만 '지역명이 없어' 안내에 넣습니다.
+    const skippedWords = new Set(rankPick?.skipped || []);
+    const unknownRanked = unknownRegion.filter((word) => !skippedWords.has(word));
+    const unknownNotMine = unknownRegion.filter((word) => skippedWords.has(word));
+    const noRegionSkipped = (rankPick?.skipped || []).filter((word) => !unknownRegion.includes(word));
     // 지역을 주소에서 읽었는지: 등록 키워드에서만 읽었거나(keywords) 못 읽었으면(none) 한 줄로 알립니다. 값이 없으면(옛 결과) 말하지 않습니다.
     const regionNotice = regionSource === 'keywords'
         ? '주소에서 지역 이름을 읽지 못해, 등록한 대표키워드에 쓴 지역으로 추천을 만들었습니다. 매장 위치와 다를 수 있으니 위의 읽은 지역을 확인하세요.'
@@ -915,7 +944,10 @@ function KeywordReco({ recommendation, ranks, rankPick, comparing, ranking, unav
         ? ''
         : dataOnly
             ? ' 메뉴판·예약·결제 자료가 없어 추천할 말을 확인하지 못했습니다. 아래는 리뷰에 자주 나온 말입니다 — 실제로 하는 것만 골라 쓰세요.'
-            : ' 리뷰에 나온 말이 있지만 메뉴판·예약·결제 품목에서 확인되지 않아, 추천하지 않고 아래에 사장님이 직접 판단할 말로만 두었습니다.';
+            : candidateRows.every((entry) => entry.lacks === 'menu')
+                ? ' 리뷰에 나온 말이 있지만 메뉴판·예약·결제 품목에서 확인되지 않아, 추천하지 않고 아래에 사장님이 직접 판단할 말로만 두었습니다.'
+                // 까닭이 말마다 다르거나(voice·share 등) 모르는 값이면 까닭은 줄마다 적은 문장을 보게 합니다.
+                : ' 추천하지 않은 말은 아래에 사장님이 직접 판단할 말로만 두었습니다. 말마다 까닭을 적었습니다.';
     const emptyNote = `${emptyBase}${candidateNote}`;
     // 등록 키워드의 '살펴볼 점'에 이미 같은 문장이 나온 뺀 키워드(상호와 같은 말 등)는 아래 접힘에서 되풀이하지 않습니다.
     const concernTexts = new Set(registered.filter((entry) => entry.concern?.reason).map((entry) => entry.concern.reason.trim()));
@@ -948,21 +980,30 @@ function KeywordReco({ recommendation, ranks, rankPick, comparing, ranking, unav
                 </p>
             )}
 
-            {rankPick && rankPick.skipped.length > 0 && rankPick.added.length > 0 && (
+            {rankPick && noRegionSkipped.length > 0 && rankPick.added.length > 0 && (
                 <p className={styles.recoNotice}>
                     <Info size={14} aria-hidden="true" />
                     <span>
-                        등록한 대표키워드 {rankPick.skipped.map((word) => `'${word}'`).join(', ')}에는 지역명이 없어 검색하는 위치마다 순위가 달라집니다.
+                        등록한 대표키워드 {noRegionSkipped.map((word) => `'${word}'`).join(', ')}에는 지역명이 없어 검색하는 위치마다 순위가 달라집니다.
                         그래서 지역을 붙인 추천 키워드 {rankPick.added.length}개로 순위를 조회했습니다.
                     </span>
                 </p>
             )}
 
-            {unknownRegion.length > 0 && (
+            {unknownRanked.length > 0 && (
                 <p className={styles.recoNotice}>
                     <Info size={14} aria-hidden="true" />
                     <span>
-                        지역을 확인하지 못한 대표키워드: {unknownRegion.map((word) => `'${word}'`).join(', ')}. 순위는 조회하지만 어느 지역 기준인지는 알 수 없습니다.
+                        지역을 확인하지 못한 대표키워드: {unknownRanked.map((word) => `'${word}'`).join(', ')}. 순위는 조회하지만 어느 지역 기준인지는 알 수 없습니다.
+                    </span>
+                </p>
+            )}
+
+            {unknownNotMine.length > 0 && (
+                <p className={styles.recoNotice}>
+                    <Info size={14} aria-hidden="true" />
+                    <span>
+                        지역을 확인하지 못했고 이 매장 자료에서도 찾지 못한 대표키워드: {unknownNotMine.map((word) => `'${word}'`).join(', ')}. 내 매장의 순위가 아닐 수 있어 순위는 조회하지 않았습니다.
                     </span>
                 </p>
             )}
