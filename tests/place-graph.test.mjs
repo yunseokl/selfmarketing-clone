@@ -7,6 +7,11 @@ import {
 import { scoreGeo, scoreAeo, buildFanout, platformReadiness } from '../lib/place-geo.js';
 import { feedDays, buildActionItems } from '../lib/naver-place.js';
 import { PHARMACY, RESTAURANT, SALON, NOW, graphInput } from './place-graph.fixtures.mjs';
+import * as geoWords from '../lib/place-geo.js';
+
+// 약국의 네이버 예약은 "쓸 수 있는지 확인되지 않아" 뺀 것이라 place-geo.js 가 새 이름표(notApplicableTag)를 주면 '해당 없음' 대신 그 이름표를 쓴다(없으면 지금 문구)
+const BOOKING_TAG = geoWords.notApplicableTag?.('booking') || '해당 없음';
+const HEALTH_MAIN = geoWords.mainItemWord?.({ category: '약국' }) || '대표 메뉴';
 
 // 견본은 tests/place-graph.fixtures.mjs 에 있습니다(매장 정보는 실제 화면에서 읽은 값, 순위·경쟁 매장 일부는 시험용).
 // 네트워크 호출 없이 고정 값으로만 검증합니다.
@@ -485,7 +490,7 @@ test('연결은 "주어 —관계→ 목적어" 문장으로 읽힌다', () => {
     assert.equal(read(pharmacy, 'ops:hours', 'answers', 'fq:hours'), '영업시간 —질문의 답이 됨→ 영업시간');
     // 약국은 예약·쿠폰 질문이 업종 때문에 해당 없어, 비어 있어 답하지 못한다는 연결이 없다
     assert.equal(pharmacy.links.some((link) => link.rel === 'missingFor' && ['fq:booking', 'fq:payment'].includes(link.target)), false);
-    assert.deepEqual([nodeOf(pharmacy, 'fq:booking').sub, nodeOf(pharmacy, 'fq:payment').sub], ['해당 없음', '해당 없음']);
+    assert.deepEqual([nodeOf(pharmacy, 'fq:booking').sub, nodeOf(pharmacy, 'fq:payment').sub], [BOOKING_TAG, '해당 없음']);
     assert.equal(read(pharmacy, 'vote:친절해요', 'partOf', 'rv:vote'), '친절해요 —여기에 속함→ 손님이 고른 좋은 점');
     assert.equal(read(restaurant, 'rmenu:김밥', 'namedIn', 'pmenu:소금김밥'), '김밥 —이름에 들어 있음→ 소금김밥');
     assert.equal(read(restaurant, 'pmenu:소금김밥', 'sameItem', 'menu:소금김밥'), '소금김밥 —이름이 같음→ 소금김밥');
@@ -679,7 +684,8 @@ test('묶음과 도착지: 카드 머리의 묶음과 버튼이 가는 구역이
         }
     }
     // 점 수(5차): 약국 111 → 107(지역만 바꾼 조합 4개가 빠짐), 음식점은 근거가 얇은 "룸식당"이 빠지고(추천 이유가 된 둘째 메뉴 "대방어 숙성회"가 점으로 들어와) 162 그대로, 미용실은 그대로
-    assert.equal(checked, 107 + 162 + 134);
+    // 7차: 미용실은 리뷰만 있는 "가일컷"이 후보로 빠지고 업종 이름의 확장어 "남성전문미용실"이 등록한 "미용실"로 묶여 추천 점이 둘 줄었다(134 → 132)
+    assert.equal(checked, 107 + 162 + 132);
 });
 
 test('기존 id 를 그대로 내고(본문 카드의 data-node 와 이어짐), 이름은 label·값은 sub 로 나눠 적는다', () => {
@@ -855,7 +861,7 @@ test('이름은 낱말 단위로 줄이고, 설명은 자르지 않는다', () =
     for (const item of input.actions.slice(0, GRAPH_LIMITS.todo)) {
         const node = nodeOf(pharmacy, `todo:${item.key}`);
         assert.deepEqual([node.full, node.detail], [item.title, item.detail], item.key);
-        assert.equal(node.detail.length > 30, true);
+        assert.equal(node.detail.length > 20, true); // 짧은 문장도 있으므로(약국의 소식 안내 27자) 잘린 문장이 아니라 전체 문장인지만 본다
     }
     assert.equal(nodeOf(pharmacy, 'todo:photos').detail.length > 60, true);
     // 제목이 길어 줄이면 뜻이 사라지는 할 일은 짧은 이름을 따로 둔다
@@ -937,7 +943,7 @@ test('같은 수치를 두 번 적지 않는다: 견본 3종의 모든 점에서
             assert.equal(labels.length <= 4 && new Set(labels).size === labels.length, true, `${name} ${node.id}: facts`);
         }
     }
-    assert.equal(checked, 107 + 162 + 134);
+    assert.equal(checked, 107 + 162 + 132);
 
     // 값(sub)이 없는 점은 값이라 할 것이 없는 종류뿐이다: 묶음 점 일부, 할 일(제목이 곧 내용), 편의시설·좌석 이름, AI 브리핑 문장
     const valueless = new Set();
@@ -1129,6 +1135,53 @@ test('추천 이유: 등록 키워드·손님이 고른 좋은 점·리뷰·예�
     }
 });
 
+test('추천 키워드 점의 reasons: 본문 추천 이유 칩과 개수·순서·문구가 같고, 이을 점이 있는 이유는 sources 에 그 점이 있다(세 견본 모든 추천)', () => {
+    let checked = 0;
+    let withSources = 0;
+    let bare = 0;
+    for (const [name, sample] of SAMPLES) {
+        for (const ranks of [[], undefined]) {
+            const input = graphInput(sample, ranks ? { ranks } : {});
+            const graph = build(input, name);
+            for (const item of input.recommendation.items) {
+                const node = nodeOf(graph, `kw:${item.keyword}`);
+                if (!node || node.type !== 'recoKeyword') continue;
+                // 카드가 그리는 "추천한 이유" = node.reasons = 본문 칩. 수·순서·문구가 같다
+                assert.deepEqual(node.reasons.map((reason) => reason.text), item.reasons.map((reason) => reason.text), `${name} ${item.keyword}`);
+                assert.deepEqual(node.reasons.map((reason) => reason.kind), item.reasons.map((reason) => reason.kind), `${name} ${item.keyword}`);
+                for (const reason of node.reasons) {
+                    assert.equal(Array.isArray(reason.sources), true, `${name} ${item.keyword}`);
+                    for (const source of reason.sources) {
+                        assert.ok(nodeOf(graph, source), `${name} ${item.keyword}: sources ${source}`);
+                        assert.equal(Boolean(linkOf(graph, source, 'supports', node.id) || linkOf(graph, source, 'sharesTerm', node.id)), true, `${name} ${item.keyword}: ${source} → ${node.id}`);
+                    }
+                    if (reason.sources.length) withSources += 1;
+                    else bare += 1;
+                }
+                // 점이 이어 준 이유는 모두 reasons 에 대응한다: 이 점으로 들어오는 supports 의 출처는 어느 이유의 sources 에든 있다
+                const listed = new Set(node.reasons.flatMap((reason) => reason.sources));
+                for (const source of subjectsOf(graph, node.id, 'supports')) {
+                    if (nodeOf(graph, source).type === 'keyword') continue; // 등록 키워드 → 지역 이름 붙임·바꿔 쓸 조합은 이유 칩이 아니라 별도 연결
+                    assert.equal(listed.has(source), true, `${name} ${item.keyword}: 카드에 ${source} 이유가 칩 없이 있음`);
+                }
+                checked += 1;
+            }
+        }
+    }
+    assert.equal(checked >= 40, true, String(checked));
+    assert.equal(withSources > 0 && bare > 0, true); // 이어 줄 점이 있는 이유와 문장으로만 남는 이유가 둘 다 있다
+    // 개별 사례(심사원이 짚은 것): 룸식당은 칩 둘 모두(좌석 '룸'은 점으로 이어지고, AI 브리핑은 '룸식당'이 그대로 나온 문장이 없어 이을 점이 없는 채 문장으로), 업종 칩도 문장으로
+    const restaurant = graphOf(RESTAURANT);
+    assert.deepEqual(nodeOf(restaurant, 'kw:강남구청룸식당').reasons.map((reason) => [reason.text, reason.sources.length > 0]), [["좌석 '룸'", true], ['네이버 AI 브리핑', false]]);
+    for (const [sample, keyword] of [[PHARMACY, '청주약국'], [PHARMACY, '오창약국'], [SALON, '강남역바버샵']]) {
+        const node = nodeOf(graphOf(sample), `kw:${keyword}`);
+        assert.equal(node.reasons.length > 0, true, keyword);
+    }
+    assert.deepEqual(nodeOf(graphOf(PHARMACY), 'kw:청주약국').reasons.find((reason) => reason.kind === 'category'), { kind: 'category', text: '업종', sources: [] });
+    // 두 번째 칸 까닭도 같은 칩으로 실린다
+    assert.equal(nodeOf(graphOf(PHARMACY), 'kw:오창약국').reasons.some((reason) => /^'약국' 두 번째 칸 — /.test(reason.text)), true);
+});
+
 test('추천 키워드 카드의 "이 키워드를 추천한 이유" 수 = 본문 추천 이유 가운데 그래프로 그릴 수 있는 것의 수(세 견본 모두)', () => {
     // 본문 이유(reason.text)마다 이유가 되는 점의 id 를 구한다. 점 이름만으로 정할 수 없는 이유(주간 인기 메뉴·AI 브리핑·영업시간·리뷰 주제)가 있으면
     // 카드에 이유가 더 있을 수 있어(loose) 그때는 "그릴 수 있는 이유가 모두 보인다"만 확인한다. 점이 없는 이유(업종·내 순위·상위 매장 등록)는 이 카드 묶음에 없다.
@@ -1183,7 +1236,7 @@ test('추천 키워드 카드의 "이 키워드를 추천한 이유" 수 = 본�
             checked += 1;
         }
     }
-    assert.equal(checked, 5 + 7 + 12);
+    assert.equal(checked, 5 + 7 + 10); // 7차: 미용실 추천 12 → 10개(가일컷은 후보, 남성전문미용실은 미용실로 묶임)
     assert.equal(exact >= 15, true, String(exact)); // 수까지 같게 확인한 추천 키워드가 대부분이다
     // 음식점의 "강남구청대방어": 본문 이유 셋 = 카드 이유 셋
     const restaurant = graphInput(RESTAURANT);
@@ -1528,7 +1581,10 @@ test('AI 검색: 본문 진단과 같은 점수를 쉬운 이름으로 내고, �
     // 답하지 못한 질문은 개수가 아니라 어떤 질문인지로 적는다
     assert.deepEqual(nodeOf(graph, 'geo:fanout').facts, [{ label: '일부만 답한 질문', value: '예약·문의' }, { label: '항목 점수', value: '93점' }]);
     assert.deepEqual(nodeOf(graphOf(PHARMACY), 'geo:fanout').facts, [
-        { label: '일부만 답한 질문', value: '위치·가는 길' }, { label: '답할 정보가 없는 질문', value: '가격대, 대표 메뉴', tone: 'bad' }, { label: '이 업종에는 해당 없는 질문', value: '예약·문의, 쿠폰·혜택' }, { label: '항목 점수', value: '58점' },
+        { label: '일부만 답한 질문', value: '위치·가는 길' }, { label: '답할 정보가 없는 질문', value: `가격대, ${HEALTH_MAIN}`, tone: 'bad' },
+        // 약국의 예약은 "확인 안 됨"으로 점수에서 뺀 것이라 쿠폰('해당 없음')과 이름표가 다르면 이름표별로 묶어 적는다(place-geo.js 에 notApplicableTag 가 없으면 지금 문구)
+        BOOKING_TAG === '해당 없음' ? { label: '이 업종에는 해당 없는 질문', value: '예약·문의, 쿠폰·혜택' } : { label: '점수에서 뺀 질문', value: `${BOOKING_TAG} — 예약·문의 / 해당 없음 — 쿠폰·혜택` },
+        { label: '항목 점수', value: '58점' },
     ]);
     assert.deepEqual([nodeOf(graph, 'fq:booking').sub, nodeOf(graph, 'fq:booking').tone, nodeOf(graph, 'fq:price').sub, nodeOf(graph, 'fq:price').type], ['일부만 답함', 'warn', '바로 답함', 'aiQuestion']);
     assert.equal(nodeOf(graph, 'fq:booking').facts, undefined); // 상태는 sub 에만
@@ -1738,9 +1794,10 @@ test('견본 그래프의 크기(묶음·관계 종류)', () => {
     // 미용실은 "강남"이 "강남역"과 같은 뿌리의 이름이라 한 지역으로 합쳐져 지역 점이 하나 줄었다(134 → 133, 연결 수는 그대로).
     assert.deepEqual(summarizeGraph(graphOf(PHARMACY)).groups, { store: 1, search: 13, rival: 16, voice: 29, todo: 9, ops: 9, geo: 30 });
     assert.deepEqual(summarizeGraph(graphOf(RESTAURANT)).groups, { store: 1, search: 17, rival: 11, voice: 50, pay: 21, todo: 6, ops: 27, geo: 30 });
-    assert.deepEqual(summarizeGraph(graphOf(SALON)).groups, { store: 1, search: 20, rival: 6, voice: 53, todo: 1, ops: 22, geo: 30 });
+    assert.deepEqual(summarizeGraph(graphOf(SALON)).groups, { store: 1, search: 18, rival: 6, voice: 53, todo: 1, ops: 22, geo: 30 });
     const sizes = (sample) => { const s = summarizeGraph(graphOf(sample)); return [s.nodes, s.links, s.cross]; };
-    assert.deepEqual([sizes(PHARMACY), sizes(RESTAURANT), sizes(SALON)], [[107, 211, 105], [163, 299, 137], [133, 232, 100]]);
+    // 그 뒤(7차): 미용실은 리뷰만 있는 "가일컷"이 후보로 빠지고 업종 이름의 확장어 "남성전문미용실"이 "미용실"로 묶여 키워드 점 둘·연결 여섯이 줄었다(133/232 → 131/226).
+    assert.deepEqual([sizes(PHARMACY), sizes(RESTAURANT), sizes(SALON)], [[107, 211, 105], [163, 299, 137], [131, 226, 96]]);
     const rels = (sample) => Object.keys(summarizeGraph(graphOf(sample)).rels).sort();
     assert.deepEqual(rels(RESTAURANT), ['answers', 'atTime', 'feeds', 'lagsOn', 'mentions', 'missingFor', 'namedIn', 'outranks', 'partOf', 'ranksIn', 'readFrom', 'registers', 'sameItem', 'sharesTerm', 'spokenIn', 'supports', 'targets', 'usesRegion', 'weakens']);
     assert.deepEqual(rels(PHARMACY), ['alternativeTo', 'answers', 'feeds', 'lagsOn', 'outranks', 'partOf', 'ranksIn', 'registers', 'sharesTerm', 'spokenIn', 'suggests', 'supports', 'targets', 'usesRegion', 'weakens']);
@@ -1801,4 +1858,21 @@ test('표시 도우미: 본문과 그래프가 함께 쓰는 숫자·날짜·순
     assert.deepEqual([3, 10, 11, 50, 51].map((rank) => rankTone({ status: 'found', rank })), ['good', 'good', 'ink', 'ink', 'warn']);
     assert.equal(rankTone({ status: 'beyond' }), 'bad');
     assert.deepEqual([sampleSuffix(50, 50, 300), sampleSuffix(12, 50, 300), sampleSuffix(0, 0, 0)], ['개 이상', '개', '개']);
+});
+
+test('운영 카드의 쿠폰 수는 쿠폰 목록(activity.coupons.total)을 먼저 읽고, 목록이 없을 때만 상세 조회 값(detail.couponCount)을 쓴다', () => {
+    // 미용실 견본: 쿠폰 목록은 1개인데 상세 조회의 couponCount 는 0 — 본문("쿠폰 1개")과 같은 1개로 보여야 한다
+    assert.equal(SALON.activity.coupons.total, 1);
+    assert.equal(SALON.place.detail.couponCount, 0);
+    const couponFact = (graph) => nodeOf(graph, 'ops:booking').facts?.find((fact) => fact.label === '쿠폰')?.value;
+    const salon = graphOf(SALON);
+    assert.equal(couponFact(salon), '1개');
+    assert.equal(nodeOf(salon, 'ac:coupon').sub, '1개'); // 쿠폰 점도 같은 수
+    assert.equal(linkOf(salon, 'ac:coupon', 'answers', 'fq:payment') !== undefined, true); // 질문 답 연결도 목록(1개) 기준
+    // 쿠폰 목록이 없으면 상세 조회의 값을 그대로 쓴다
+    const detailOnly = graphOf({ ...SALON, activity: { ...SALON.activity, coupons: undefined }, place: { ...SALON.place, detail: { ...SALON.place.detail, couponCount: 3 } } });
+    assert.equal(couponFact(detailOnly), '3개');
+    // 목록이 0개이면 상세 값이 달라도 0개
+    const none = graphOf({ ...SALON, activity: { ...SALON.activity, coupons: { total: 0, titles: [], memberships: [] } }, place: { ...SALON.place, detail: { ...SALON.place.detail, couponCount: 3 } } });
+    assert.equal(couponFact(none), '0개');
 });

@@ -1050,3 +1050,17 @@
         animation: none;
     }
 }
+
+/* 폰: 사람이 읽는 글은 13px 이상 */
+@media (max-width: 720px) {
+    .timelineBox h3 small,
+    .tlName small,
+    .legend,
+    .aiTab span,
+    .aiInfo small,
+    .group h3 small,
+    .metaTime,
+    .dayTime small {
+        font-size: 13px;
+    }
+}

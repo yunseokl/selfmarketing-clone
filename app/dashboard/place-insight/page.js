@@ -13,9 +13,10 @@ import {
 } from 'lucide-react';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import { keywordFrequency, diagnoseRank, parseCount, buildActionItems, distanceKm, rankLocality, feedDays } from '@/lib/naver-place';
-import { recommendKeywords, pickRankKeywords, rankScope } from '@/lib/place-keywords';
+import { recommendKeywords, pickRankKeywords, rankScope, regionStatusOf } from '@/lib/place-keywords';
 // 업종 때문에 해당 없는 항목(병의원의 새소식·쿠폰, 약국의 쿠폰·예약): 경고색 없이 "해당 없음"과 이유로 보여 줍니다.
-import { notApplicableOf } from '@/lib/place-industry';
+import { healthKind, notApplicableOf } from '@/lib/place-industry';
+import { notApplicableTag } from '@/lib/place-geo';
 // 숫자·날짜·순위 표기는 연결 그래프와 본문이 같은 글자를 쓰도록 lib/place-graph 의 것을 함께 씁니다.
 import { buildPlaceGraph, buildIdleGraph, ONTOLOGY, ontologyFor, itemWord, formatNumber, agoLabel, won, rankLabel, rankTone, sampleSuffix } from '@/lib/place-graph';
 import styles from './page.module.css';
@@ -327,6 +328,9 @@ function SummaryRail({ place, placeInfo, activity, ranks, actions, saving, onSav
     const hours = place.detail?.hours;
     const settled = ranks.length > 0 && ranks.every((row) => row.state !== 'loading');
     const top10 = ranks.filter((row) => row.state === 'done' && row.result.status === 'found' && row.result.rank <= 10).length;
+    // 순위를 조회하지 못한 키워드는 분모에서 빼고, 몇 개를 뺐는지 덧붙입니다("10위 안 1/3 · 조회 못 한 2개 제외").
+    const looked = ranks.filter((row) => row.state === 'done').length;
+    const missed = ranks.filter((row) => row.state === 'error').length;
     const high = actions.filter((item) => item.level === 'high');
     const replyTone = !visitor || visitor.replyRate === null ? undefined : visitor.replyRate < 10 ? 'bad' : visitor.replyRate < 50 ? 'warn' : 'good';
     return (
@@ -364,7 +368,12 @@ function SummaryRail({ place, placeInfo, activity, ranks, actions, saving, onSav
                 <div className={styles.ticker} style={{ '--d': 2 }}>
                     <h3>
                         키워드 순위
-                        {settled &&<span className={styles.tickerSum} data-tone={top10 > 0 ? 'good' : undefined}>10위 안 {top10}/{ranks.length}</span>}
+                        {settled && looked > 0 && (
+                            <span className={styles.tickerSum} data-tone={top10 > 0 ? 'good' : undefined}>
+                                10위 안 {top10}/{looked}{missed > 0 && <small> · 조회 못 한 {missed}개 제외</small>}
+                            </span>
+                        )}
+                        {settled && looked === 0 && missed > 0 && <span className={styles.tickerSum}>조회 못 한 {missed}개</span>}
                     </h3>
                     <ul>
                         {ranks.map((row) => (
@@ -418,7 +427,7 @@ const IDLE_FEATURES = [
     ['실제 검색 순위', '키워드를 검색했을 때 내 매장이 몇 번째인지 네이버 목록에서 광고를 빼고 셉니다.'],
     ['상위 매장 비교', '상위 10곳의 방문자 리뷰·블로그 리뷰·저장 수를 내 매장과 나란히 놓습니다.'],
     ['지금 할 일', '답글률·소식·영업시간·쿠폰처럼 비어 있거나 오래된 항목을 먼저 할 순서로 정리합니다.'],
-    ['AI 검색(GEO·AEO) 진단', 'ChatGPT·Gemini·Claude·네이버 AI가 내 매장을 추천하고 질문에 답할 재료가 있는지 점수와 개선 제안, 답변 초안으로 보여 줍니다.'],
+    ['AI 검색 노출 점검', 'ChatGPT·Gemini·Claude·네이버 AI가 내 매장을 추천하고 질문에 답할 재료가 있는지 점수와 개선 제안, 답변 초안으로 보여 줍니다(GEO·AEO).'],
 ];
 
 function IdleRail() {
@@ -506,6 +515,12 @@ function LoadingStatus() {
     );
 }
 
+// AI 검색 구역은 자기 머리(점수 요약 줄)를 가지므로, 같은 '그래프' 버튼에 쓸 연결 통로만 이어 줍니다.
+function GeoPanel(props) {
+    const { showInGraph } = useContext(GraphLink);
+    return <GeoAeoPanel {...props} onShowInGraph={showInGraph} />;
+}
+
 // 구역 머리: 묶음 색 막대 + 제목 + 한 줄 설명 + 연결 그래프에서 같은 점을 찾아 주는 버튼
 function SectionHead({ title, count, hub, children }) {
     const { showInGraph } = useContext(GraphLink);
@@ -532,7 +547,10 @@ function FillStatus({ place }) {
     if (place.missing) {
         rows.push(['영업시간', !place.missing.hours, place.missing.hours ? '비어 있음' : '등록됨']);
         rows.push(['소개글', !place.missing.description, place.missing.description ? '비어 있음' : '등록됨']);
-        rows.push(['메뉴·가격 사진', !place.missing.menuImage, place.missing.menuImage ? '비어 있음' : '등록됨']);
+        // 약국·병의원·동물병원은 메뉴판이 없는 업종이라 이 줄을 세지도 보이지도 않습니다(등록한 메뉴가 있으면 '품목·서비스 사진'으로 보임).
+        if (!healthKind(place) || place.menuCount > 0) {
+            rows.push([healthKind(place) ? '품목·서비스 사진' : '메뉴·가격 사진', !place.missing.menuImage, place.missing.menuImage ? '비어 있음' : '등록됨']);
+        }
         rows.push(['편의시설', !place.missing.conveniences, place.missing.conveniences ? '비어 있음' : `${place.conveniences.length}개 등록`]);
         rows.push(['찾아오는 길', !place.missing.accessor, place.missing.accessor ? '비어 있음' : '등록됨']);
     }
@@ -633,7 +651,10 @@ function slotState(entry, blogTotal) {
     if (!entry) return null;
     const blog = entry.blog === null || entry.blog === undefined ? null : `블로그 ${entry.blog}${blogTotal ? `/${blogTotal}` : '개'}`;
     // 살펴볼 점이 걸린 키워드(순위 30위 밖 등)는 지역이 들어 있어도 초록(좋음) 칩으로 보이지 않게 합니다. 아래 '살펴볼 점'이 말해 줍니다.
-    if (entry.hasRegion) return { tone: entry.concern ? undefined : 'good', text: ['지역 포함', blog].filter(Boolean).join(' · ') };
+    const status = regionStatusOf(entry);
+    if (status === 'known') return { tone: entry.concern ? undefined : 'good', text: ['지역 포함', blog].filter(Boolean).join(' · ') };
+    // 앞말이 지역인지 확인하지 못한 키워드는 지역이 없다고 단정하지 않습니다.
+    if (status === 'unknown') return { tone: undefined, text: ['지역 확인 못 함', blog].filter(Boolean).join(' · '), title: '이 키워드의 지역을 확인하지 못했습니다' };
     return { tone: 'warn', text: ['지역 없음', blog].filter(Boolean).join(' · ') };
 }
 
@@ -644,6 +665,7 @@ const RULE_LABEL = {
     offMain: '주력 메뉴 아님', classification: '분류 이름', rank: '내 순위 낮은 지역',
     condition: '조건 안 맞음', rivalOnly: '상위 매장만 씀', noBlog: '근거 부족', thin: '근거 부족', channel: '받는 방법', merged: '겹치는 낱말', region: '지역만 바꿈',
     attribute: '꾸밈·조건 낱말', place: '메뉴 이름 속 지명', lowRank: '순위 30위 밖',
+    brand: '매장 이름과 같은 말', short: '한 글자 낱말', duplicate: '같은 키워드 두 칸',
 };
 
 function ruleLabel(rule, fallback = '추천 제외') {
@@ -714,7 +736,7 @@ function KeywordSlots({ keywords, diagnosis, blogTotal, onCopy }) {
                         return (
                             <li key={word || `empty-${index}`} data-empty={word ? undefined : 'true'} data-concern={concern ? 'true' : undefined} data-node={word ? `kw:${word}` : undefined} style={{ '--d': index }}>
                                 <span>{word || '빈 칸'}</span>
-                                {state && <small className={styles.slotState} data-tone={state.tone}>{state.text}</small>}
+                                {state && <small className={styles.slotState} data-tone={state.tone} title={state.title}>{state.text}</small>}
                                 {concern && <small className={styles.slotConcern}>살펴볼 점{ruleLabel(concern.rule, '') ? ` · ${ruleLabel(concern.rule, '')}` : ''}</small>}
                             </li>
                         );
@@ -815,6 +837,39 @@ function ExcludedFold({ excluded }) {
     );
 }
 
+// 리뷰에는 나오지만 메뉴판·예약·결제 품목에서 확인되지 않아 추천에 넣지 않은 말(최대 8개). 사장님이 직접 판단해 쓸 말이라
+// 추천 목록과 따로 두고, 순위를 조회하지 않으며 복사 목록에도 넣지 않습니다. 값이 없으면 그리지 않습니다.
+// terse: 추천이 0개이고 후보가 모두 '자료가 아예 없음'(lacks 'data')이면, 까닭은 빈 추천 자리에서 한 번 말하므로 줄마다 같은 문장을 되풀이하지 않습니다.
+// (후보의 까닭이 섞여 있거나 추천이 있으면 줄마다 why 를 그대로 보입니다.)
+function CandidateList({ candidates, terse = false }) {
+    const shown = (candidates || []).filter((entry) => entry && typeof entry.keyword === 'string' && entry.keyword).slice(0, 8);
+    if (shown.length === 0) return null;
+    return (
+        <div className={styles.candidates}>
+            <h4>사장님이 직접 판단할 말 <span className={styles.slotCount}>{shown.length}</span></h4>
+            <p className={styles.note}>추천 목록에는 넣지 않았습니다. 순위를 조회하지 않고 복사 목록에도 들어가지 않습니다.</p>
+            <ul className={styles.foldList}>
+                {shown.map((entry) => (
+                    <li key={entry.keyword}>
+                        <p className={styles.foldHead}>
+                            <strong>{entry.keyword}</strong>
+                            <span className={styles.ruleTag}>{entry.lacks === 'menu' ? '품목 자료에 없음' : '자료가 적음'}</span>
+                        </p>
+                        {entry.why && !terse && <p>{entry.why}</p>}
+                        {Array.isArray(entry.reasons) && entry.reasons.length > 0 && (
+                            <p className={styles.candidateReasons}>
+                                {entry.reasons.map((reason) => (
+                                    <span key={reason.text} className={styles.reason} data-kind={reason.kind}>{reason.text}</span>
+                                ))}
+                            </p>
+                        )}
+                    </li>
+                ))}
+            </ul>
+        </div>
+    );
+}
+
 // 추천이 0개일 때의 안내. 까닭(recommendation.emptyReason)에 따라 다른 말을 합니다.
 // 까닭을 모르는 옛 결과에는 '이미 잘 담고 있다' 같은 단정을 하지 않고 중립 문구를 씁니다.
 // (allWeak 문구의 '소식'은 새소식 기능이 없는 업종에서는 뺍니다: FEED_WORD 자리)
@@ -836,6 +891,9 @@ function KeywordReco({ recommendation, ranks, rankPick, comparing, ranking, unav
     );
     if (!recommendation) return null;
     const { regions, items, registered, rivalCount, excluded, emptyReason, regionSource } = recommendation;
+    const candidates = Array.isArray(recommendation.candidates) ? recommendation.candidates : [];
+    // 앞말이 지역인지 확인하지 못한 등록 키워드(regionStatus 'unknown'): 지역이 없다고 말하지 않고, 순위는 조회하되 지역을 확인하지 못했다고 알립니다.
+    const unknownRegion = registered.filter((entry) => regionStatusOf(entry) === 'unknown').map((entry) => entry.keyword);
     // 지역을 주소에서 읽었는지: 등록 키워드에서만 읽었거나(keywords) 못 읽었으면(none) 한 줄로 알립니다. 값이 없으면(옛 결과) 말하지 않습니다.
     const regionNotice = regionSource === 'keywords'
         ? '주소에서 지역 이름을 읽지 못해, 등록한 대표키워드에 쓴 지역으로 추천을 만들었습니다. 매장 위치와 다를 수 있으니 위의 읽은 지역을 확인하세요.'
@@ -845,7 +903,26 @@ function KeywordReco({ recommendation, ranks, rankPick, comparing, ranking, unav
     const shown = more ? items : items.slice(0, RECO_SHOWN);
     const rankOf = new Map(ranks.map((row) => [row.keyword, row]));
     const unranked = items.filter((item) => !rankOf.has(item.keyword)).slice(0, MAX_KEYWORDS);
-    const swaps = registered.filter((entry) => !entry.hasRegion && (entry.suggest || entry.spoken?.keyword));
+    const swaps = registered.filter((entry) => regionStatusOf(entry) === 'none' && (entry.suggest || entry.spoken?.keyword));
+    // '이미 지역과 업종을 잘 담고 있습니다'는 등록 키워드 모두가 지역을 확인했고 살펴볼 점이 없을 때만 말합니다(위 안내와 어긋나지 않게).
+    const allClean = registered.every((entry) => !entry.concern && regionStatusOf(entry) === 'known');
+    // 추천은 없는데 후보가 있으면 "왜 추천이 없고 아래 말은 무엇인지"가 한 흐름으로 읽히게 이어 줍니다.
+    const candidateRows = candidates.filter((entry) => entry && typeof entry.keyword === 'string' && entry.keyword).slice(0, 8);
+    // 후보가 모두 '자료가 아예 없음'이면 까닭을 여기서 한 번만 말하고(후보 줄은 낱말·근거 칩만), 아니면 후보 줄마다 까닭을 보입니다.
+    const dataOnly = items.length === 0 && candidateRows.length > 0 && candidateRows.every((entry) => entry.lacks === 'data');
+    const emptyBase = emptyReason === 'enough' && (!allClean || dataOnly) ? '새로 추천할 조합이 없습니다.' : (EMPTY_NOTE[emptyReason] || EMPTY_NOTE.unknown);
+    const candidateNote = candidateRows.length === 0
+        ? ''
+        : dataOnly
+            ? ' 메뉴판·예약·결제 자료가 없어 추천할 말을 확인하지 못했습니다. 아래는 리뷰에 자주 나온 말입니다 — 실제로 하는 것만 골라 쓰세요.'
+            : ' 리뷰에 나온 말이 있지만 메뉴판·예약·결제 품목에서 확인되지 않아, 추천하지 않고 아래에 사장님이 직접 판단할 말로만 두었습니다.';
+    const emptyNote = `${emptyBase}${candidateNote}`;
+    // 등록 키워드의 '살펴볼 점'에 이미 같은 문장이 나온 뺀 키워드(상호와 같은 말 등)는 아래 접힘에서 되풀이하지 않습니다.
+    const concernTexts = new Set(registered.filter((entry) => entry.concern?.reason).map((entry) => entry.concern.reason.trim()));
+    const excludedShown = (excluded || []).filter((entry) => {
+        const text = String((entry.why || entry.reason || '')).trim();
+        return !(text && concernTexts.has(text));
+    });
     return (
         <div id="kw-reco" className={`${styles.reco} ${styles.rise}`} style={{ '--d': 2 }}>
             <div className={styles.recoHead}>
@@ -881,6 +958,15 @@ function KeywordReco({ recommendation, ranks, rankPick, comparing, ranking, unav
                 </p>
             )}
 
+            {unknownRegion.length > 0 && (
+                <p className={styles.recoNotice}>
+                    <Info size={14} aria-hidden="true" />
+                    <span>
+                        지역을 확인하지 못한 대표키워드: {unknownRegion.map((word) => `'${word}'`).join(', ')}. 순위는 조회하지만 어느 지역 기준인지는 알 수 없습니다.
+                    </span>
+                </p>
+            )}
+
             {regionNotice && (
                 <p className={styles.recoNotice}>
                     <Info size={14} aria-hidden="true" />
@@ -891,7 +977,7 @@ function KeywordReco({ recommendation, ranks, rankPick, comparing, ranking, unav
             {regions.length === 0 ? (
                 <p className={styles.note}>{EMPTY_NOTE.noRegion}</p>
             ) : items.length === 0 ? (
-                <p className={styles.note}>{(EMPTY_NOTE[emptyReason] || EMPTY_NOTE.unknown).replace('FEED_WORD', feedOk ? '소식·' : '')}</p>
+                <p className={styles.note}>{emptyNote.replace('FEED_WORD', feedOk ? '소식·' : '')}</p>
             ) : (
                 <ol className={styles.recoList}>
                     {shown.map((item, index) => {
@@ -973,7 +1059,8 @@ function KeywordReco({ recommendation, ranks, rankPick, comparing, ranking, unav
                     )}
                 </div>
             )}
-            {regions.length > 0 && <ExcludedFold excluded={excluded} />}
+            {regions.length > 0 && <CandidateList candidates={candidates} terse={dataOnly} />}
+            {regions.length > 0 && <ExcludedFold excluded={excludedShown} />}
             <p className={styles.note}>
                 {rivalCount > 0
                     ? `상위 매장 ${rivalCount}곳이 등록한 대표키워드와 비교한 결과입니다. `
@@ -1128,7 +1215,7 @@ function RankDiagnosis({ diagnosis, na = {} }) {
                 <h4>상위 {count}곳과 비교</h4>
                 <p>
                     {behind > 0
-                        ? `상위권이 앞서는 항목이 ${behind}개 있습니다. 리뷰·사진·저장처럼 꾸준히 쌓이는 신호부터 채우면 순위에 도움이 됩니다.`
+                        ? `상위권이 앞서는 항목이 ${behind}개 있습니다. 리뷰·사진·저장처럼 꾸준히 쌓이는 신호부터 채우면 순위에 도움이 될 수 있습니다.`
                         : '숫자 신호는 상위권과 비슷하거나 앞섭니다.'}
                 </p>
                 <p className={styles.diagKey}>
@@ -1170,7 +1257,7 @@ function RankDiagnosis({ diagnosis, na = {} }) {
                         const Icon = FEATURE_ICON[feature.key] || CheckCircle2;
                         const notApplicable = Boolean(reasonOf(feature)) && feature.mine !== true;
                         const mineState = notApplicable ? 'na' : feature.mine === true ? 'yes' : feature.mine === false ? 'no' : 'unknown';
-                        const mineLabel = notApplicable ? '이 업종에는 해당 없음' : feature.mine === true ? '내 매장 운영' : feature.mine === false ? '내 매장 미운영' : '확인 불가';
+                        const mineLabel = notApplicable ? (feature.key === 'booking' ? notApplicableTag('booking') : '이 업종에는 해당 없음') : feature.mine === true ? '내 매장 운영' : feature.mine === false ? '내 매장 미운영' : '확인 불가';
                         return (
                             <li key={feature.key} style={{ '--d': index }}>
                                 <span className={styles.adoptLabel}><Icon size={14} aria-hidden="true" /> {feature.label}</span>
@@ -1230,7 +1317,7 @@ function CountList({ title, items, unit = '회', d = 0, node, prefix }) {
             <ul>
                 {shown.map((item, index) => (
                     <li key={item.label} data-node={prefix ? `${prefix}:${item.label}` : undefined} style={{ '--d': d + Math.min(index, COUNT_SHOWN) * 0.6 }}>
-                        <span className={styles.countLabel}>{item.label}</span>
+                        <span className={styles.countLabel} title={item.label}>{item.label}</span>
                         <span className={styles.countTrack} aria-hidden="true">
                             <span className={styles.fill} style={{ '--w': item.count / max }} />
                         </span>
@@ -1611,9 +1698,13 @@ function NodeWords({ words, prefix }) {
     ));
 }
 
-function OpsSection({ place }) {
+function OpsSection({ place, activity }) {
     const detail = place.detail;
     const { hours, photos, tools, parking } = detail;
+    // 쿠폰 수는 리뷰·소식 활동의 쿠폰 목록(제목이 있는 자료)이 있으면 그 수를 우선합니다. 같은 화면의 두 줄이 서로 다른 수를 말하지 않게.
+    const couponCount = Number.isFinite(activity?.coupons?.total) ? activity.coupons.total : detail.couponCount;
+    // 소식은 지금 할 일과 같은 사실로: 있으면 마지막이 며칠 전인지까지 적습니다.
+    const feedGap = feedDays(activity?.feeds);
     // 이 업종에 해당 없는 항목: '없음'·'미사용' 대신 "해당 없음"으로 적고 이유를 한 줄씩 보입니다.
     const na = notApplicableOf(place);
     const naLines = [['예약', na.booking], ['쿠폰', na.coupon], ['소식', na.feed]].filter(([, reason]) => reason);
@@ -1661,7 +1752,7 @@ function OpsSection({ place }) {
                                     const notApplicable = Boolean(na.booking) && tool.type === 'naverBooking' && !tool.using;
                                     return (
                                         <span key={tool.type} className={tool.using ? styles.chipOn : styles.chipOff}>
-                                            {tool.title} {tool.using ? '사용 중' : notApplicable ? '해당 없음' : '미사용'}
+                                            {tool.title} {tool.using ? '사용 중' : notApplicable ? '확인 안 됨' : '미사용'}
                                         </span>
                                     );
                                 })}
@@ -1669,10 +1760,10 @@ function OpsSection({ place }) {
                         </Fact>
                     )}
                     <Fact label="예약·쿠폰" node="ops:booking">
-                        {na.booking ? '예약 해당 없음' : detail.hasBooking === null ? '예약 확인 불가' : detail.hasBooking ? '네이버 예약 연결됨' : '네이버 예약 없음'}
+                        {na.booking ? `예약 — ${notApplicableTag('booking')}` : detail.hasBooking === null ? '예약 확인 불가' : detail.hasBooking ? '네이버 예약 연결됨' : '네이버 예약 없음'}
                         {!na.booking && detail.bookingItemCount > 0 ? ` (예약 상품 ${formatNumber(detail.bookingItemCount)}개)` : ''}
-                        {na.coupon ? ' · 쿠폰 해당 없음' : detail.couponCount !== null ? ` · 쿠폰 ${formatNumber(detail.couponCount)}개` : ''}
-                        {na.feed ? ' · 소식 해당 없음' : detail.hasFeed !== null ? ` · 소식 ${detail.hasFeed ? '있음' : '없음'}` : ''}
+                        {na.coupon ? ' · 쿠폰 해당 없음' : couponCount !== null && couponCount !== undefined ? ` · 쿠폰 ${formatNumber(couponCount)}개` : ''}
+                        {na.feed ? ' · 소식 해당 없음' : detail.hasFeed !== null ? ` · 소식 ${detail.hasFeed ? `있음${Number.isFinite(feedGap) ? `(마지막 ${feedGap}일 전)` : ''}` : '없음'}` : ''}
                         {naLines.map(([label, reason]) => (
                             <small key={label} className={styles.naReason}>{label}: {reason}</small>
                         ))}
@@ -2162,6 +2253,12 @@ export default function PlaceInsightPage() {
             }
             // 맨 아래까지 내리면 마지막 구역이 목차 줄에 닿지 못해도 그 구역을 보고 있는 것으로 칩니다.
             if (sections.length && window.scrollY >= end - 2 && end > start) current = sections[sections.length - 1].id;
+            // 카드로 이동해 도착한 직후: 그 자리에서 크게 벗어나지 않았으면 도착한 카드가 든 구역을 켭니다.
+            const arrival = linkState.current.arrival;
+            if (arrival) {
+                if (Math.abs(window.scrollY - arrival.y) < 160) current = arrival.id;
+                else linkState.current.arrival = null;
+            }
             setActiveSection(current);
         };
         let trail = 0;
@@ -2223,8 +2320,13 @@ export default function PlaceInsightPage() {
     };
 
     // 카드 → 그래프: 카드마다 핸들러를 달지 않고 시트에서 한 번에 받아, 같은 id 의 점을 밝힙니다.
+    // 구역 전체(#sec-…)나 화면 높이의 절반을 넘는 큰 덩어리 위에 마우스가 머무는 것만으로는 그래프를 돌리지 않고 밝히기만 합니다.
+    // 본문을 읽는 동안 그래프가 따라 도는 일이 없게, 줄·칩·작은 카드 위에 머물 때만 돌립니다(엔진은 그대로, PlaceGraph 의 focus 옵션 still).
+    const isBigCard = (el) => Boolean(el) && (Boolean(el.id?.startsWith('sec-')) || el.getBoundingClientRect().height > window.innerHeight * 0.5);
+
     const onSheetOver = (event) => {
-        const id = event.target.closest?.('[data-node]')?.dataset.node || null;
+        const card = event.target.closest?.('[data-node]') || null;
+        const id = card?.dataset.node || null;
         const state = linkState.current;
         const touched = event.pointerType === 'touch' || event.pointerType === 'pen';
         if (touched) {
@@ -2243,7 +2345,7 @@ export default function PlaceInsightPage() {
         }
         if (id === state.card) return;
         state.card = id;
-        graphRef.current?.focus(id);
+        graphRef.current?.focus(id, { still: isBigCard(card) });
     };
 
     const onSheetLeave = () => {
@@ -2291,6 +2393,14 @@ export default function PlaceInsightPage() {
             const cards = cardsFor(find);
             cards.forEach((el) => el.setAttribute('data-flash', 'true'));
             state.flashTimer = setTimeout(() => cards.forEach((el) => el.removeAttribute('data-flash')), 2200);
+            // 카드를 화면 가운데 두고 도착하면 그 구역의 머리가 목차 판정선 아래에 있을 수 있어, 평소 판정은 앞 구역을 켭니다.
+            // 도착한 카드가 든 구역을 목차에 켜고, 그 자리에서 크게 벗어나 스크롤하기 전까지 그대로 둡니다(아래 update 의 arrival).
+            // 같은 점이 요약 칸(#sec-summary)에도 있으면 본문 쪽 카드의 구역을 씁니다.
+            const host = cards.map((el) => el.closest?.('[id^="sec-"]')).find((el) => el && sections.some((section) => section.id === el.id));
+            if (host) {
+                state.arrival = { id: host.id, y: window.scrollY };
+                setActiveSection(host.id);
+            }
         }, { ready: () => onScreen(cardsFor(find)) });
     };
 
@@ -2404,7 +2514,7 @@ export default function PlaceInsightPage() {
                 <header className={styles.top}>
                     <div className={styles.title}>
                         <h1>플레이스 분석</h1>
-                        <p>매장 주소나 코드 하나로 숨은 대표키워드, 검색 순위, 리뷰·소식 활동, 결제 데이터, AI 검색(GEO·AEO) 진단과 지금 할 일을 한 화면에 모읍니다.</p>
+                        <p>매장 주소나 코드 하나로 숨은 대표키워드, 검색 순위, 리뷰·소식 활동, 결제 데이터, AI 검색 노출 점검(GEO·AEO)과 지금 할 일을 한 화면에 모읍니다.</p>
                     </div>
                     <form className={styles.search} onSubmit={handleSubmit}>
                         <label htmlFor="place-url">플레이스 주소 또는 ID</label>
@@ -2605,9 +2715,14 @@ export default function PlaceInsightPage() {
                                         const note = row.state === 'done' ? recordNote(row.recorded) : null;
                                         const result = row.result;
                                         // 이 순위가 내 지역의 검색 결과인지(상위 매장과의 거리·네이버가 인식한 지역)
-                                        const scope = row.state === 'done' && result.scanned > 0
+                                        const rawScope = row.state === 'done' && result.scanned > 0
                                             ? rankScope({ keyword: row.keyword, locality: rankLocality(result, place.coordinate), regions: recommendation?.regions })
                                             : null;
+                                        // 앞말이 지역인지 확인 못 한 등록 키워드(unknown)는 '지역명이 없는 키워드'라고 단정하지 않고, 확인하지 못했다고 말합니다.
+                                        const regionUnknown = (recommendation?.registered || []).some((entry) => entry.keyword === row.keyword && regionStatusOf(entry) === 'unknown');
+                                        const scope = rawScope && rawScope.tone === 'warn' && regionUnknown
+                                            ? { tone: 'warn', title: '지역을 확인하지 못한 키워드', text: '검색하는 사람의 위치에 따라 순위가 달라질 수 있어 이 순위는 참고용입니다.' }
+                                            : rawScope;
                                         return (
                                             <li key={row.keyword} id={`rank-row-${index}`} className={styles.rankRow} data-state={row.state} data-open={open ? 'true' : undefined} data-node={`kw:${row.keyword}`} style={{ '--d': index }}>
                                                 <div className={styles.rankLine}>
@@ -2713,11 +2828,11 @@ export default function PlaceInsightPage() {
                         <ActivitySection activity={activity} error={activityError} place={place} />
 
                         <div id="sec-geo" className={styles.geo} data-node="hub:geo">
-                            <GeoAeoPanel key={place.placeId} place={place} activity={activity} ranks={ranks} unavailable={unavailable} />
+                            <GeoPanel key={place.placeId} place={place} activity={activity} ranks={ranks} unavailable={unavailable} />
                         </div>
 
                         {place.detail?.pos && <PosSection pos={place.detail.pos} />}
-                        {place.detail && <OpsSection place={place} />}
+                        {place.detail && <OpsSection place={place} activity={activity} />}
                         <Prescription place={place} activity={activity} ranks={ranks} recommendation={recommendation} actions={actions} rivals={rivalPool} fetchedAt={placeInfo?.fetchedAt} />
                     </>
                 )}

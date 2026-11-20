@@ -300,7 +300,7 @@ test('하루 플랜은 기준점 기록으로 시작해 지금 바로 되는 일
     assert.ok(second.detail.startsWith('작업을 끝내고 48시간 뒤입니다'));
     // 숫자로 적히지 않은 AI(Perplexity, 수일)는 주간 측정으로 넘긴다
     assert.deepEqual(plan.later, ['Perplexity']);
-    assert.ok(second.detail.includes('Perplexity') && second.detail.includes('주간 측정'));
+    assert.ok(second.detail.includes('Perplexity') && second.detail.includes('주간 다시 재기') && second.detail.includes('단계별 계획'));
     assert.equal(first.detail.includes('Perplexity'), false);
     assert.equal(plan.endOffset, second.offset + second.minutes);
 });
@@ -322,7 +322,9 @@ test('AI별 요약은 지금 바로 할 수 있는 수·끝낸 수와 그 AI의 
     const summary = Object.fromEntries(quickSummary(quick, [...feed.stepIds, 'quick:naver-cafe:1']).map((p) => [p.key, p]));
     assert.deepEqual(Object.keys(summary), ['naver', 'chatgpt', 'gemini', 'claude', 'perplexity']);
     assert.deepEqual([summary.naver.total, summary.naver.now, summary.naver.prep, summary.naver.done], [3, 3, 0, 1]); // 3단계를 모두 체크한 전략만 끝낸 것으로
-    assert.deepEqual([summary.chatgpt.now, summary.chatgpt.prep], [1, 2]);
+    // 홈페이지가 있어야 하는 기술 작업(ChatGPT 검색 로봇 열기)은 지금 바로·준비 필요와 따로 센다
+    assert.deepEqual([summary.chatgpt.now, summary.chatgpt.prep, summary.chatgpt.site], [0, 2, 1]);
+    assert.deepEqual([summary.gemini.site, summary.naver.site, summary.claude.site], [1, 0, 0]);
     assert.deepEqual([summary.perplexity.total, summary.perplexity.now], [2, 2]);
     assert.equal(summary.gemini.label, 'Gemini');
     assert.equal(summary.claude.claim, PLATFORMS.find((p) => p.key === 'claude').claim);

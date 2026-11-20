@@ -16,6 +16,12 @@
     margin-bottom: 14px;
 }
 
+.statusTitle {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
 .statusHead h2 {
     display: flex;
     align-items: center;
@@ -23,6 +29,24 @@
     font-size: 20px;
     font-weight: 700;
     letter-spacing: -0.025em;
+}
+
+/* 이름 옆에 작게 붙이는 약어(GEO·AEO) */
+.headTag,
+.tileTag {
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0;
+    color: var(--ink-3);
+}
+
+.tileTag {
+    margin-left: 6px;
+}
+
+/* 구역 머리의 '그래프' 버튼은 page.module.css 의 .graphBtn 을 그대로 씁니다(본문 다른 구역과 같은 모양) */
+.graphBtn {
+    flex-shrink: 0;
 }
 
 .statusHead h2 svg {
@@ -114,16 +138,12 @@
     color: var(--ink-2);
 }
 
-/* 칸 높이에 맞춰 늘어나면 말줄임(…) 뒤로 셋째 줄이 비쳐 보이므로 제 높이만 차지하게 합니다 */
+/* 설명은 문장 중간에서 잘리지 않게 줄 수를 제한하지 않습니다(문장을 짧게 써 두었고, 길어지면 칸이 함께 늘어남) */
 .tileHint {
     align-self: start;
-    display: -webkit-box;
-    overflow: hidden;
     font-size: 13px;
     line-height: 1.45;
     color: var(--ink-2);
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 2;
 }
 
 .tileGo {
@@ -381,5 +401,14 @@
 
     .panel {
         animation: none;
+    }
+}
+
+/* 폰: 사람이 읽는 글은 13px 이상 */
+@media (max-width: 720px) {
+    .tileLabel,
+    .tileGo,
+    .headTag {
+        font-size: 13px;
     }
 }

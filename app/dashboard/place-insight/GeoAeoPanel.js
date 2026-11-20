@@ -1,11 +1,11 @@
 'use client';
 
-// GEO·AEO(AI 검색 최적화) 진단 화면. 계산은 모두 lib/place-geo.js 의 순수 함수가 하고,
+// AI 검색(GEO·AEO) 진단 화면. 계산은 모두 lib/place-geo.js 의 순수 함수가 하고,
 // 여기서는 이미 받은 매장 정보·활동·대표키워드 순위만 씁니다. 네이버 요청이 더 생기는 곳은
-// "상위 3곳 GEO·AEO 비교" 버튼 하나뿐입니다(누를 때만 조회). AI 답변 실측은 사장님이 직접 물어 본 결과를
+// "상위 3곳 AI 추천·답변 점수 비교" 버튼 하나뿐입니다(누를 때만 조회). AI에 물어보기 탭은 사장님이 직접 물어 본 결과를
 // 넣는 칸이라 외부로 나가는 요청이 없고, 체크 표시와 실측 기록은 이 브라우저에만 저장합니다.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { toast } from 'sonner';
 import {
@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 import {
     analyzeGeoAeo, buildRoadmap, compareGeoSignals, placeOnlyScores, platformProgress, rivalGaps,
-    PLATFORMS, ROADMAP_STAGES, ATOMIC_MIN, ATOMIC_MAX,
+    PLATFORMS, ROADMAP_STAGES, ATOMIC_MIN, ATOMIC_MAX, GEO_TAB_LABELS, SITE_WORK_TITLE, SITE_WORK_NOTE,
 } from '@/lib/place-geo';
 import { dayLabel, remeasureStatus, somOf } from '@/lib/place-geo-prompts';
 import { buildOneDayPlan, buildQuickStrategies } from '@/lib/place-geo-quick';
@@ -47,8 +47,9 @@ const FANOUT_STATUS = {
     unknown: { label: '확인 불가', cls: 'sUnknown', Icon: HelpCircle },
 };
 
-// 업종 때문에 해당 없는 질문(lib/place-industry.js, 병의원의 결제·약국의 예약 질문 등): '확인 불가'나 '채울 것'이 아니라 "해당 없음"과 이유로 보입니다.
-const FANOUT_NOT_APPLICABLE = { label: '해당 없음', cls: 'sUnknown', Icon: HelpCircle };
+// 업종 때문에 점수에서 뺀 질문(lib/place-industry.js, 병의원의 결제·약국의 예약 질문 등): '확인 불가'나 '채울 것'이 아니라 이름표와 이유로 보입니다.
+// 이름표는 lib 가 이유와 같은 세기로 줍니다(예: 약국의 예약은 "확인 안 됨(점수에서 뺌)", 쿠폰은 "해당 없음").
+const naFanout = (tag) => ({ label: tag || '해당 없음', cls: 'sUnknown', Icon: HelpCircle });
 
 const ACTION_LEVEL = {
     high: { cls: 'actHigh' },
@@ -121,7 +122,7 @@ function Bar({ value }) {
 
 function GainChips({ gain }) {
     if (!gain) return null;
-    const parts = [gain.geo > 0 ? `GEO +${gain.geo}` : null, gain.aeo > 0 ? `AEO +${gain.aeo}` : null].filter(Boolean);
+    const parts = [gain.geo > 0 ? `AI 추천 +${gain.geo}` : null, gain.aeo > 0 ? `AI 답변 +${gain.aeo}` : null].filter(Boolean);
     if (parts.length === 0) return <span className={styles.gainNone}>점수 변화 작음</span>;
     return parts.map((text) => <span key={text} className={styles.gain}>{text}점</span>);
 }
@@ -164,10 +165,10 @@ function FactorList({ title, factors, actions }) {
                             )}
                             {partial && <p className={styles.partial}>일부 확인 불가 — 확인된 부분({factor.max}/{factor.fullWeight}점 만점)만 계산했습니다.</p>}
                             {Array.isArray(factor.notApplicable) && factor.notApplicable.length > 0 && (
-                                // 이 업종에 해당 없어 점수 계산에서 뺀 세부 항목(병의원의 소식·쿠폰, 약국의 쿠폰·예약). 이유는 lib 이 준 문장 그대로.
+                                // 이 업종에 해당 없거나 확인되지 않아 점수 계산에서 뺀 세부 항목(병의원의 소식·쿠폰, 약국의 쿠폰·예약). 이름표와 이유는 lib 이 준 문장 그대로.
                                 <p className={styles.partial}>
-                                    점수에서 뺀 항목(이 업종에는 해당 없음) —{' '}
-                                    {factor.notApplicable.map((entry) => `${entry.label}: ${entry.reason}`).join(' / ')}
+                                    점수에서 뺀 항목:{' '}
+                                    {factor.notApplicable.map((entry) => `${entry.label} — ${entry.tag || '해당 없음'}: ${entry.reason}`).join(' / ')}
                                 </p>
                             )}
                             {next && (
@@ -193,7 +194,7 @@ function Overview({ analysis, progress }) {
                 <div>
                     <h2><Bot size={18} aria-hidden="true" /> 진단 — AI별 준비도와 점수가 나온 이유</h2>
                     <p>
-                        위 GEO {scoreText(geo.score)}점·AEO {scoreText(aeo.score)}점이 어떤 항목에서 나왔는지와, AI마다 준비가 얼마나 됐는지 봅니다.
+                        위 AI 추천 준비 {scoreText(geo.score)}점·AI 답변 준비 {scoreText(aeo.score)}점이 어떤 항목에서 나왔는지와, AI마다 준비가 얼마나 됐는지 봅니다.
                         {coverage && <> AI가 &ldquo;{question}&rdquo;을 나눠 찾는 세부 질문 {coverage.known}개 중 {coverage.yes}개는 바로 답할 수 있고, {coverage.no}개는 답할 정보가 없습니다.</>}
                     </p>
                 </div>
@@ -219,16 +220,16 @@ function Overview({ analysis, progress }) {
             </ul>
 
             <div className={styles.factorCols}>
-                <FactorList title="GEO 세부 항목" factors={geo.factors} actions={actions} />
-                <FactorList title="AEO 세부 항목" factors={aeo.factors} actions={actions} />
+                <FactorList title="AI 추천 준비 세부 항목 (GEO)" factors={geo.factors} actions={actions} />
+                <FactorList title="AI 답변 준비 세부 항목 (AEO)" factors={aeo.factors} actions={actions} />
             </div>
 
             <p className={base.diagNote}>
-                점수는 2026-11 GEO·AEO 전략 정리에서 정당한 방법만 골라 만든 혼잘마 자체 점검 기준입니다. 네이버와 AI 회사는 가중치를 공개하지 않으므로
-                AI 답변 노출·순위를 보장하지 않습니다. 확인할 수 없는 항목은 점수 계산(분모)에서 뺍니다.
-                네이버 밖 AI는 네이버 플레이스를 직접 읽지 못한다는 전략 정리의 설명에 따라, ChatGPT·Gemini·Claude·Perplexity의 종합 준비도는
-                재료 점수와 통로 진행률(&lsquo;로드맵&rsquo; 탭에서 직접 체크한 외부 등록·글, 핵심 통로는 3배)을 반반 합쳤고 네이버는 통로를 20%만 반영했습니다.
-                실제로 추천되는지는 &lsquo;AI 답변 실측&rsquo; 탭에서 확인하세요.
+                점수는 혼잘마가 정당한 방법만 골라 직접 정한 점검 기준이며, 네이버나 AI 회사가 알려 준 기준이 아닙니다. 네이버와 AI 회사는 항목별 비중을 공개하지 않으므로
+                AI 답변에 나오는지·순위가 어떻게 되는지는 보장하지 않습니다. 확인할 수 없는 항목은 점수 계산(분모)에서 뺍니다.
+                네이버 밖 AI는 네이버 플레이스를 직접 읽지 못하는 것으로 보아, ChatGPT·Gemini·Claude·Perplexity의 종합 준비도는
+                재료 점수와 통로 진행률(&lsquo;{GEO_TAB_LABELS.roadmap}&rsquo; 탭에서 직접 체크한 외부 등록·글, 핵심 통로는 3배)을 반반 합쳤고 네이버는 통로를 20%만 반영했습니다.
+                실제로 추천되는지는 &lsquo;{GEO_TAB_LABELS.measure}&rsquo; 탭에서 확인하세요.
             </p>
         </section>
     );
@@ -279,13 +280,13 @@ function ActionPlan({ analysis, onOpenTemplate }) {
 
             {projected && scoring.length > 0 && (
                 <p className={styles.projection}>
-                    아래를 모두 하면 <b>GEO {scoreText(projected.geo.now)} → {scoreText(projected.geo.after)}</b>
-                    {' · '}<b>AEO {scoreText(projected.aeo.now)} → {scoreText(projected.aeo.after)}</b> (추정)
+                    아래를 모두 하면 <b>AI 추천 준비 {scoreText(projected.geo.now)} → {scoreText(projected.geo.after)}</b>
+                    {' · '}<b>AI 답변 준비 {scoreText(projected.aeo.now)} → {scoreText(projected.aeo.after)}</b> (어림값)
                 </p>
             )}
 
             {scoring.length === 0 ? (
-                <p className={base.muted}>플레이스 정보로 점수를 더 올릴 할 일이 없습니다. &lsquo;로드맵&rsquo; 탭의 외부 통로 일을 이어 가세요.</p>
+                <p className={base.muted}>플레이스 정보로 점수를 더 올릴 할 일이 없습니다. &lsquo;{GEO_TAB_LABELS.roadmap}&rsquo; 탭의 외부 통로 일을 이어 가세요.</p>
             ) : (
                 <ol className={base.actionList}>
                     {scoring.map((action) => <ActionItem key={action.id} action={action} templates={templates} onOpenTemplate={onOpenTemplate} />)}
@@ -345,7 +346,7 @@ function RoadmapStep({ item, platformKey, checked, onToggle, templates, onOpenTe
                 {(item.work || item.eta) && (
                     <p className={styles.stepInfo}>
                         {item.work && <span>작업 약 {item.work}</span>}
-                        {item.eta && <span>반영 {item.eta} <small>(전략 정리 기준 · 검증 안 됨)</small></span>}
+                        {item.eta && <span>반영 {item.eta} <small>(어림값)</small></span>}
                     </p>
                 )}
                 <p>{item.how}</p>
@@ -363,14 +364,14 @@ function Roadmap({ analysis, progress, checked, onToggle, onOpenTemplate }) {
         <section className={base.card}>
             <div className={base.cardHead}>
                 <div>
-                    <h2><Route size={18} aria-hidden="true" /> AI별 최단기간 로드맵 — 지금 당장 → 1주 → 2주 → 1개월</h2>
+                    <h2><Route size={18} aria-hidden="true" /> AI별 단계별 계획 — 지금 당장 → 1주 → 2주 → 1개월</h2>
                     <p>
-                        AI마다 매장 정보를 가져가는 통로가 달라 순서도 다릅니다. 전략 정리가 꼽은 빠른 순서(지금 답변·출처 확인 → 이미 인용되는 글 맞추기 → 질문형 글 → 통로 넓히기)대로 놓았습니다.
+                        AI마다 매장 정보를 가져가는 통로가 달라 순서도 다릅니다. 빨리 되는 것부터(지금 답변·출처 확인 → 이미 검색에 잡힌 글 맞추기 → 질문형 글 → 통로 넓히기) 차례로 놓았습니다.
                         직접 하는 일은 체크해 두세요(이 브라우저에 저장됩니다).
                     </p>
                 </div>
             </div>
-            <div className={styles.tabs} role="group" aria-label="로드맵을 볼 AI">
+            <div className={styles.tabs} role="group" aria-label="단계별 계획을 볼 AI">
                 {progress.map((p) => (
                     <button
                         key={p.key}
@@ -397,7 +398,7 @@ function Roadmap({ analysis, progress, checked, onToggle, onOpenTemplate }) {
                 <div>
                     <dt>반영까지</dt>
                     <dd>
-                        {platform.claim} <small>— 전략 정리 후반에 제시된 값이며 검증되지 않았습니다. 일을 끝내는 시간과 AI 답변에 반영되는 시간은 다릅니다.</small>
+                        {platform.claim} <small>— 네이버·AI 회사가 알려 준 시간이 아니라 어림값입니다. 일을 끝내는 시간과 AI 답변에 반영되는 시간은 다릅니다.</small>
                     </dd>
                 </div>
                 <div>
@@ -420,19 +421,29 @@ function Roadmap({ analysis, progress, checked, onToggle, onOpenTemplate }) {
                         {stage.items.length === 0 ? (
                             <p className={styles.stageEmpty}>이 기간에 따로 할 일이 없습니다.</p>
                         ) : (
-                            <ul className={styles.steps}>
-                                {stage.items.map((item) => (
-                                    <RoadmapStep
-                                        key={item.id}
-                                        item={item}
-                                        platformKey={platformKey}
-                                        checked={checked}
-                                        onToggle={onToggle}
-                                        templates={analysis.templates}
-                                        onOpenTemplate={onOpenTemplate}
-                                    />
+                            <>
+                                {/* 홈페이지가 있어야 하는 기술 작업은 머리말 하나 아래로 모아, 홈페이지를 만든 분에게 그대로 전달할 수 있게 합니다. */}
+                                {[stage.items.filter((item) => !item.needsSite), stage.items.filter((item) => item.needsSite)].map((group, index) => (
+                                    group.length > 0 && (
+                                        <div key={index === 0 ? 'plain' : 'site'} className={index === 1 ? styles.siteGroup : undefined}>
+                                            {index === 1 && <p className={styles.siteHead}><b>{SITE_WORK_TITLE}</b> — {SITE_WORK_NOTE}</p>}
+                                            <ul className={styles.steps}>
+                                                {group.map((item) => (
+                                                    <RoadmapStep
+                                                        key={item.id}
+                                                        item={item}
+                                                        platformKey={platformKey}
+                                                        checked={checked}
+                                                        onToggle={onToggle}
+                                                        templates={analysis.templates}
+                                                        onOpenTemplate={onOpenTemplate}
+                                                    />
+                                                ))}
+                                            </ul>
+                                        </div>
+                                    )
                                 ))}
-                            </ul>
+                            </>
                         )}
                     </li>
                 ))}
@@ -454,19 +465,19 @@ function AnswerCard({ analysis }) {
             <div className={base.cardHead}>
                 <div>
                     <h2><MessageCircleQuestion size={18} aria-hidden="true" /> AI가 나눠 묻는 질문과 답변 초안</h2>
-                    <p>AI는 &ldquo;{atomic.question}&rdquo;을 아래처럼 세부 질문으로 나눠 찾습니다. 매장 정보로 답할 수 있는지와 답변 초안을 보여 줍니다.</p>
+                    <p>AI는 &ldquo;{atomic.question}&rdquo;을 아래처럼 세부 질문으로 나눠 찾는 것으로 보입니다. 매장 정보로 답할 수 있는지와 답변 초안을 보여 줍니다.</p>
                 </div>
             </div>
 
             <div className={styles.atomic}>
                 <div className={styles.atomicHead}>
-                    <h3><Quote size={16} aria-hidden="true" /> 원자 답변 초안 — 소개글 첫 문단·홈페이지 질문 바로 아래에</h3>
+                    <h3><Quote size={16} aria-hidden="true" /> 한 문단 답변 초안 — 소개글 첫 문단·홈페이지 질문 바로 아래에</h3>
                     <span className={`${styles.badge} ${atomic.inRange ? styles.sGood : styles.sFair}`}>{lengthBadge(atomic)}</span>
                 </div>
                 <p className={styles.atomicQ}>Q. {atomic.question}</p>
                 <p className={styles.atomicA}>{atomic.text}</p>
                 <div className={styles.btnRow}>
-                    <button type="button" className={base.ghostBtn} onClick={() => copyText(atomic.text, '원자 답변을 복사했습니다.')}>
+                    <button type="button" className={base.ghostBtn} onClick={() => copyText(atomic.text, '한 문단 답변을 복사했습니다.')}>
                         <Copy size={16} aria-hidden="true" /> 답변 복사
                     </button>
                     {faqText && (
@@ -476,7 +487,7 @@ function AnswerCard({ analysis }) {
                     )}
                 </div>
                 <p className={base.diagNote}>
-                    매장 정보에 있는 사실만으로 만든 초안입니다. &ldquo;최고·유일&rdquo; 같은 표현이나 다른 매장과의 비교는 일부러 넣지 않았습니다.
+                    질문 하나에 답 하나로 끝나는 짧은 글입니다. 매장 정보에 있는 사실만으로 만든 초안이며, &ldquo;최고·유일&rdquo; 같은 표현이나 다른 매장과의 비교는 일부러 넣지 않았습니다.
                     {atomic.short ? ' 비어 있는 정보(가까운 역·영업시간·리뷰 평가)를 채우면 근거가 더 붙습니다.' : ''}
                 </p>
             </div>
@@ -495,7 +506,7 @@ function AnswerCard({ analysis }) {
                         </button>
                     </div>
                     <p className={base.diagNote}>
-                        전략 정리의 &lsquo;기준을 먼저 말하고 그 기준에 맞는 곳을 답하는 문장&rsquo;을 옮겼습니다. 이유와 결론이 한 문장에 붙어 있어 AI가 그대로 가져다 쓰기 쉽습니다.
+                        기준을 먼저 말하고 그 기준에 맞는 곳을 답하는 문장입니다. 이유와 결론이 한 문장에 붙어 있어 AI가 가져다 쓰기 쉬운 모양입니다(쓰인다는 보장은 없습니다).
                         매장 정보로 확인되는 조건만 넣었고, &ldquo;이 조건에 맞는 곳은 여기뿐&rdquo; 같은 단정이나 다른 매장의 단점은 넣지 않았습니다.
                     </p>
                 </div>
@@ -508,7 +519,7 @@ function AnswerCard({ analysis }) {
             <ul className={styles.fanout} data-node="geo:fanout">
                 {fanout.map((item) => {
                     const notApplicable = typeof item.notApplicable === 'string' && item.notApplicable ? item.notApplicable : null;
-                    const status = notApplicable ? FANOUT_NOT_APPLICABLE : FANOUT_STATUS[item.status] || FANOUT_STATUS.unknown;
+                    const status = notApplicable ? naFanout(item.notApplicableTag) : FANOUT_STATUS[item.status] || FANOUT_STATUS.unknown;
                     return (
                         <li key={item.key} data-node={`fq:${item.key}`}>
                             <div className={styles.fanoutHead}>
@@ -518,7 +529,7 @@ function AnswerCard({ analysis }) {
                             </div>
                             {item.answer && <p className={styles.fanoutAnswer}>{item.answer}</p>}
                             {notApplicable
-                                ? <p className={styles.fanoutNa}>이 업종에는 해당 없음: {notApplicable}</p>
+                                ? <p className={styles.fanoutNa}>{item.notApplicableTag === '해당 없음' || !item.notApplicableTag ? '이 업종에는 해당 없음' : '점수에서 뺀 이유'}: {notApplicable}</p>
                                 : item.status !== 'yes' && <p className={styles.fanoutFix}>채울 것: {item.fix}</p>}
                         </li>
                     );
@@ -577,8 +588,8 @@ function CompetitionCard({ place, analysis, ranks, unavailable }) {
         <section className={base.card}>
             <div className={base.cardHead}>
                 <div>
-                    <h2><Radar size={18} aria-hidden="true" /> 경쟁 매장 대비 GEO·AEO</h2>
-                    <p>대표키워드 검색 순위로 노출 점유율을 매기고, 같은 검색 결과의 상위 매장과 GEO 신호를 비교합니다.</p>
+                    <h2><Radar size={18} aria-hidden="true" /> 경쟁 매장 대비 AI 추천·답변 준비</h2>
+                    <p>대표키워드 검색 순위로 노출 점유율을 매기고, 같은 검색 결과의 상위 매장과 AI 추천 신호를 비교합니다.</p>
                 </div>
             </div>
 
@@ -597,7 +608,7 @@ function CompetitionCard({ place, analysis, ranks, unavailable }) {
                         <strong>{share.score}<small>점</small></strong>
                         <p>
                             1위 100 · 2위 75 · 3위 55 · 4위 35 · 5위 20 · 6~10위 15점의 평균입니다. 같은 점수표를 플레이스 검색 순위에 옮긴 값이라
-                            AI 답변 점유율과는 다릅니다(AI 답변은 &lsquo;AI 답변 실측&rsquo; 탭에서 잽니다).
+                            AI 답변 점유율과는 다릅니다(AI 답변은 &lsquo;{GEO_TAB_LABELS.measure}&rsquo; 탭에서 잽니다).
                         </p>
                     </div>
                     <ul className={styles.shareRows}>
@@ -630,7 +641,7 @@ function CompetitionCard({ place, analysis, ranks, unavailable }) {
 
             {signals && (
                 <div key={signals.keyword} className={styles.signals}>
-                    <h3>&lsquo;{signals.keyword}&rsquo; 상위 매장 GEO 신호 지수</h3>
+                    <h3>&lsquo;{signals.keyword}&rsquo; 상위 매장 AI 추천 신호 지수</h3>
                     <p className={styles.signalSummary}>
                         내 매장 <b>{scoreText(signals.mine)}</b>
                         {signals.top5Average !== null && <> · 상위 5곳 평균 <b>{signals.top5Average}</b></>}
@@ -650,7 +661,7 @@ function CompetitionCard({ place, analysis, ranks, unavailable }) {
                         ))}
                     </ul>
                     <p className={base.diagNote}>
-                        GEO 신호 지수는 같은 검색 결과 안에서 방문자 리뷰·블로그 리뷰·평점·사진·저장·운영 도구(예약·주문·쿠폰·페이)가 몇 번째쯤인지 평균한 값(0~100)입니다.
+                        AI 추천 신호 지수는 같은 검색 결과 안에서 방문자 리뷰·블로그 리뷰·평점·사진·저장·운영 도구(예약·주문·쿠폰·페이)가 몇 번째쯤인지 평균한 값(0~100)입니다.
                         이미 받은 순위 목록만 써서 추가 조회가 없습니다.
                     </p>
                 </div>
@@ -660,7 +671,7 @@ function CompetitionCard({ place, analysis, ranks, unavailable }) {
                 <div className={styles.rivals}>
                     {!rival && (
                         <button type="button" className={base.ghostBtn} onClick={loadRivals} disabled={unavailable}>
-                            <Network size={16} aria-hidden="true" /> 상위 3곳 GEO·AEO 점수 비교
+                            <Network size={16} aria-hidden="true" /> 상위 3곳 AI 추천·답변 점수 비교
                         </button>
                     )}
                     {rival?.loading && (
@@ -670,13 +681,13 @@ function CompetitionCard({ place, analysis, ranks, unavailable }) {
                         <>
                             <div className={base.tableWrap}>
                                 <table className={base.table}>
-                                    <caption className={base.srOnly}>{result.keyword} 상위 매장과 내 매장의 GEO·AEO 점수</caption>
+                                    <caption className={base.srOnly}>{result.keyword} 상위 매장과 내 매장의 AI 추천·답변 점수</caption>
                                     <thead>
                                         <tr>
                                             <th scope="col">구분</th>
                                             <th scope="col">매장</th>
-                                            <th scope="col">GEO</th>
-                                            <th scope="col">AEO</th>
+                                            <th scope="col">AI 추천</th>
+                                            <th scope="col">AI 답변</th>
                                             <th scope="col">내 매장보다 앞선 항목</th>
                                         </tr>
                                     </thead>
@@ -722,35 +733,49 @@ function TemplatesCard({ templates, tab, onTab, cardRef }) {
     if (!current) return null;
     const blanks = (current.text.match(/직접 적기/g) || []).length;
     const isCode = ['answerPage', 'robots', 'jsonld', 'llms'].includes(current.key);
+    // 홈페이지가 있는 가게만 쓰는 초안(로봇 안내 파일·구조화 데이터 등)은 머리말 하나 아래로 따로 모읍니다.
+    const writeTabs = templates.filter((item) => item.group !== 'site');
+    const siteTabs = templates.filter((item) => item.group === 'site');
+    const tabButton = (item) => (
+        <button
+            key={item.key}
+            type="button"
+            className={item.key === current.key ? styles.tabOn : styles.tab}
+            aria-pressed={item.key === current.key}
+            onClick={() => onTab(item.key)}
+        >
+            {item.label}
+        </button>
+    );
     return (
         <section className={base.card} ref={cardRef} tabIndex={-1} aria-label="복사해 쓰는 초안">
             <div className={`${base.cardHead} ${styles.headWrap}`}>
                 <div>
                     <h2><FileText size={18} aria-hidden="true" /> 복사해 쓰는 초안 — 이대로 붙여 넣고 빈칸만 채우기</h2>
-                    <p>로드맵의 할 일마다 쓸 글·요청문·설정 예시입니다. 플레이스에 있는 사실만 채워 넣었고, 화면 정보에 없는 값(전화번호·가격)은 &lsquo;직접 적기&rsquo;로 비워 두었습니다.</p>
+                    <p>&lsquo;{GEO_TAB_LABELS.roadmap}&rsquo;의 할 일마다 쓸 글·요청문·설정 예시입니다. 플레이스에 있는 사실만 채워 넣었고, 화면 정보에 없는 값(전화번호·가격)은 &lsquo;직접 적기&rsquo;로 비워 두었습니다.</p>
                 </div>
                 <button type="button" className={base.ghostBtn} onClick={() => copyText(current.text, `'${current.label}' 초안을 복사했습니다.`)}>
                     <Copy size={16} aria-hidden="true" /> 복사
                 </button>
             </div>
             <div className={styles.tabs} role="group" aria-label="초안 종류">
-                {templates.map((item) => (
-                    <button
-                        key={item.key}
-                        type="button"
-                        className={item.key === current.key ? styles.tabOn : styles.tab}
-                        aria-pressed={item.key === current.key}
-                        onClick={() => onTab(item.key)}
-                    >
-                        {item.label}
-                    </button>
-                ))}
+                {writeTabs.map(tabButton)}
             </div>
+            {siteTabs.length > 0 && (
+                <div className={styles.siteGroup}>
+                    <p className={styles.siteHead}><b>{SITE_WORK_TITLE}</b> — {SITE_WORK_NOTE}</p>
+                    <div className={styles.tabs} role="group" aria-label="홈페이지용 초안 종류">
+                        {siteTabs.map(tabButton)}
+                    </div>
+                </div>
+            )}
             {/* key: 초안을 바꾸면 새로 그려 등장 애니메이션이 다시 재생되고, 글 상자의 스크롤도 맨 위로 돌아갑니다 */}
             <p key={`where-${current.key}`} className={styles.templateWhere}>
                 <b>쓰는 곳</b> {current.where}
+                {current.group === 'site' && <span className={`${styles.badge} ${styles.sUnknown}`}>홈페이지가 있는 가게만</span>}
                 {blanks > 0 && <span className={`${styles.badge} ${styles.sFair}`}>직접 적을 칸 {blanks}곳</span>}
             </p>
+            {current.purpose && <p key={`purpose-${current.key}`} className={styles.templatePurpose}>{current.purpose}</p>}
             <pre key={`text-${current.key}`} className={isCode ? styles.code : styles.draft} tabIndex={0} aria-label={`${current.label} 초안`}>{current.text}</pre>
             {current.notes.length > 0 && (
                 <ul className={styles.notes}>
@@ -772,7 +797,7 @@ function Checklist({ items, checked, onToggle }) {
             <div className={`${base.cardHead} ${styles.headWrap}`}>
                 <div>
                     <h2><ClipboardCheck size={18} aria-hidden="true" /> AI 검색 체크리스트</h2>
-                    <p>&lsquo;자동&rsquo;은 매장 정보로 판정했고, 나머지는 외부 채널이라 직접 확인한 뒤 체크하세요. 로드맵에서 체크한 일은 여기에도 표시됩니다.</p>
+                    <p>&lsquo;자동&rsquo;은 매장 정보로 판정했고, 나머지는 외부 채널이라 직접 확인한 뒤 체크하세요. &lsquo;{GEO_TAB_LABELS.roadmap}&rsquo; 탭에서 체크한 일은 여기에도 표시됩니다.</p>
                 </div>
                 <span className={styles.progress}>{done}/{items.length} 완료</span>
             </div>
@@ -780,14 +805,19 @@ function Checklist({ items, checked, onToggle }) {
                 {CHECK_GROUPS.map((group) => {
                     const groupItems = items.filter((item) => item.platform === group);
                     if (groupItems.length === 0) return null;
+                    // 홈페이지가 있어야 하는 일은 같은 AI 묶음 안에서 머리말 아래로 뒤에 모읍니다.
+                    const ordered = [...groupItems.filter((item) => !item.needsSite), ...groupItems.filter((item) => item.needsSite)];
+                    const firstSite = ordered.find((item) => item.needsSite)?.id;
                     return (
                         <div key={group} className={styles.checkGroup}>
                             <h3>{group === 'common' ? '공통' : PLATFORM_LABEL[group]}</h3>
                             <ul>
-                                {groupItems.map((item) => {
+                                {ordered.map((item) => {
                                     const inputId = `geo-check-${item.id}`;
                                     return (
-                                        <li key={item.id}>
+                                        <Fragment key={item.id}>
+                                        {item.id === firstSite && <li className={styles.siteHeadItem}><p className={styles.siteHead}><b>{SITE_WORK_TITLE}</b> — {SITE_WORK_NOTE}</p></li>}
+                                        <li>
                                             {checkable(item) ? (
                                                 <input id={inputId} type="checkbox" checked={checked.includes(item.id)} onChange={() => onToggle(item.id)} />
                                             ) : (
@@ -811,6 +841,7 @@ function Checklist({ items, checked, onToggle }) {
                                                 <p>{item.detail}</p>
                                             </div>
                                         </li>
+                                        </Fragment>
                                     );
                                 })}
                             </ul>
@@ -823,7 +854,7 @@ function Checklist({ items, checked, onToggle }) {
     );
 }
 
-export default function GeoAeoPanel({ place, activity, ranks, unavailable }) {
+export default function GeoAeoPanel({ place, activity, ranks, unavailable, onShowInGraph }) {
     const analysis = useMemo(() => analyzeGeoAeo({ place, activity, ranks }), [place, activity, ranks]);
     const placeId = place?.placeId;
     const [checked, setChecked] = useState([]);
@@ -943,7 +974,7 @@ export default function GeoAeoPanel({ place, activity, ranks, unavailable }) {
     const panel = (key) => ({ idBase: TAB_ID, tabKey: key, active: tab, mounted: opened.includes(key) });
     return (
         <>
-            <GeoStatus question={analysis.question} geo={analysis.geo} aeo={analysis.aeo} som={som} today={today} onGo={goTab} />
+            <GeoStatus question={analysis.question} geo={analysis.geo} aeo={analysis.aeo} som={som} today={today} onGo={goTab} onShowInGraph={onShowInGraph} />
             <GeoTabs idBase={TAB_ID} tabs={tabs} active={tab} onSelect={showTab} />
             <GeoTabPanel {...panel('today')}>
                 <QuickGeoPanel

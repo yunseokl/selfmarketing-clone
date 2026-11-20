@@ -172,7 +172,9 @@ const PlaceGraph = forwardRef(function PlaceGraph(
         // 밝히기는 바로 합니다. 그 점이 뇌 뒤쪽에 있으면, 본문 카드에 포인터를 올려 둔 경우에만(0.45초) 보이는 쪽으로 잠깐 돌려 보여 주고,
         // 포인터가 카드를 떠나면 원래 보던 각도로 되돌립니다. 다른 곳으로 가는 길에 카드 위를 스치기만 해서는 장면이 돌지 않고,
         // 끌지 않았는데 장면이 돌아간 채로 남는 일도 없습니다(카드가 열려 있거나 걸러 보는 중에는 아예 돌리지 않습니다 — 엔진의 turnTo 참고).
-        focus(id) {
+        // opts.still: 큰 덩어리(구역 전체 등) 위에 포인터가 머무는 경우. 밝히기만 하고 그래프를 돌리지 않습니다.
+        focus(id, opts) {
+            const still = Boolean(opts?.still);
             const groupId = typeof id === 'string' && id.startsWith('group:') ? id.slice(6) : null;
             const nodeId = !groupId && id && nodeById.has(id) ? id : null;
             setLinkedGroup(groupId);
@@ -181,10 +183,10 @@ const PlaceGraph = forwardRef(function PlaceGraph(
             // 카드에서 옆 카드로 건너가는 사이(잠깐 아무 카드도 아닌 곳)에는 되돌리기를 시작하지 않게 조금 기다립니다.
             turnTimer.current = setTimeout(() => {
                 turnTimer.current = 0;
-                if (nodeId) engineRef.current?.turnTo(nodeId, true);
+                if (nodeId && !still) engineRef.current?.turnTo(nodeId, true);
                 else engineRef.current?.turnBack();
                 engineRef.current?.invalidate?.();
-            }, nodeId ? 450 : 280);
+            }, nodeId && !still ? 450 : 280);
         },
         ping(id) {
             if (id && nodeById.has(id)) {
@@ -778,6 +780,38 @@ const PlaceGraph = forwardRef(function PlaceGraph(
 
     const shownLegend = legend.filter((item) => groups.has(item.group));
     const filtering = Boolean(activeRelation || filterGroup);
+    // 걸러 보는 동안 밝혀진 점 가운데 이름이 켜진 점의 수. 좁은 화면에서는 이름표 자리가 모자라 일부 점의 이름이 빠질 수 있어,
+    // 이름이 다 켜지지 않았을 때만 띠와 아래 줄에서 말없이 빠지지 않게 알립니다(엔진 상태를 읽기만 하고 자리 찾기는 건드리지 않음).
+    const [nameStat, setNameStat] = useState(null);
+    useEffect(() => {
+        if (!filtering || !live) {
+            setNameStat(null);
+            return undefined;
+        }
+        const classes = ontology?.classes;
+        const read = () => {
+            const engine = engineRef.current;
+            const hot = engine?.hotSet;
+            if (!engine || !hot || !engine.byId) return;
+            let total = 0;
+            let named = 0;
+            for (const id of hot) {
+                const p = engine.byId.get(id);
+                // 매장·묶음 중심(level 0·1)은 늘 이름이 있어 세지 않습니다.
+                if (!p || p.level <= 1 || p.shown < 0.5) continue;
+                // 띠의 '항목 N'(종류 칩의 합)과 같은 기준으로 세려고, 작은 제목 점(quiet 인 종류)과 종류를 모르는 점은 뺍니다.
+                const kind = classes ? classes[p.node.type] : null;
+                if (classes && (!kind || kind.quiet)) continue;
+                total += 1;
+                if (p.lab && p.lab.on && p.lab.a > 0.5) named += 1;
+            }
+            setNameStat((prev) => (prev && prev.named === named && prev.total === total ? prev : { named, total }));
+        };
+        read();
+        const timer = setInterval(read, 600);
+        return () => clearInterval(timer);
+    }, [filtering, live, ontology]);
+    const namesMissing = filtering && nameStat && nameStat.total > 0 && nameStat.named < nameStat.total;
     const relationItem = activeRelation ? relationList.find((item) => item.rel === activeRelation) : null;
     const klassItem = activeKlass ? classList.find((item) => item.type === activeKlass) : null;
     // 띠에 쓰는 수: 종류 칩의 합과 같게(묶음 중심 점은 세지 않음)
@@ -806,8 +840,10 @@ const PlaceGraph = forwardRef(function PlaceGraph(
 
     // 조작 안내: 마우스와 손가락은 하는 법이 달라서 따로 씁니다.
     // (어느 쪽이든 아래 줄의 높이는 같습니다. 입력 방식이 바뀌어도 무대가 밀리지 않게 CSS 에서 높이를 고정해 둡니다.)
-    const guide = touchy
-        ? '점을 누르면 이름, 이름을 누르면 살펴봅니다 · 고리를 끌면 당겨집니다 · 옆으로 쓸면 돕니다'
+    const guide = namesMissing
+        ? '이름이 보이지 않는 점은 점을 누르면 이름이 보입니다. 이름을 누르면 살펴봅니다.'
+        : touchy
+        ? '점을 누르면 이름, 이름을 누르면 살펴봅니다 · 점을 길게 눌러 끌면 당겨집니다 · 옆으로 쓸면 돕니다'
         : `점이나 이름을 누르면 살펴봅니다 · 점을 끌면 이어진 점이 따라옵니다 · 빈 곳을 끌면 돌아갑니다 · 위의 묶음 이름을 누르면 그 묶음만 봅니다${tip ? ` · ${tip}` : ''}`;
 
     return (
@@ -870,6 +906,7 @@ const PlaceGraph = forwardRef(function PlaceGraph(
                         <p className={styles.modeText}>
                             <i aria-hidden="true" />
                             {/* 줄이 넘어갈 때 "중" 한 글자만 떨어지지 않게, 끝말은 한 덩어리(keep)로 묶어 둡니다. */}
+                            <span>
                             {relationItem && selectedNode ? (
                                 <span><strong>{relationItem.name}</strong> <b aria-hidden="true">›</b> <strong>{bandName(selectedNode)}</strong> <span className={styles.keep}>살펴보는 중</span></span>
                             ) : relationItem ? (
@@ -883,6 +920,13 @@ const PlaceGraph = forwardRef(function PlaceGraph(
                             ) : (
                                 <span><span className={styles.keep}><strong>{groupLabels.get(filterGroup)}</strong>만 보는 중</span> <span className={styles.keep}>· 항목 {filterCount}</span></span>
                             )}
+                            {/* 분모는 띠의 '항목 N'과 같은 기준(작은 제목 점 제외)입니다. 연결 수를 적는 띠에서는 세는 대상이 달라 '점 N개 중'이라고 따로 적습니다. */}
+                            {namesMissing && (
+                                <span className={styles.keep} role="status">
+                                    {relationItem ? ` · 점 ${nameStat.total}개 중 이름 ${nameStat.named}개 표시` : ` · 이름 ${nameStat.named}/${nameStat.total} 표시`}
+                                </span>
+                            )}
+                            </span>
                         </p>
                         {/* 묶음 안의 항목 종류: 누르면 그 종류만 밝힙니다(한 줄, 넘치면 옆으로 넘겨 봅니다) */}
                         {!activeRelation && classList.length > 1 && (

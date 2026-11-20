@@ -1,6 +1,6 @@
 'use client';
 
-// AI 답변 실측 화면 — 질문 고르기 → AI에 직접 묻기 → 답변 붙여 넣기(자동 판정) → 기록 → 추이.
+// AI에 물어보기 화면 — 질문 고르기 → AI에 직접 묻기 → 답변 붙여 넣기(자동 판정) → 기록 → 추이.
 // 질문·판정·리포트 계산은 lib/place-geo-prompts.js 와 lib/place-geo.js 의 순수 함수가 하고, 여기서는 그리기와 입력만 합니다.
 // 혼잘마가 AI에 대신 묻지 않습니다. "열기"는 사장님 브라우저에서 그 AI 화면을 여는 링크이고, 붙여 넣은 글은 저장하지 않습니다.
 // 기록은 이 브라우저에만 남습니다(somStore.js).
@@ -416,7 +416,7 @@ export default function SomTracker({ place, activity, visible = true, onGo, onOp
         saveHistory([...history, { at: new Date().toISOString(), results: draftResults }].slice(-SOM_KEEP));
         resetDraft();
         onRecorded?.();
-        toast.success('오늘 실측을 기록했습니다. 같은 질문으로 다시 재면 변화를 보여 드립니다.');
+        toast.success('오늘 결과를 기록했습니다. 같은 질문으로 다시 재면 변화를 보여 드립니다.');
     };
 
     // 재다 만 칸을 채웠을 때: 새 기록을 만들지 않고 오늘 마지막 기록에 합칩니다(기록마다 잰 칸이 달라 비교가 흐려지지 않게).
@@ -443,10 +443,10 @@ export default function SomTracker({ place, activity, visible = true, onGo, onOp
             <section className={base.card}>
                 <div className={base.cardHead}>
                     <div>
-                        <h2><Gauge size={18} aria-hidden="true" /> AI 답변 실측 — 지금 실제로 몇 번째로 추천되나</h2>
+                        <h2><Gauge size={18} aria-hidden="true" /> AI에 물어본 결과 — 지금 실제로 몇 번째로 추천되나</h2>
                         <p>
-                            준비도는 재료 점검이고 이 칸은 결과입니다. 같은 질문을 AI마다 직접 묻고 내 매장 순위를 기록하면
-                            AI 답변 점유율(Share of Model)을 계산해 지난번과 비교합니다.
+                            &lsquo;준비도&rsquo;는 매장 정보를 점검한 것이고, 이 칸은 실제 결과입니다. 같은 질문을 AI마다 직접 묻고 내 매장 순위를 기록하면
+                            AI 답변 점유율(AI 답변에 우리 가게가 나온 비율)을 계산해 지난번과 비교합니다.
                         </p>
                     </div>
                 </div>
@@ -734,7 +734,7 @@ export default function SomTracker({ place, activity, visible = true, onGo, onOp
                 </div>
 
                 <p className={base.diagNote}>
-                    점수표는 전략 정리의 Share of Model과 같습니다: {SOM_RANKS.map((rank) => `${somRankLabel(rank)} ${somPoints(rank)}점`).join(' · ')}.
+                    점수표는 혼잘마가 정한 것이며 네이버·AI 회사의 기준이 아닙니다: {SOM_RANKS.map((rank) => `${somRankLabel(rank)} ${somPoints(rank)}점`).join(' · ')}.
                     점유율 = 받은 점수 ÷ (잰 칸 × 100)이며 재지 않은 칸은 계산에서 뺍니다. AI 답은 물을 때마다, 사람마다 달라지므로
                     한 번의 결과보다 같은 질문으로 반복해 잰 흐름을 보세요. 혼잘마는 AI에 대신 묻지 않으며, &lsquo;열기&rsquo;는 내 브라우저에서 그 AI 화면을 여는 링크입니다.
                 </p>

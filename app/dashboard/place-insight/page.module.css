@@ -616,6 +616,11 @@
     background: var(--good-wash);
 }
 
+.tickerSum small {
+    font-size: 12px;
+    font-weight: 600;
+}
+
 .ticker ul {
     list-style: none;
     border-radius: var(--r);
@@ -824,7 +829,8 @@
 
 .arrow {
     display: inline-block;
-    font-size: 0.8em;
+    font-size: 12px;
+    line-height: 1;
 }
 
 /* ▲▼ 는 작아도 읽히지만 'NEW' 는 글자라 11px 아래로 내리지 않습니다 */
@@ -1815,6 +1821,39 @@
     background: var(--good-wash);
 }
 
+/* 근거 숫자 칩이 아니라 "이 조합을 왜 이렇게 봤는지" 한 줄 설명: 바탕 없이 가는 테두리로 차분하게 */
+.reason[data-kind='note'] {
+    font-weight: 500;
+    color: var(--ink-2);
+    background: none;
+    box-shadow: inset 0 0 0 1px var(--rule);
+}
+
+/* 사장님이 직접 판단할 말(추천 목록과 따로) */
+.candidates {
+    margin-top: 16px;
+}
+
+.candidates h4 {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--ink);
+}
+
+.candidates .note {
+    margin-top: 2px;
+}
+
+.candidateReasons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 2px;
+}
+
 .recoAct {
     display: inline-flex;
     justify-content: flex-end;
@@ -2228,11 +2267,11 @@
 
 .tick {
     position: absolute;
-    top: 16px;
+    top: 15px;
     left: calc(var(--x, 0) * 100%);
     transform: translateX(-50%);
-    font-size: 11px;
-    line-height: 1.2;
+    font-size: 12px;
+    line-height: 1.1;
     color: var(--ink-3);
 }
 
@@ -2758,7 +2797,7 @@
 
 .countList li {
     display: grid;
-    grid-template-columns: minmax(0, 1.3fr) minmax(40px, 1fr) minmax(48px, auto);
+    grid-template-columns: minmax(0, 1.7fr) minmax(32px, 0.8fr) minmax(48px, auto);
     align-items: center;
     gap: 10px;
     font-size: 13px;
@@ -2768,11 +2807,15 @@
     font-weight: 700;
 }
 
+/* 길어도 두 줄까지는 전체를 보여 주고, 그보다 길면 끝을 줄임표로 하되 title 로 전체 문구를 볼 수 있습니다 */
 .countLabel {
+    display: -webkit-box;
     min-width: 0;
     overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    line-height: 1.35;
+    overflow-wrap: anywhere;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
 }
 
 .countTrack {
@@ -3031,7 +3074,7 @@
 }
 
 .heatTable th {
-    font-size: 11px;
+    font-size: 12px;
     font-weight: 600;
     text-align: center;
     color: var(--ink-3);
@@ -3762,6 +3805,10 @@
         min-height: 44px;
     }
 
+    .recoRank {
+        min-width: 44px;
+    }
+
     .savedChip .savedRemove {
         justify-content: center;
         min-width: 44px;
@@ -3979,5 +4026,36 @@
         animation-iteration-count: 1 !important;
         transition-duration: 0.01ms !important;
         transition-delay: 0s !important;
+    }
+}
+
+/* 폰: 사람이 읽는 글은 13px 이상 */
+@media (max-width: 720px) {
+    .search > label,
+    .help,
+    .savedLabel,
+    .storeMeta,
+    .kpiLabel,
+    .kpiNote,
+    .ticker h3,
+    .tickerPending,
+    .railTodoText,
+    .basis,
+    .slotState,
+    .recoRegions .word small,
+    .foldUse,
+    .table thead th,
+    .table tbody th small,
+    .wordMine small,
+    .figures dt,
+    .figures .figureNote,
+    .tile dt,
+    .naReason,
+    .tileNote,
+    .kpis dt,
+    .source,
+    .graphBtn,
+    .loadingText li {
+        font-size: 13px;
     }
 }

@@ -591,6 +591,24 @@
     transform: scale(0.97);
 }
 
+/* 이을 점이 없는 이유(문장만): 누를 수 없으므로 손 모양·눌림 효과가 없습니다 */
+.chip[data-static='true'],
+.row[data-static='true'] {
+    cursor: default;
+}
+
+/* 누를 수 없는 이유는 테두리 없는 글(색 막대 + 글)로 그려, 누를 수 있는 조각과 한눈에 구별됩니다. */
+.chip[data-static='true'] {
+    padding-left: 2px;
+    color: var(--k-text-2);
+    box-shadow: none;
+}
+
+.chip[data-static='true']:active,
+.row[data-static='true']:active {
+    transform: none;
+}
+
 /* 지금 이유 칸에 나와 있는 조각 */
 .chip[data-current='true'] {
     background-color: var(--k-lift);
@@ -860,19 +878,19 @@
     }
 
     /* 포인터가 있는 자리에서 묶음 색이 옅게 번져 따라다닙니다. */
-    .chip:hover {
+    .chip:not([data-static='true']):hover {
         background-image: radial-gradient(72px circle at var(--mx) var(--my), color-mix(in srgb, var(--c) 26%, transparent), transparent 72%);
     }
 
-    .chip:hover i {
+    .chip:not([data-static='true']):hover i {
         height: 14px;
     }
 
-    .row:hover {
+    .row:not([data-static='true']):hover {
         background-color: var(--k-lift);
     }
 
-    .row:hover .rowTop i {
+    .row:not([data-static='true']):hover .rowTop i {
         height: 14px;
         background: var(--cv, var(--c));
     }
@@ -1138,5 +1156,20 @@
     .card *::before,
     .card *::after {
         transition-property: none !important;
+    }
+}
+
+/* 낮은 노트북 화면(높이 940px 이하)의 마우스 화면: 머리·이유 칸·버튼이 차지하는 높이를 줄여 본문 창을 조금 더 확보합니다(손가락 화면은 44px 그대로). */
+@media (hover: hover) and (pointer: fine) and (min-width: 769px) and (max-height: 940px) {
+    .foot {
+        padding: 6px var(--k-pad);
+    }
+
+    .go {
+        height: 36px;
+    }
+
+    .stripIn {
+        padding: 7px var(--k-pad) 8px;
     }
 }

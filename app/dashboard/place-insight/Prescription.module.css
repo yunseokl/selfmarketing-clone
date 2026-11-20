@@ -55,14 +55,14 @@
 }
 
 .saveHint {
-    font-size: 12px;
+    font-size: 13px;
     line-height: 1.5;
     color: var(--ink-3, #5F6873);
 }
 
 /* 처방전을 만들지 못했을 때 버튼 옆 한 줄 */
 .saveError {
-    font-size: 12px;
+    font-size: 13px;
     font-weight: 700;
     line-height: 1.5;
     color: var(--danger, #B42318);
@@ -143,7 +143,7 @@
     page: prescription;
     font-family: 'Pretendard', 'Apple SD Gothic Neo', 'Malgun Gothic', 'Noto Sans KR', sans-serif;
     font-size: 10.5pt;
-    line-height: 1.42;
+    line-height: 1.4;
     font-variant-numeric: tabular-nums;
     color: var(--rx-ink);
     background: #fff;
@@ -225,6 +225,9 @@
     color: var(--rx-ink-2);
     break-after: avoid;
     page-break-after: avoid;
+    /* 구역 제목 바로 아래 설명이 쪽 경계에서 두 쪽으로 갈라지지 않게 */
+    break-inside: avoid;
+    page-break-inside: avoid;
 }
 
 .note {
@@ -446,7 +449,7 @@
 /* ───────── 2쪽부터: 상세 ───────── */
 
 .section {
-    margin-top: 3.8mm;
+    margin-top: 3.2mm;
 }
 
 .section:first-of-type {
@@ -466,7 +469,7 @@
 }
 
 .part {
-    margin-top: 2.8mm;
+    margin-top: 2.4mm;
 }
 
 /* 짧은 묶음은 제목과 내용이 다른 쪽으로 갈라지지 않게 통째로 둡니다. */
@@ -637,8 +640,8 @@
 /* 처방 한 건: 머리·왜·하는 법(.taskTop)은 한 덩어리로 두고, 초안 상자(.draft)는 쪽을 넘어 이어질 수 있습니다(쪽 아래가 비지 않게).
  * 상자는 초안 한 편(.draftItem)·표의 한 행 단위로만 끊깁니다. */
 .task {
-    margin-top: 2.6mm;
-    padding-bottom: 2.4mm;
+    margin-top: 2.2mm;
+    padding-bottom: 2mm;
     border-bottom: 0.5pt solid var(--rx-rule);
 }
 
@@ -695,10 +698,10 @@
     border-color: var(--rx-rule);
 }
 
-/* 처방 한 건의 머리는 '왜'와 붙어 있고, '왜'·'하는 법'은 각각 한 덩어리입니다(.adviceRow). 쪽이 모자라면 '왜'와 '하는 법' 사이에서 끊을 수 있어
- * 앞 쪽 아래가 크게 비지 않습니다. */
+/* 처방 한 건의 제목·'왜'·'하는 법'은 한 덩어리라 쪽 경계에서 갈라지지 않습니다. 갈라도 되는 곳은 그 뒤의 초안 상자 앞뿐입니다. */
 .taskTop {
-    break-inside: auto;
+    break-inside: avoid;
+    page-break-inside: avoid;
 }
 
 /* 뒤에 초안 상자가 이어지는 처방은 머리 블록이 쪽 맨 아래에 홀로 남지 않게(상자가 한 줄도 못 들어가면 머리 블록째 넘김) */
@@ -874,11 +877,21 @@
 }
 
 .colExcluded {
+    width: 36mm;
+}
+
+.colNextWhy {
     width: 52mm;
 }
 
+/* C. 표 안에서 근거 뒤에 이어 적는 근거 점수 */
+.score {
+    white-space: nowrap;
+    color: var(--rx-ink-2);
+}
+
 .colKind {
-    width: 24mm;
+    width: 19mm;
 }
 
 /* C. 5칸 근거에 쓴 표기 풀이 */
@@ -896,6 +909,23 @@
 }
 
 .legend .legendHead {
+    margin-right: 2mm;
+    font-weight: 700;
+    color: var(--rx-ink);
+}
+
+/* 1쪽 맨 아래: 처음 나오는 용어의 한 줄 풀이 */
+.terms {
+    margin-top: 2.2mm;
+    font-size: 9pt;
+    color: var(--rx-ink-2);
+}
+
+.terms span {
+    margin-right: 3mm;
+}
+
+.terms .legendHead {
     margin-right: 2mm;
     font-weight: 700;
     color: var(--rx-ink);
@@ -928,6 +958,9 @@
 .plainList li {
     position: relative;
     padding-left: 3.5mm;
+    /* 항목 제목과 그 아래 설명이 쪽 경계에서 갈라지지 않게 */
+    break-inside: avoid;
+    page-break-inside: avoid;
 }
 
 .plainList li::before {
@@ -980,8 +1013,7 @@
 }
 
 .repeatPart {
-    break-after: avoid;
-    page-break-after: avoid;
+    margin-top: 2.4mm;
 }
 
 .colTick {
@@ -1074,4 +1106,71 @@
     content: '·';
     position: absolute;
     left: 0;
+}
+
+/* ───────── 쪽 나눔 맞추기 ─────────
+ * 화면(Prescription.js)이 문서를 그린 뒤 쪽이 어떻게 나뉘는지 미리 재어 보고, 세로 간격 배율 --rx-s 를 골라 줍니다
+ * (마지막 쪽이 거의 비거나 쪽 아래가 크게 비지 않게). 글자 크기·줄 간격·1쪽(.page1)은 배율을 쓰지 않습니다.
+ * 배율이 없으면 1 입니다. */
+.section {
+    margin-top: calc(3.2mm * var(--rx-s, 1));
+}
+
+.part,
+.repeatPart {
+    margin-top: calc(2.4mm * var(--rx-s, 1));
+}
+
+.task {
+    margin-top: calc(2.2mm * var(--rx-s, 1));
+    padding-bottom: calc(2mm * var(--rx-s, 1));
+}
+
+.section .table:not(.planTable):not(.recheckTable):not(.tableTight) th,
+.section .table:not(.planTable):not(.recheckTable):not(.tableTight) td {
+    padding-top: calc(1mm * var(--rx-s, 1));
+    padding-bottom: calc(1mm * var(--rx-s, 1));
+}
+
+.section .tableTight:not(.recheckTable) th,
+.section .tableTight:not(.recheckTable) td {
+    padding-top: calc(0.7mm * var(--rx-s, 1));
+    padding-bottom: calc(0.7mm * var(--rx-s, 1));
+}
+
+.advice {
+    margin-top: calc(1mm * var(--rx-s, 1));
+}
+
+.draft {
+    margin-top: calc(1.6mm * var(--rx-s, 1));
+}
+
+.draftItem {
+    margin-top: calc(1.2mm * var(--rx-s, 1));
+    padding-top: calc(1.4mm * var(--rx-s, 1));
+    padding-bottom: calc(1.8mm * var(--rx-s, 1));
+}
+
+.recheck {
+    margin-top: calc(2mm * var(--rx-s, 1));
+    padding-top: calc(1.3mm * var(--rx-s, 1));
+    padding-bottom: calc(1.6mm * var(--rx-s, 1));
+}
+
+.writeLine {
+    margin-top: calc(1.6mm * var(--rx-s, 1));
+}
+
+/* '추천에서 뺀 키워드' 표와 '바꾸는 칸과 근거' 표(3줄 이상): 쪽 아래가 너무 비는 문서만 줄 사이에서 쪽을 넘겨 이어지게 합니다(Prescription.js 가 data-split 을 고름).
+ * 줄 하나는 쪼개지 않고(.table tr), 넘어간 표는 머리 줄이 되풀이됩니다. */
+.doc[data-split='true'] .excludedPart,
+.doc[data-split='true'] .splitPart {
+    break-inside: auto;
+    page-break-inside: auto;
+}
+
+/* 줄 끝에서 끊기면 어색한 값(예: "GEO 90 · AEO 91점") */
+.nowrap {
+    white-space: nowrap;
 }

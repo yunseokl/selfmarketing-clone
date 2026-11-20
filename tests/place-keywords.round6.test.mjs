@@ -72,7 +72,8 @@ test('M10 그 매장의 자기 업종·메뉴판에 있는 말은 넓은 말·�
     const fish = recommendKeywords({ place: mkPlace({ id: 'f', ...SHOP, name: '시험수산', category: '생선회', reviewMenus: [rv('생선', 30), rv('광어', 40)], menus: ['광어회', '우럭회', '모둠회', '매운탕', '공기밥'] }), limit: 100 });
     assert.equal(excludedOf(fish, '생선').rule, 'vague');
     // 음악학원의 리뷰 메뉴 "기타"(악기)는 업종 이름 "기타"가 아니다
-    const music = make('m', { name: '울림 음악학원', category: '음악학원', keywords: ['공덕음악학원'], menus: [], reviewMenus: [rv('기타', 100), rv('피아노', 90), rv('드럼', 50), rv('보컬', 40)] }, { 음악학원: 8, 기타: 6, 피아노: 5, 드럼: 3, 보컬: 3 });
+    // (7차: 메뉴판·예약·결제 자료가 하나도 없는 매장은 리뷰 낱말이 후보라서, 이 시험은 악기 이름이 든 메뉴판이 있는 같은 매장으로 본다)
+    const music = make('m', { name: '울림 음악학원', category: '음악학원', keywords: ['공덕음악학원'], menus: ['기타 교습', '피아노 교습', '드럼 교습', '보컬 교습'], reviewMenus: [rv('기타', 100), rv('피아노', 90), rv('드럼', 50), rv('보컬', 40)] }, { 음악학원: 8, 기타: 6, 피아노: 5, 드럼: 3, 보컬: 3 });
     const instruments = recommendKeywords(music);
     assert.equal(terms(instruments).includes('기타'), true);
     assert.equal(excludedOf(instruments, '기타'), undefined);
@@ -85,14 +86,14 @@ test('M10 그 매장의 자기 업종·메뉴판에 있는 말은 넓은 말·�
     const jeonju = recommendKeywords(make('j', { name: '시험식당', category: '한식당', menus: ['전주 비빔밥', '전주 콩나물국밥', '전주 육회', '순두부', '불고기'], reviewMenus: [rv('전주', 30), rv('비빔밥', 60)] }, { 한식당: 5, 비빔밥: 5 }));
     assert.equal(excludedOf(jeonju, '전주').rule, 'place');
     // 의류대여의 "가운"(웨딩·졸업 가운)은 꾸밈말이 아니다. 다른 이름 앞에 붙어 쓰이는 "매운"은 꾸밈말이다
-    const gown = recommendKeywords(make('g2', { name: '시험대여', category: '의류대여', menus: [], reviewMenus: [rv('가운', 70), rv('드레스', 50)] }, { 의류대여: 6, 가운: 3, 드레스: 3 }));
+    const gown = recommendKeywords(make('g2', { name: '시험대여', category: '의류대여', menus: ['졸업가운', '웨딩드레스'], reviewMenus: [rv('가운', 70), rv('드레스', 50)] }, { 의류대여: 6, 가운: 3, 드레스: 3 }));
     assert.equal(terms(gown).includes('가운'), true);
     const spicy = recommendKeywords(make('s', { name: '시험식당', category: '한식당', menus: ['매운 갈비찜', '매운 낙지볶음', '순두부', '김치찌개', '제육볶음'], reviewMenus: [rv('매운', 40), rv('순두부', 60)] }, { 한식당: 5, 순두부: 5 }));
     assert.equal(excludedOf(spicy, '매운')?.rule, 'attribute');
 });
 
 test('M4 꾸밈말은 서로 다른 품목 둘 이상 앞에 되풀이될 때만 뗀다(한 품목에만 붙은 앞말은 이름의 일부)', () => {
-    const base = { name: '시험스튜디오', category: '요가', keywords: ['공덕요가'], menus: [] };
+    const base = { name: '시험스튜디오', category: '요가', keywords: ['공덕요가'], menus: ['빈야사 수업', '필라테스 수업'] };
     // 한 품목에만 붙은 앞말: 핫 요가·클래식 기타·수제 맥주·블로그 마케팅은 이름 그대로
     // "핫 요가"는 "요가"가 아니라 "핫요가"(등록한 "요가"에 묶이는 별개의 이름)로 읽는다
     const one = recommendKeywords(make('o', { ...base, reviewMenus: [rv('핫 요가', 110), rv('필라테스', 60), rv('빈야사', 40)] }, { 요가: 10, 핫요가: 6, 필라테스: 4, 빈야사: 3 }));

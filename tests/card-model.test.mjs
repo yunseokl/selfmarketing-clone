@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildCardModel, relationGroups, relationTitle, relationPredicate, restatedFact, trimDetail, isQuietClass } from '../app/dashboard/place-insight/graph/card-model.js';
+import { buildCardModel, applyReasons, relationGroups, relationTitle, relationPredicate, restatedFact, trimDetail, isQuietClass } from '../app/dashboard/place-insight/graph/card-model.js';
 import { buildPlaceGraph, ONTOLOGY } from '../lib/place-graph.js';
 import { PHARMACY, RESTAURANT, SALON, graphInput } from './place-graph.fixtures.mjs';
 
@@ -326,9 +326,14 @@ for (const [name, fixture] of [['약국', PHARMACY], ['음식점', RESTAURANT], 
         const nodeById = new Map(graph.nodes.map((node) => [node.id, node]));
         for (const node of graph.nodes) {
             const model = buildCardModel({ node, links: graph.links, nodeById, ontology: ONTOLOGY, groupNames: GROUP_NAMES });
-            const touching = graph.links.filter((link) => link.source === node.id || link.target === node.id);
-            const shown = model.groups.flatMap((group) => group.items.map((item) => item.linkId));
-            assert.equal(model.total, touching.length, `${node.id}: 연결 수`);
+            // 추천 키워드 점의 '추천한 이유'는 이어진 연결이 아니라 node.reasons(본문 추천 이유 칩) 목록으로 그립니다.
+            // 그 연결(supports 의 들어오는 것)은 이유 목록이 대신 세므로, 연결로 따로 세지 않습니다(이어 준 이유만 그 연결의 linkId 를 가짐).
+            const reasons = Array.isArray(node.reasons) ? node.reasons : [];
+            const isReasonLink = (link) => reasons.length > 0 && link.rel === 'supports' && link.target === node.id;
+            const touching = graph.links.filter((link) => (link.source === node.id || link.target === node.id) && !isReasonLink(link));
+            const reasonLinkIds = new Set(graph.links.filter(isReasonLink).map((link) => link.id));
+            const shown = model.groups.flatMap((group) => group.items.map((item) => item.linkId)).filter((id) => id && !reasonLinkIds.has(id));
+            assert.equal(model.total, touching.length + reasons.length, `${node.id}: 연결 수`);
             assert.deepEqual([...shown].sort(), touching.map((link) => link.id).sort(), `${node.id}: 연결이 빠지거나 두 번 나옴`);
             // 제목은 비어 있지 않고 한 카드 안에서 겹치지 않는다
             const titles = model.groups.map((group) => group.title);
@@ -358,6 +363,70 @@ for (const [name, fixture] of [['약국', PHARMACY], ['음식점', RESTAURANT], 
                 if (seen.has(key) && seen.get(key) !== item.id) assert.fail(`${node.id}: 구별되지 않는 같은 이름 '${item.label}'`);
                 seen.set(key, item.id);
             }
+        }
+    });
+}
+
+/* ───────── 추천 키워드 카드의 '추천한 이유' = 본문 추천 이유 칩(node.reasons) ───────── */
+
+test('추천 이유: node.reasons 의 개수·순서·문구로 그리고, 이은 점이 있는 이유만 그 점으로 가는 항목이 된다', () => {
+    const graph = sample();
+    const node = { ...graph.nodeById.get('kw:a'), reasons: [
+        { kind: 'review', text: '리뷰 22회', sources: ['rm:1'] },
+        { kind: 'category', text: '업종', sources: [] },
+        { kind: 'blog', text: '블로그 25/52', sources: ['bt:1'] },
+    ] };
+    const nodeById = new Map(graph.nodeById).set(node.id, node);
+    const model = buildCardModel({ node, links: graph.links, nodeById, ontology: SCHEMA, groupNames: NAMES });
+    const reasonGroups = model.groups.filter((group) => group.rel === 'supports' && group.direction === 'in');
+    assert.equal(reasonGroups.length, 1); // 같은 이유가 연결 묶음에 또 나오지 않는다
+    const items = reasonGroups[0].items;
+    assert.deepEqual(items.map((item) => item.label), ['리뷰 22회', '업종', '블로그 25/52']);
+    assert.deepEqual(items.map((item) => item.id), ['rm:1', null, 'bt:1']);
+    assert.equal(items[0].why, "리뷰에서 22회 나온 '숙성회'가 추천 이유입니다."); // 이은 이유는 연결의 설명을 그대로 가진다
+    assert.equal(items[1].linkId, null);
+    // 연결로만 센 값이 아니라 이유 목록으로 센 값이 total 에 들어간다
+    const others = model.groups.filter((group) => group !== reasonGroups[0]).flatMap((group) => group.items).length;
+    assert.equal(model.total, others + 3);
+});
+
+test('추천 이유: 이을 점이 하나도 없으면 연결 묶음이 없어도 갈래 순서에 맞는 자리에 문장만 있는 묶음을 만든다', () => {
+    const graph = sample();
+    const links = graph.links.filter((link) => !(link.rel === 'supports' && link.target === 'kw:a'));
+    const node = { ...graph.nodeById.get('kw:a'), reasons: [{ kind: 'category', text: '업종', sources: [] }, { kind: 'myRank', text: '내 6위', sources: [] }] };
+    const nodeById = new Map(graph.nodeById).set(node.id, node);
+    const model = buildCardModel({ node, links, nodeById, ontology: SCHEMA, groupNames: NAMES });
+    const at = model.groups.findIndex((group) => group.rel === 'supports' && group.direction === 'in');
+    assert.ok(at >= 0);
+    assert.equal(model.groups[at].title, '이 키워드를 추천한 이유');
+    assert.deepEqual(model.groups[at].items.map((item) => [item.label, item.id]), [['업종', null], ['내 6위', null]]);
+    // 경쟁(순서 1) 묶음 뒤, 키워드 등록(순서 4)·접히는 묶음 앞
+    const order = model.groups.map((group) => group.family);
+    assert.ok(order.indexOf('competition') < at && (order.indexOf('registration') === -1 || at < order.indexOf('registration')));
+    assert.deepEqual(model.groups[at].triple, { subject: null, predicate: '추천 이유가 됨', object: '강남횟집', symmetric: false });
+});
+
+test('추천 이유: reasons 가 없는 점은 지금까지처럼 연결로 그린다', () => {
+    const graph = sample();
+    const model = buildCardModel({ node: graph.nodeById.get('kw:a'), links: graph.links, nodeById: graph.nodeById, ontology: SCHEMA, groupNames: NAMES });
+    assert.deepEqual(applyReasons(model.groups, graph.nodeById.get('kw:a'), SCHEMA), model.groups);
+    const reason = model.groups.find((group) => group.rel === 'supports' && group.direction === 'in');
+    assert.deepEqual(reason.items.map((item) => item.id).sort(), ['bt:1', 'rm:1']);
+});
+
+for (const [name, fixture] of [['약국', PHARMACY], ['음식점', RESTAURANT], ['미용실', SALON]]) {
+    test(`${name} 견본: 모든 추천 키워드 카드의 이유 수 = 본문 추천 이유 칩 수(문구·순서도 같다)`, () => {
+        const input = graphInput(fixture);
+        const graph = buildPlaceGraph(input);
+        const nodeById = new Map(graph.nodes.map((node) => [node.id, node]));
+        const recos = graph.nodes.filter((node) => node.type === 'recoKeyword');
+        assert.ok(recos.length > 0);
+        for (const node of recos) {
+            const item = input.recommendation.items.find((entry) => `kw:${entry.keyword}` === node.id);
+            const model = buildCardModel({ node, links: graph.links, nodeById, ontology: ONTOLOGY, groupNames: GROUP_NAMES });
+            const reasonGroups = model.groups.filter((group) => group.rel === 'supports' && group.direction === 'in');
+            assert.equal(reasonGroups.length, 1, `${node.id}: 이유 묶음`);
+            assert.deepEqual(reasonGroups[0].items.map((entry) => entry.label), item.reasons.map((reason) => reason.text), `${node.id}: 카드 이유와 본문 칩`);
         }
     });
 }

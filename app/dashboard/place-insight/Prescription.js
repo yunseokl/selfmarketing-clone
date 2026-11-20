@@ -1,7 +1,7 @@
 'use client';
 
 // 플레이스 처방전 — 분석 결과를 A4 세로 문서로 뽑습니다.
-// 새 패키지 없이 브라우저 인쇄를 씁니다: 버튼을 누르면 인쇄 창이 열리고, 거기서 'PDF로 저장'을 고르면 됩니다.
+// 새 패키지 없이 브라우저 인쇄를 씁니다: 버튼을 누르면 인쇄 화면이 열리고, 거기서 PDF로 저장하면 됩니다(휴대폰은 공유·저장 메뉴).
 //  - 문서는 평소에는 그리지 않습니다(분석 화면이 무거워지지 않게). 버튼을 누르거나 브라우저 메뉴로 인쇄(Ctrl+P, beforeprint)할 때
 //    그 자리에서 바로(flushSync) body 아래 포털에 그리고, 인쇄할 때만 보이게 합니다(Prescription.module.css). 인쇄가 끝나면 다시 치웁니다.
 //    분석 전에는 평소처럼 화면을 인쇄합니다.
@@ -12,12 +12,12 @@
 //  - 문서에 들어갈 자료는 lib/place-prescription.js 의 순수 함수가 만듭니다. 3D 그래프는 싣지 않습니다.
 //  - 확인 스크립트는 window.dispatchEvent(new Event(PRESCRIPTION_REQUEST)) 로 인쇄 창 없이 문서만 그릴 수 있습니다.
 
-import { Component, Fragment, useEffect, useLayoutEffect, useMemo, useState } from 'react';
+import { Component, Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal, flushSync } from 'react-dom';
 import { FileDown } from 'lucide-react';
 import { toast } from 'sonner';
 import { analyzeGeoAeo } from '@/lib/place-geo';
-import { buildPrescription, prescriptionFileName, DRAFT_MARK } from '@/lib/place-prescription';
+import { buildPrescription, prescriptionFileName, DRAFT_MARK, PAGE1_BUDGET_MM, PAGE1_LIMIT_MM, PAGE1_TIGHTEN_MM } from '@/lib/place-prescription';
 import { formatNumber } from '@/lib/place-graph';
 import styles from './Prescription.module.css';
 
@@ -44,24 +44,42 @@ function requestDocument() {
     return document.querySelector('[data-prescription]');
 }
 
-// 처방전을 인쇄 창으로 보냅니다. 돌려주는 값: 'ok' · 'failed'(문서를 만들지 못함) · 'unsupported'(인쇄 창 없음)
-export function printPrescription() {
+// 인쇄 창을 여는 동안은 같은 버튼을 또 눌러도 한 번만 열게 합니다.
+//  - 문서를 그리고 쪽 나눔을 재는 데 0.7~1.7초가 걸리고 그동안 화면이 멈춥니다. 그 사이에 다시 누른 클릭은 줄을 서 있다가 인쇄 창이 닫힌 뒤에 처리되어
+//    인쇄 창이 한 번 더 열리거나 문서가 두 번 그려질 수 있습니다. 클릭한 시각(event.timeStamp)이 지난 인쇄가 끝난 시각보다 앞서면 줄 서 있던 클릭이라 무시합니다.
+//  - window.print() 는 한 번의 클릭에 한 번만 부릅니다(문서를 만들지 못했거나 이미 인쇄 중이면 부르지 않음).
+let printing = false;
+let lastPrintEndedAt = 0;
+
+// 처방전을 인쇄 창으로 보냅니다. clickedAt: 누른 시각(event.timeStamp, 선택).
+// 돌려주는 값: 'ok' · 'failed'(문서를 만들지 못함) · 'unsupported'(인쇄 창 없음) · 'busy'(이미 인쇄 중이거나 줄 서 있던 클릭이라 무시함)
+export function printPrescription(clickedAt) {
+    if (printing || (Number.isFinite(clickedAt) && clickedAt <= lastPrintEndedAt)) return 'busy';
     if (typeof window.print !== 'function') {
         toast.error('이 브라우저에서는 인쇄 창을 열 수 없습니다. 크롬이나 사파리에서 열어 주세요.');
         return 'unsupported';
     }
-    const doc = requestDocument();
-    if (!doc) return 'failed';
-    swapTitle(doc.dataset.store);
-    window.print();
-    return 'ok';
+    printing = true;
+    try {
+        const doc = requestDocument();
+        if (!doc) return 'failed';
+        swapTitle(doc.dataset.store);
+        window.print();
+        return 'ok';
+    } finally {
+        printing = false;
+        lastPrintEndedAt = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    }
 }
 
 // 저장 버튼 + 한 줄 안내. className 을 주면 그 화면의 버튼 모양을 그대로 씁니다.
 //   block: 구역 머리 아래처럼 한 줄을 통째로 차지하게 놓을 때 / hint: 안내 문구를 함께 보일지
 export function PrescriptionButton({ className, block = false, hint = true }) {
     const [failed, setFailed] = useState(false);
-    const onClick = () => setFailed(printPrescription() === 'failed');
+    const onClick = (event) => {
+        const result = printPrescription(event?.timeStamp);
+        if (result !== 'busy') setFailed(result === 'failed');
+    };
     return (
         <span className={styles.save} data-block={block ? 'true' : undefined}>
             <button type="button" className={className || styles.saveBtn} onClick={onClick}>
@@ -70,7 +88,7 @@ export function PrescriptionButton({ className, block = false, hint = true }) {
             </button>
             {failed
                 ? <span className={styles.saveError} role="status">{FAILED_TEXT}</span>
-                : hint && <span className={styles.saveHint}>인쇄 창에서 &lsquo;PDF로 저장&rsquo;을 고르세요</span>}
+                : hint && <span className={styles.saveHint}>인쇄 화면에서 PDF로 저장하세요(휴대폰은 공유·저장 메뉴)</span>}
         </span>
     );
 }
@@ -98,12 +116,15 @@ class PrescriptionBoundary extends Component {
 
 const CIRCLED = ['①', '②', '③', '④'];
 
-// 쪽 넘김 규칙: 3줄 이하 표는 통째로 한 쪽에, 4줄 이상 표는 쪼개져도 되지만 양쪽에 2줄 이상 남게
+// 쪽 넘김 규칙: 10줄 이하 표는 통째로 한 쪽에, 11줄 이상 표는 쪼개져도 되지만 양쪽에 2줄 이상 남게
 // (앞 2줄·뒤 2줄을 각각 한 묶음으로 둠). 쪽이 넘어간 표는 머리 줄(칸 이름)이 다시 나오고, 표 제목은 표와 떨어지지 않습니다.
-export const TABLE_WHOLE_MAX = 3;
+export const TABLE_WHOLE_MAX = 10;
+// '추천에서 뺀 키워드' 표는 이유 문장이 길어 10줄이어도 한 쪽의 3분의 1이 넘습니다. 평소에는 다른 표처럼 통째로 두고,
+// 그러면 앞 쪽 아래가 너무 비는 문서만(쪽 아래 빈 공간 25% 이내가 우선) 앞 2줄·뒤 2줄을 지키며 쪽을 넘겨 이어지게 합니다(문서의 data-split).
+export const EXCLUDED_CHUNK_MIN = 5;
 
-function rowChunks(rows) {
-    if (rows.length <= TABLE_WHOLE_MAX) return [rows];
+function rowChunks(rows, whole = TABLE_WHOLE_MAX) {
+    if (rows.length <= whole) return [rows];
     return [rows.slice(0, 2), rows.slice(2, rows.length - 2), rows.slice(-2)].filter((chunk) => chunk.length > 0);
 }
 
@@ -112,13 +133,14 @@ function chunkClass(index, total) {
 }
 
 // 3줄 이하 표가 든 묶음은 통째로(제목·표·풀이가 한 쪽에), 더 긴 표는 위 묶음으로 나눠 끊습니다.
-function partClass(rowCount, extra) {
-    return [styles.part, rowCount <= TABLE_WHOLE_MAX ? styles.keep : null, extra].filter(Boolean).join(' ');
+function partClass(rowCount, extra, whole = TABLE_WHOLE_MAX) {
+    return [styles.part, rowCount <= whole ? styles.keep : null, extra].filter(Boolean).join(' ');
 }
 
-// 항목 목록(그 밖의 할 일·AI 점검 일): 2개 이하는 통째로, 그보다 많으면 항목 사이에서 끊습니다(항목 하나는 쪼개지 않음).
+// 항목 목록(그 밖의 할 일·AI 점검 일): 항목이 하나면 통째로, 둘 이상이면 항목 사이에서 끊습니다(항목 하나는 쪼개지 않음).
+// 항목마다 순서(하는 법)까지 있어 길어질 수 있으므로, 통째로 두면 앞 쪽 아래가 비는 것보다 항목 사이에서 끊는 쪽을 택합니다.
 function listPartClass(itemCount) {
-    return [styles.part, itemCount <= 2 ? styles.keep : null].filter(Boolean).join(' ');
+    return [styles.part, itemCount <= 1 ? styles.keep : null].filter(Boolean).join(' ');
 }
 
 function count(value) {
@@ -183,7 +205,6 @@ function WeekTasks({ week, index }) {
                     </li>
                 ))}
             </ol>
-            {week.aiNote && <p className={styles.note}>{week.aiNote}</p>}
         </section>
     );
 }
@@ -191,7 +212,7 @@ function WeekTasks({ week, index }) {
 function Slots({ slots, index }) {
     return (
         <section className={styles.block}>
-            <BlockTitle index={index} note={slots.changes ? `바꿀 칸 ${slots.changes}개` : '지금 그대로 둡니다'}>대표키워드 5칸 최종안</BlockTitle>
+            <BlockTitle index={index} note={slots.changes ? `${slots.fillOnly ? '채울' : '바꿀'} 칸 ${slots.changes}개` : '지금 그대로 둡니다'}>대표키워드 5칸 최종안</BlockTitle>
             <table className={`${styles.table} ${styles.tableFlush}`}>
                 <thead>
                     <tr>
@@ -230,7 +251,13 @@ function Slots({ slots, index }) {
                     )}
                 </tbody>
             </table>
-            {slots.unranked.length > 0 && slots.unrankedText && <p className={styles.note}>{slots.unrankedText}</p>}
+            {((slots.unranked.length > 0 && slots.unrankedText) || slots.weakText) && (
+                <p className={styles.note}>
+                    {slots.unranked.length > 0 && slots.unrankedText ? slots.unrankedText : ''}
+                    {slots.unranked.length > 0 && slots.unrankedText && slots.weakText ? ' ' : ''}
+                    {slots.weakText || ''}
+                </p>
+            )}
             {/* I. 이유 칸에 쓴 약어의 풀이(이 쪽만 떼어 줘도 읽히게) */}
             {slots.legend?.length > 0 && (
                 <p className={styles.legend}>
@@ -263,7 +290,7 @@ function Metrics({ metrics, recheck, index }) {
                                 <tr className={wide ? styles.hasWide : undefined}>
                                     <th scope="row">{metric.label}</th>
                                     <td>
-                                        <b>{metric.now}</b>
+                                        <b className={metric.key === 'ai' ? styles.nowrap : undefined}>{metric.now}</b>
                                         {metric.note && !wide && <span className={styles.metricNote}>{metric.note}</span>}
                                     </td>
                                     <td className={styles.sub}>{metric.compare || ''}</td>
@@ -283,6 +310,16 @@ function Metrics({ metrics, recheck, index }) {
     );
 }
 
+// 1쪽에 처음 나오는 용어(GEO·AEO·'AI 검색 점검' 표시·분류 이름)의 한 줄 풀이. 이 쪽만 떼어 줘도 뜻이 통하게 합니다.
+function Terms({ terms }) {
+    return (
+        <p className={styles.terms}>
+            <span className={styles.legendHead}>용어</span>
+            {terms.map((text) => <span key={text}>{text}</span>)}
+        </p>
+    );
+}
+
 function SummaryPage({ doc }) {
     const { summary } = doc;
     const blocks = [
@@ -293,9 +330,10 @@ function SummaryPage({ doc }) {
     ].filter(Boolean);
     const letters = doc.sections.map((section) => section.letter);
     return (
-        <div className={styles.page1}>
+        <div className={styles.page1} data-page1="">
             <p className={styles.pageLabel}>처방 요약 — 이 쪽만 보셔도 됩니다</p>
             {blocks.map((render, index) => render(index))}
+            {summary.terms?.length > 0 && <Terms terms={summary.terms} />}
             {letters.length > 0 && (
                 <p className={styles.page1Foot}>
                     근거 숫자·하는 법·바로 쓸 초안은 다음 쪽부터({letters[0]}~{letters[letters.length - 1]})에 있습니다.
@@ -443,8 +481,8 @@ function DraftBody({ draft }) {
                             <tr>
                                 <th scope="col" className={styles.colMenu}>이름</th>
                                 <th scope="col" className={styles.colPrice}>가격</th>
-                                <th scope="col" className={styles.colWhy}>고른 까닭</th>
-                                <th scope="col">설명 틀(이름·가격에서 읽히는 것만 채움)</th>
+                                <th scope="col" className={styles.colWhy}>{draft.reasonHead || '이 메뉴를 고른 까닭'}</th>
+                                <th scope="col">설명 초안(이름에서 읽히는 것만 채움, (직접 적기)는 사장님만 아는 것)</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -458,6 +496,7 @@ function DraftBody({ draft }) {
                             ))}
                         </tbody>
                     </table>
+                    {draft.form && <p className={styles.draftNote}><b>쓰는 꼴</b> ‘{draft.form}’ — ○○ 자리에 사실대로 적습니다(○○는 자리표시일 뿐 이 매장의 사실이 아닙니다).</p>}
                     <p className={styles.draftNote}>어느 것에 이미 설명이 있는지는 조회한 자료로 알 수 없어, 설명이 비어 있는 것만 채우세요.</p>
                 </div>
             );
@@ -506,8 +545,14 @@ function Tasks({ section }) {
                                     <dt>왜</dt>
                                     <dd>
                                         {task.problem && task.why.length === 0 && <p>{task.problem}</p>}
-                                        {task.why.map((line) => <p key={line}>{line}</p>)}
-                                        {task.gain && <p className={styles.sub}>{task.gain}</p>}
+                                        {task.why.map((line, i) => (
+                                            <p key={line}>
+                                                {line}
+                                                {/* 'AI 검색 점검: 지금 … → 목표 …' 줄이 있으면 점수 증가를 같은 줄에 이어 적어 줄을 아낍니다. */}
+                                                {task.gain && i === task.why.length - 1 && /^AI 검색 점검:/.test(line) && <span className={styles.sub}> · {task.gain.replace(/^AI 검색 점검 /, '')}</span>}
+                                            </p>
+                                        ))}
+                                        {task.gain && !(task.why.length > 0 && /^AI 검색 점검:/.test(task.why[task.why.length - 1])) && <p className={styles.sub}>{task.gain}</p>}
                                     </dd>
                                 </div>
                             )}
@@ -531,7 +576,7 @@ function Tasks({ section }) {
                     </div>
                     {task.draft && (
                         <div className={styles.draft}>
-                            <p className={styles.draftMark}>{DRAFT_MARK}</p>
+                            <p className={styles.draftMark}>{section.draftMark || DRAFT_MARK}</p>
                             <DraftBody draft={task.draft} />
                         </div>
                     )}
@@ -565,7 +610,7 @@ function Keywords({ section }) {
         <section className={styles.section}>
             <SectionTitle section={section} />
             {section.rows.length > 0 && (
-                <div className={partClass(section.rows.length)}>
+                <div className={partClass(section.rows.length, section.rows.length >= 3 ? styles.splitPart : undefined)}>
                     <h3 className={styles.partTitle}>바꾸는 칸과 근거</h3>
                     <table className={styles.table}>
                         <thead>
@@ -585,7 +630,11 @@ function Keywords({ section }) {
                                         <br />→ <b>{row.next}</b>{row.nextRank ? ` (내 ${row.nextRank})` : ''}
                                     </td>
                                     <td>{row.why || row.problem}</td>
-                                    <td className={styles.sub}>{row.basis}</td>
+                                    <td className={styles.sub}>
+                                        {row.basis}
+                                        {Number.isFinite(row.points) && <span className={styles.score}> · 근거 점수 {row.points}{row.weak ? '(근거 약함)' : ''}</span>}
+                                        {row.confirmed && <span className={styles.metricNote}>확인한 곳: {row.confirmed}</span>}
+                                    </td>
                                 </tr>
                             ))}
                         </tbody>
@@ -600,24 +649,61 @@ function Keywords({ section }) {
                     )}
                 </div>
             )}
+            {section.scoreNote && <p className={styles.note}>{section.scoreNote}</p>}
             {section.next && (
                 <div className={partClass(section.next.rows.length)}>
                     <h3 className={styles.partTitle}>
                         5칸에 들지 못한 다음 후보
-                        <span>{section.next.why} 교체할 칸이 더 생기면 위에서부터 넣으세요(근거는 위 표와 같은 표기)</span>
+                        <span>교체할 칸이 더 생기면 위에서부터 넣으세요(근거는 위 표와 같은 표기)</span>
                     </h3>
+                    <p className={styles.note}>{section.next.why}</p>
                     <table className={styles.table}>
                         <thead>
                             <tr>
                                 <th scope="col" className={styles.colWord}>키워드</th>
                                 <th scope="col">근거</th>
+                                {section.next.rows.some((row) => row.note) && <th scope="col" className={styles.colNextWhy}>이 줄만 다른 점</th>}
                             </tr>
                         </thead>
                         <tbody>
                             {section.next.rows.map((row) => (
                                 <tr key={row.keyword}>
                                     <th scope="row">{row.keyword}</th>
-                                    <td>{row.basis}</td>
+                                    <td>
+                                        {row.basis}
+                                        {Number.isFinite(row.points) && <span className={styles.score}> · 근거 점수 {row.points}{row.weak ? '(근거 약함)' : ''}</span>}
+                                        {row.confirmed && <span className={styles.metricNote}>확인한 곳: {row.confirmed}</span>}
+                                    </td>
+                                    {section.next.rows.some((entry) => entry.note) && <td className={styles.sub}>{row.note || '-'}</td>}
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            )}
+            {section.judge && (
+                <div className={partClass(section.judge.length)}>
+                    <h3 className={styles.partTitle}>
+                        직접 판단할 말
+                        <span>메뉴판·예약·결제 품목으로 확인하지 못해 5칸에 넣지 않았습니다. 실제로 하는 것이면 직접 넣을지 정하세요</span>
+                    </h3>
+                    <table className={styles.table}>
+                        <thead>
+                            <tr>
+                                <th scope="col" className={styles.colWord}>키워드</th>
+                                <th scope="col">근거</th>
+                                <th scope="col" className={styles.colNextWhy}>넣지 않은 까닭</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {section.judge.map((row) => (
+                                <tr key={row.keyword}>
+                                    <th scope="row">{row.keyword}</th>
+                                    <td>
+                                        {row.basis || '-'}
+                                        {Number.isFinite(row.points) && <span className={styles.metricNote}>근거 점수 {row.points}</span>}
+                                    </td>
+                                    <td className={styles.sub}>{row.why}</td>
                                 </tr>
                             ))}
                         </tbody>
@@ -698,7 +784,7 @@ function Keywords({ section }) {
             )}
             {section.notes.map((note) => <p key={note} className={styles.note}>{note}</p>)}
             {section.excluded && (
-                <div className={partClass(section.excluded.rows.length)}>
+                <div className={partClass(section.excluded.rows.length, styles.excludedPart)}>
                     <h3 className={styles.partTitle}>
                         추천에서 뺀 키워드와 이유
                         {section.excluded.more > 0 && <span>이 밖에 {section.excluded.more}개</span>}
@@ -711,13 +797,13 @@ function Keywords({ section }) {
                                 <th scope="col">이유</th>
                             </tr>
                         </thead>
-                        {rowChunks(section.excluded.rows).map((chunk, index, all) => (
+                        {rowChunks(section.excluded.rows, EXCLUDED_CHUNK_MIN - 1).map((chunk, index, all) => (
                             <tbody key={`${chunk[0].label}-${chunk[0].words}`} className={chunkClass(index, all.length)}>
                                 {chunk.map((row) => (
                                     <tr key={`${row.label}-${row.words}`}>
                                         <td className={styles.sub}>{row.label}</td>
                                         <th scope="row">{row.words}</th>
-                                        <td>{row.reason}</td>
+                                        <td className={styles.sub}>{row.reason}</td>
                                     </tr>
                                 ))}
                             </tbody>
@@ -780,6 +866,11 @@ function Ai({ section }) {
                                     <p><strong>{item.title}</strong>{item.timeLabel && <span className={styles.sub}> · {item.timeLabel}</span>}</p>
                                     {item.now && item.target && <p className={styles.sub}>지금 {item.now} → 목표 {item.target}</p>}
                                     {item.how && <p className={styles.sub}>{item.how}</p>}
+                                    {item.steps?.length > 0 && (
+                                        <ol className={`${styles.steps} ${styles.stepsSmall}`}>
+                                            {item.steps.map((step, i) => <li key={step}><span>{i + 1}</span>{step}</li>)}
+                                        </ol>
+                                    )}
                                     {item.caution && <p className={styles.caution}>{item.caution}</p>}
                                 </div>
                             </li>
@@ -845,6 +936,28 @@ function Plan({ section }) {
                 </tbody>
             </table>
             </div>
+            {/* 매주 반복할 일: 4주 실행표 바로 아래의 작은 표(같은 쪽에 두고, 못 들어가면 다음 쪽으로 통째로) */}
+            {section.repeat.length > 0 && (
+                <div className={`${styles.part} ${styles.keep} ${styles.repeatPart}`}>
+                    <h3 className={styles.partTitle}>매주 반복할 일<span>한 주를 끝낼 때마다 칸에 표시하세요</span></h3>
+                    <table className={`${styles.table} ${styles.tableTight}`}>
+                        <thead>
+                            <tr>
+                                <th scope="col">반복할 일</th>
+                                {[1, 2, 3, 4].map((no) => <th key={no} scope="col" className={styles.colTick}>{no}주</th>)}
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {section.repeat.map((item) => (
+                                <tr key={item.title}>
+                                    <td>{item.title}<span className={styles.sub}> · {item.timeLabel}</span></td>
+                                    {[1, 2, 3, 4].map((no) => <td key={no} className={styles.colTick}><span className={styles.box} aria-hidden="true" /></td>)}
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            )}
             {/* 실행표와 다시 조회 상자는 각각 통째로 두고, 둘 사이에서는 쪽이 넘어가도 됩니다. */}
             <div className={styles.recheck}>
                 <p><b>다시 조회해 비교</b> <span className={styles.sub}>{section.recheck.label} 무렵, 1쪽 &lsquo;4주 뒤 다시 볼 숫자&rsquo; 표의 오른쪽 칸에 적습니다. {section.recheck.note}</span></p>
@@ -871,28 +984,6 @@ function Plan({ section }) {
                 <p className={styles.writeLine}>다시 조회한 날 <span /> 달라진 점 <span className={styles.wide} /></p>
                 <p className={styles.writeLine}>다음 4주에 할 일 <span className={styles.wider} /></p>
             </div>
-            {/* 매주 반복할 일: 실행표·다시 조회 상자 바로 아래의 작은 표(한 쪽에 다 못 들어가면 다음 쪽으로 통째로) */}
-            {section.repeat.length > 0 && (
-                <div className={`${styles.part} ${styles.keep} ${styles.repeatPart}`}>
-                    <h3 className={styles.partTitle}>매주 반복할 일<span>한 주를 끝낼 때마다 칸에 표시하세요</span></h3>
-                    <table className={`${styles.table} ${styles.tableTight}`}>
-                        <thead>
-                            <tr>
-                                <th scope="col">반복할 일</th>
-                                {[1, 2, 3, 4].map((no) => <th key={no} scope="col" className={styles.colTick}>{no}주</th>)}
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {section.repeat.map((item) => (
-                                <tr key={item.title}>
-                                    <td>{item.title}<span className={styles.sub}> · {item.timeLabel}</span></td>
-                                    {[1, 2, 3, 4].map((no) => <td key={no} className={styles.colTick}><span className={styles.box} aria-hidden="true" /></td>)}
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
-            )}
         </section>
     );
 }
@@ -951,13 +1042,165 @@ function safeGeo(place, activity, ranks, nowMs) {
 
 // rivals: 상위 매장이 등록한 대표키워드 모음 [{ placeId, name, keywords }] — 화면의 rivalPool. 없으면 그 표만 뺍니다.
 // nowMs: 문서를 만드는 시각(ms). 정하지 않으면 지금. 견본·시험에서 AI 검색 진단과 문서가 같은 시각으로 계산되게 한 번만 넘깁니다.
+// 1쪽(머리 + 처방 요약)의 실제 높이(mm). 문서는 화면에서 감춰 두므로, 잠깐 화면 밖에 A4 안쪽 너비(182mm)로 펼쳐 잰 뒤 되돌립니다.
+// 글자 크기·표 규칙은 인쇄와 같으므로(pt·mm 단위) 인쇄한 1쪽 높이와 거의 같습니다.
+function measurePage1Mm(article) {
+    const head = article.querySelector('header');
+    const page = article.querySelector('[data-page1]');
+    if (!head || !page) return null;
+    const before = article.getAttribute('style');
+    try {
+        article.style.cssText = 'display:block;position:absolute;left:-9999px;top:0;width:182mm;visibility:hidden;';
+        const mm = ((page.getBoundingClientRect().bottom - head.getBoundingClientRect().top) * 25.4) / 96;
+        return Number.isFinite(mm) && mm > 0 ? mm : null;
+    } finally {
+        // 재다가 오류가 나도 문서의 style 을 되돌립니다(화면 밖에 펼친 채로 남지 않게).
+        if (before === null) article.removeAttribute('style');
+        else article.setAttribute('style', before);
+    }
+}
+
+const TIGHTEN_MAX = 8;
+
+/* ───────── 쪽 나눔 어림 ─────────
+ * 2쪽부터의 구역을 A4 안쪽 크기(182×271mm) 단 하나짜리 다단 상자에 흘려 보내, 인쇄와 같은 쪽 나눔 규칙(break-inside 등)으로 몇 쪽이 되고
+ * 쪽마다 아래가 얼마나 비는지 잽니다. 세로 간격 배율(--rx-s)을 몇 가지 바꿔 보고, 마지막 쪽이 너무 비거나 쪽 아래가 크게 비는 정도가
+ * 가장 작은 배율을 고릅니다(같으면 1에 가까운 것). 재지 못하면 1 입니다. */
+const SPACING_CHOICES = [1, 0.95, 0.9, 0.85, 0.8, 0.75, 0.7, 0.65, 1.05, 1.1, 1.2, 1.3, 1.5];
+const EMULATE_PAGE_MM = 268;
+const PRINT_PAGE_MM = 271;
+const GAP_OK = 0.2; // 마지막 쪽을 뺀 쪽 아래 빈 공간이 이 비율을 넘으면 감점(목표는 25% 이내지만 어림이 인쇄보다 조금 낙관적이라 더 엄격하게 잼)
+const LAST_MIN = 0.5; // 마지막 쪽이 이만큼은 차야 함
+
+function emulatePages(article, scale, split) {
+    const rest = [...article.children].filter((node) => node.tagName !== 'HEADER' && !node.hasAttribute('data-page1'));
+    if (rest.length === 0) return null;
+    const wrap = document.createElement('div');
+    wrap.className = article.className;
+    // 인쇄 쪽(271mm)보다 3mm 낮게 잡아, 재는 값이 인쇄 결과보다 낙관적으로 나오지 않게 합니다(인쇄는 머리 줄 되풀이 등으로 조금 더 큼).
+    wrap.style.cssText = `display:block;position:absolute;left:0;top:0;visibility:hidden;pointer-events:none;width:182mm;height:${EMULATE_PAGE_MM}mm;column-width:182mm;column-gap:0;column-fill:auto;`;
+    wrap.style.setProperty('--rx-s', String(scale));
+    wrap.setAttribute('data-split', String(split));
+    for (const node of rest) wrap.appendChild(node.cloneNode(true));
+    document.body.appendChild(wrap);
+    try {
+        const box = wrap.getBoundingClientRect();
+        const width = box.width;
+        const height = box.height;
+        if (!(width > 0 && height > 0)) return null;
+        const bottoms = [];
+        for (const el of wrap.querySelectorAll('p,li,td,th,h2,h3,dt,dd,div')) {
+            for (const rect of el.getClientRects()) {
+                if (rect.height <= 0) continue;
+                const col = Math.max(0, Math.floor((rect.left - box.left + 1) / width));
+                bottoms[col] = Math.max(bottoms[col] || 0, rect.bottom - box.top);
+            }
+        }
+        const pages = bottoms.length;
+        if (pages === 0) return null;
+        // 찬 정도는 인쇄 쪽 높이(271mm) 기준
+        const printHeight = (height / EMULATE_PAGE_MM) * PRINT_PAGE_MM;
+        return { pages, fill: bottoms.map((bottom) => Math.min(1, (bottom || 0) / printHeight)) };
+    } finally {
+        wrap.remove();
+    }
+}
+
+// 쪽 규칙을 어긴 정도(0 이면 모두 지킴): 마지막 쪽을 뺀 쪽 아래 빈 공간이 25%를 넘는 만큼 + 마지막 쪽이 절반 미만인 만큼
+function pageIssues(result) {
+    if (!result) return Infinity;
+    const gaps = result.fill.slice(0, -1).map((fill) => 1 - fill);
+    const last = result.fill[result.fill.length - 1];
+    // 쪽 아래 빈 공간은 쪽 수보다 앞서 지킵니다(가중 30: 빈 공간이 20%를 6%p 넘는 것이 쪽 하나보다 나쁨). 실제 인쇄와 어림은 몇 %p 어긋날 수 있어 기준을 20%로 엄격하게 둡니다.
+    return gaps.reduce((sum, gap) => sum + Math.max(0, gap - GAP_OK), 0) * 30 + Math.max(0, LAST_MIN - last) * 6;
+}
+
+function pagePenalty(result) {
+    return result ? pageIssues(result) + result.pages * 1 : Infinity;
+}
+
+const SPLIT_COST = 0.8; // 10줄 이하 표를 나누는 것은 쪽 아래가 크게 비는 것보다 덜 나쁘지만 나누지 않는 쪽을 먼저 씁니다.
+
+// 쪽 나눔을 재는 데 쓰는 시간의 상한(밀리초). 느린 기기에서 인쇄 창이 늦게 열리지 않게, 넘으면 그때까지 가장 좋았던 값으로 정합니다.
+const FIT_BUDGET_MS = 1500;
+
+function choosePageFit(article) {
+    let best = { scale: 1, split: false, penalty: Infinity };
+    const tries = [];
+    const started = typeof performance !== 'undefined' ? performance.now() : 0;
+    const overBudget = () => typeof performance !== 'undefined' && performance.now() - started > FIT_BUDGET_MS;
+    for (const split of [false, true]) {
+        for (const scale of SPACING_CHOICES) {
+            if (overBudget() && Number.isFinite(best.penalty)) break;
+            let result = null;
+            try {
+                result = emulatePages(article, scale, split);
+            } catch {
+                result = null;
+            }
+            const penalty = pagePenalty(result) + (split ? SPLIT_COST : 0);
+            tries.push([split ? 1 : 0, scale, result?.pages ?? 0, result ? Math.round(result.fill[result.fill.length - 1] * 100) : 0, Math.round(penalty * 10) / 10]);
+            // 같은 정도면 먼저 본 것(나누지 않고 1에 가까운 것)을 씁니다.
+            if (penalty < best.penalty - 0.05) best = { scale, split, penalty };
+            // 처음(간격 1, 표 나누지 않음)부터 쪽 규칙을 모두 지키면 더 찾지 않습니다(인쇄 직전 계산을 짧게).
+            if (!split && scale === 1 && result && pageIssues(result) === 0) {
+                article.dataset.fit = JSON.stringify(tries);
+                return { scale: 1, split: false };
+            }
+        }
+    }
+    // 어림 기록(나눔·배율·쪽 수·마지막 쪽 찬 정도·감점): 확인용으로 문서 요소에 남깁니다.
+    article.dataset.fit = JSON.stringify(tries);
+    return Number.isFinite(best.penalty) ? { scale: best.scale, split: best.split } : { scale: 1, split: false };
+}
+
 function PrescriptionDocument({ place, activity, ranks, recommendation, actions, rivals, fetchedAt, nowMs }) {
     const geo = useMemo(() => safeGeo(place, activity, ranks, nowMs), [place, activity, ranks, nowMs]);
+    // 1쪽이 한 쪽을 넘으면 어림 예산을 줄여 덜 중요한 것부터 더 빼고 다시 만들고(tighten),
+    // 1쪽이 정해지면 2쪽부터의 쪽 나눔을 재어 세로 간격 배율(scale)을 고릅니다(아래 useLayoutEffect).
+    const [fit, setFit] = useState({ tighten: 0, scale: null, split: false });
+    const { tighten, scale, split } = fit;
     const doc = useMemo(
-        () => buildPrescription({ place, activity, ranks, recommendation, actions, geo, rivals, fetchedAt, ...(Number.isFinite(nowMs) ? { nowMs } : {}) }),
-        [place, activity, ranks, recommendation, actions, geo, rivals, fetchedAt, nowMs],
+        () => buildPrescription({
+            place, activity, ranks, recommendation, actions, geo, rivals, fetchedAt, page1Budget: PAGE1_BUDGET_MM - tighten * PAGE1_TIGHTEN_MM,
+            ...(Number.isFinite(nowMs) ? { nowMs } : {}),
+        }),
+        [place, activity, ranks, recommendation, actions, geo, rivals, fetchedAt, nowMs, tighten],
     );
     const storeName = doc?.store.name || '';
+    const articleRef = useRef(null);
+    useLayoutEffect(() => {
+        const article = articleRef.current;
+        if (!doc || !article) return;
+        // 재기(1쪽 높이·쪽 나눔)는 인쇄를 더 보기 좋게 하려는 보정입니다. 어떤 이유로든 재지 못하면 보정 없이(간격 1, 표 나누지 않음) 기본 인쇄 배치로 인쇄합니다.
+        if (tighten < TIGHTEN_MAX) {
+            let mm = null;
+            try {
+                mm = measurePage1Mm(article);
+            } catch {
+                mm = null;
+            }
+            if (mm !== null && mm > PAGE1_LIMIT_MM) {
+                setFit((state) => ({ tighten: state.tighten + 1, scale: null, split: false }));
+                return;
+            }
+        }
+        if (scale === null) {
+            // 간격 배율은 쪽 나눔 어림이 잰 값입니다. 재지 못하면(화면 밖 계산이 안 되는 환경) 1.
+            const before = article.getAttribute('style');
+            let chosen = { scale: 1, split: false };
+            try {
+                article.style.cssText = 'display:block;position:absolute;left:-9999px;top:0;width:182mm;visibility:hidden;';
+                chosen = choosePageFit(article);
+            } catch {
+                chosen = { scale: 1, split: false };
+            } finally {
+                if (before === null) article.removeAttribute('style');
+                else article.setAttribute('style', before);
+            }
+            setFit((state) => ({ ...state, scale: chosen.scale, split: chosen.split }));
+        }
+    }, [doc, tighten, scale]);
 
     // 문서가 있는 동안만 <html> 에 표시를 붙여 인쇄 규칙(문서만 보이기)이 듣게 합니다.
     // 그린 직후(인쇄 창이 열리기 전)에 붙어야 해서 useLayoutEffect 를 씁니다.
@@ -971,7 +1214,7 @@ function PrescriptionDocument({ place, activity, ranks, recommendation, actions,
 
     if (!doc) return null;
     return createPortal(
-        <article className={styles.doc} data-prescription="" data-store={storeName} lang="ko">
+        <article ref={articleRef} className={styles.doc} data-prescription="" data-store={storeName} data-scale={scale ?? 1} data-split={split ? 'true' : 'false'} style={{ '--rx-s': scale ?? 1 }} lang="ko">
             <header className={styles.head}>
                 <div className={styles.headTop}>
                     <h1>{doc.title}</h1>

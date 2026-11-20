@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { healthKind, notApplicableOf, hasNotApplicable } from '../lib/place-industry.js';
 import { analyzeGeoAeo, buildFanout } from '../lib/place-geo.js';
+import * as geoWords from '../lib/place-geo.js';
 import { buildActionItems } from '../lib/naver-place.js';
 import { familyOf, recommendKeywords, regionTerms } from '../lib/place-keywords.js';
 import { buildPlaceGraph } from '../lib/place-graph.js';
@@ -129,15 +130,21 @@ test('"리뷰 쿠폰" 표현은 어느 업종의 진단·할 일 문구에도 �
         assert.equal(/리뷰 쿠폰|리뷰·쿠폰 |첫 방문·리뷰 쿠폰|리뷰 작성·첫 방문 쿠폰/.test(text), false);
     }
     const coupon = buildActionItems(RESTAURANT.place, { coupons: { total: 0 } }).find((item) => item.key === 'coupon');
-    assert.equal(coupon.detail, '첫 방문 쿠폰이나 결제 혜택을 등록하면 매장 화면에 쿠폰 표시가 붙습니다.');
+    // (노출·표시 효과를 단정하지 않고 손님이 볼 수 있다는 사실만 적는다)
+    assert.equal(coupon.detail, '첫 방문 쿠폰이나 결제 혜택을 등록하면 손님이 매장 화면에서 쿠폰을 확인할 수 있습니다.');
 });
 
 test('그래프: 해당 없는 항목은 경고색 없이 "해당 없음"으로 보이고 "비어 있어 답하지 못함" 연결이 없다', () => {
     const pharmacy = buildPlaceGraph(graphInput(PHARMACY));
     const node = (id) => pharmacy.nodes.find((entry) => entry.id === id);
-    assert.deepEqual([node('ac:coupon').sub, node('ac:coupon').tone, node('fq:payment').sub, node('fq:booking').sub], ['해당 없음', undefined, '해당 없음', '해당 없음']);
+    // 약국의 네이버 예약은 "쓸 수 있는지 확인되지 않아" 뺀 것이라 place-geo.js 가 이름표(notApplicableTag)를 주면 '해당 없음'이라고 단정하지 않는다(없으면 지금 문구)
+    const bookingTag = geoWords.notApplicableTag?.('booking') || '해당 없음';
+    assert.deepEqual([node('ac:coupon').sub, node('ac:coupon').tone, node('fq:payment').sub, node('fq:booking').sub], ['해당 없음', undefined, '해당 없음', bookingTag]);
+    assert.equal(node('ops:booking')?.sub === undefined || node('ops:booking').sub === bookingTag, true);
     assert.equal(pharmacy.links.some((link) => link.rel === 'missingFor'), false);
-    assert.equal(node('geo:fanout').facts.some((fact) => fact.label === '이 업종에는 해당 없는 질문' && fact.value === '예약·문의, 쿠폰·혜택'), true);
+    assert.equal(node('geo:fanout').facts.some((fact) => (bookingTag === '해당 없음'
+        ? fact.label === '이 업종에는 해당 없는 질문' && fact.value === '예약·문의, 쿠폰·혜택'
+        : fact.label === '점수에서 뺀 질문' && fact.value === `${bookingTag} — 예약·문의 / 해당 없음 — 쿠폰·혜택`)), true);
     // 병의원: 마지막 소식·쿠폰 점이 '해당 없음'(소식이 없다고 경고하지 않음)
     const clinicGraph = buildPlaceGraph(graphInput({ ...SALON, place: clinic() }));
     const clinicNode = (id) => clinicGraph.nodes.find((entry) => entry.id === id);

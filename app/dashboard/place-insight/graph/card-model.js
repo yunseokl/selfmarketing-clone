@@ -267,6 +267,50 @@ function addHints(items, nodeById, ontology) {
     }
 }
 
+// 추천 키워드 점(node.reasons)의 "추천한 이유"는 이어진 연결이 아니라 본문 추천 이유 칩의 목록(개수·순서·문구 그대로)으로 그립니다.
+//   이유마다 [{ kind, text, sources[] }]: sources 에 이어 줄 점의 id 가 있으면 그 연결을 가진 항목(눌러 그 점으로 감), 없으면 문장만 있는 항목(id 없음).
+//   같은 이유가 '이 키워드를 추천한 이유'(supports 의 들어오는 연결) 묶음에 또 나와 두 번 세어지지 않게, 그 묶음은 이 목록으로 갈아 끼웁니다.
+//   그 묶음이 없으면(이을 점이 하나도 없음) 갈래 순서에 맞는 자리에 새로 만듭니다.
+export function applyReasons(groups, node, ontology) {
+    const reasons = Array.isArray(node?.reasons) ? node.reasons.filter((reason) => reason && text(reason.text)) : [];
+    if (reasons.length === 0) return groups;
+    const at = groups.findIndex((group) => group.rel === 'supports' && group.direction === 'in' && !group.contains);
+    const existing = at >= 0 ? groups[at] : null;
+    const taken = new Set();
+    const items = reasons.map((reason, index) => {
+        const label = text(reason.text);
+        const sources = Array.isArray(reason.sources) ? reason.sources.filter(Boolean) : [];
+        const found = existing ? existing.items.find((item) => sources.includes(item.id) && !taken.has(item.key)) : null;
+        if (found) {
+            taken.add(found.key);
+            // 연결의 이유 문장(why)은 그대로 두고, 이름은 본문 칩과 같은 문구로 바꿉니다(배지는 같은 말이 되풀이되어 뺌).
+            return { ...found, label, name: label, full: label, lead: false, badge: '', badgeTone: '', hint: sources.length > 1 ? `외 ${sources.length - 1}곳` : '' };
+        }
+        return {
+            key: `reason:${index}`, linkId: null, id: null, group: node.group, type: node.type, label, name: label, full: label,
+            badge: '', badgeTone: '', lead: false, rank: null, hint: '', why: '', about: '', triple: null, strength: 0, tree: false, via: false,
+        };
+    });
+    if (existing) {
+        const next = [...groups];
+        next[at] = { ...existing, items };
+        return next;
+    }
+    const relation = ontology?.relations?.supports || null;
+    const family = relation?.family || 'evidence';
+    const orderOf = (name) => (typeof ontology?.families?.[name]?.order === 'number' ? ontology.families[name].order : 99);
+    const group = {
+        key: 'supports:in', rel: 'supports', direction: 'in', title: relationTitle('supports', 'in', ontology) || '이 키워드를 추천한 이유',
+        quiet: false, contains: false, family,
+        triple: { subject: null, predicate: relationPredicate('supports', ontology), object: nameOf(node), symmetric: false },
+        items,
+    };
+    let place = groups.findIndex((other) => !other.quiet && !other.contains && orderOf(other.family) > orderOf(family));
+    if (place < 0) place = groups.findIndex((other) => other.quiet);
+    if (place < 0) place = groups.length;
+    return [...groups.slice(0, place), group, ...groups.slice(place)];
+}
+
 // 카드 한 장의 내용.
 //   node        고른 점
 //   links       그래프의 연결 전체(또는 이 점에 닿은 것만)
@@ -296,7 +340,7 @@ export function buildCardModel({ node, links, nodeById, ontology, groupNames, vi
         [value, ...facts.flatMap((fact) => [fact.label, fact.value, `${fact.label}${fact.value}`])],
     );
 
-    const groups = relationGroups({ nodeId: node.id, links, nodeById, ontology }).map((group) => {
+    const groups = applyReasons(relationGroups({ nodeId: node.id, links, nodeById, ontology }).map((group) => {
         const items = sortItems(group.links.map((link) => {
             const direction = link.source === node.id ? 'out' : 'in';
             const other = nodeById.get(direction === 'out' ? link.target : link.source);
@@ -311,7 +355,7 @@ export function buildCardModel({ node, links, nodeById, ontology, groupNames, vi
                 : { subject: self, predicate: relationPredicate(group.rel, ontology), object: null, symmetric: group.symmetric };
         }
         return { key: group.key, rel: group.rel, direction: group.direction, title: group.title, quiet: group.quiet, contains: group.contains, family: group.family, triple, items };
-    });
+    }), node, ontology);
 
     const everyItem = groups.flatMap((group) => group.items);
     addHints(everyItem, nodeById, ontology);

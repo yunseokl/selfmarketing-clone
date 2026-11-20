@@ -59,9 +59,12 @@ test('F2 상호명 앞말을 지역으로 읽지 않고, 주소를 못 읽은 �
         assert.equal(result.items.some((item) => item.keyword.startsWith('해든')), false, mode);
         assert.equal(result.regionSource, 'address', mode);
     }
-    // 주소가 비어 등록 키워드에서만 지역을 읽으면 regionSource 가 keywords, 하나도 못 읽으면 none(+ 추천 0개의 까닭 noRegion)
-    const viaKeyword = recommendKeywords({ place: mkPlace({ id: 'kw', name: '시험횟집', category: '횟집', address: '', keywords: ['논현횟집'], reviewMenus: [{ label: '광어', count: 20 }] }) });
-    assert.deepEqual([viaKeyword.regionSource, viaKeyword.regions.map((region) => region.term)], ['keywords', ['논현']]);
+    // 주소가 비어 등록 키워드에서만 지역을 읽으면 regionSource 가 keywords, 하나도 못 읽으면 none(+ 추천 0개의 까닭 noRegion).
+    // 7차: 앞말은 같은 앞말이 서로 다른 확인된 낱말(업종·품목) 앞에 되풀이될 때만 지역으로 읽는다. 한 번만 나온 "논현횟집"의 "논현"은 지역인지 확인할 수 없다.
+    const once = recommendKeywords({ place: mkPlace({ id: 'kw1', name: '시험횟집', category: '횟집', address: '', keywords: ['논현횟집'], reviewMenus: [{ label: '광어', count: 20 }] }) });
+    assert.deepEqual([once.regionSource, once.regions.map((region) => region.term), once.registered[0].regionStatus], ['none', [], 'unknown']);
+    const twice = recommendKeywords({ place: mkPlace({ id: 'kw', name: '시험횟집', category: '횟집', address: '', keywords: ['논현횟집', '논현회식'], reviewMenus: [{ label: '광어', count: 20 }] }) });
+    assert.deepEqual([twice.regionSource, twice.regions.map((region) => [region.term, region.confirmedBy])], ['keywords', [['논현', 'keywords']]]);
     for (const [mode, result] of both('noaddr')) {
         assert.deepEqual([result.regionSource, result.emptyReason, result.items.length], ['none', 'noRegion', 0], mode);
     }
@@ -79,7 +82,8 @@ test('F3·S2 업종 이름도 뜻이 넓은 말은 거르고, 업종 이름이�
     // 견본 미용실: 근거가 "업종"뿐인 남성전문미용실은 예약·리뷰가 받치는 시술 낱말보다 아래다(전에는 93점으로 2위였다)
     const salon = recommendKeywords({ place: FULL_SALON.place, activity: FULL_SALON.activity, rivals: FULL_SALON.rivalPool, ranks: FULL_SALON.ranks });
     const rankOf = (term) => salon.items.findIndex((item) => item.term === term);
-    assert.equal(rankOf('남성전문미용실') > rankOf('다운펌') && rankOf('남성전문미용실') > rankOf('쉐도우펌'), true);
+    // (7차 S5: 업종 이름의 확장어는 등록한 "미용실"로 묶여 추천에서 빠진다. 남아 있더라도 시술 낱말보다 아래여야 한다)
+    assert.equal(rankOf('남성전문미용실') === -1 || (rankOf('남성전문미용실') > rankOf('다운펌') && rankOf('남성전문미용실') > rankOf('쉐도우펌')), true);
 });
 
 test('F4 조건어·채널어(주차·예약·블로그·인스타·가격·분위기…)는 상위 매장·리뷰 메뉴 경로로도 추천되지 않는다', () => {
@@ -152,7 +156,7 @@ test('F11 한 낱말의 순위 하나로 지역 전체를 막지 않고, 추천�
     assert.equal(weak.emptyReason, null);
     assert.equal(terms(weak).some((word) => ['김밥', '떡볶이'].includes(word)), true);
     // 서로 다른 낱말 둘 이상이 모두 30위 밖이어야 그 지역을 나쁜 지역으로 본다 → 모든 지역이 나쁘면 추천 0개 + allWeak
-    const snack = mkPlace({ id: 'weakall', name: '시험분식', category: '분식', address: '서울 노원구 상계로 1', jibun: '서울 노원구 상계동 1', keywords: ['상계분식', '상계김밥', '노원분식', '노원김밥'], reviewMenus: [{ label: '떡볶이', count: 30 }] });
+    const snack = mkPlace({ id: 'weakall', name: '시험분식', category: '분식', address: '서울 노원구 상계로 1', jibun: '서울 노원구 상계동 1', keywords: ['상계분식', '상계김밥', '노원분식', '노원김밥'], menus: ['떡볶이', '김밥'], reviewMenus: [{ label: '떡볶이', count: 30 }] });
     const all = recommendKeywords({ place: snack, ranks: [row('상계분식', 55), row('상계김밥', 80), row('노원분식', 70), row('노원김밥', null)] });
     assert.deepEqual([all.items.length, all.emptyReason], [0, 'allWeak']);
     assert.equal(all.excluded.filter((entry) => entry.rule === 'rank').length, 2);
@@ -174,7 +178,7 @@ test('F12 업종 이름과 그 부분 낱말은 같이 추천하지 않는다', 
     }
     // 이름의 일부가 업종 이름이 아니면 별개의 낱말이다("소금김밥"과 "김밥", "와인바"와 "와인")
     const sushi = recommendKeywords({
-        place: mkPlace({ id: 'wine', name: '시험와인바', category: '와인바', address: '서울 강남구 테헤란로 1', jibun: '서울 강남구 역삼동 1', reviewMenus: [{ label: '와인', count: 40 }] }), limit: 100,
+        place: mkPlace({ id: 'wine', name: '시험와인바', category: '와인바', address: '서울 강남구 테헤란로 1', jibun: '서울 강남구 역삼동 1', menus: ['와인 플래터'], reviewMenus: [{ label: '와인', count: 40 }] }), limit: 100,
     });
     assert.equal(terms(sushi).includes('와인'), true);
 });
@@ -204,7 +208,7 @@ test('규칙 밖 입력: 횟수(count)가 없거나 null 이 섞여도 예외 �
     }
     // 리뷰 메뉴가 적게 말한 순으로 들어와도 많이 말한 것부터 읽고 나중에 자른다
     const names = ['가나', '다라', '마바', '사아', '자차', '카타', '파하', '거너', '더러', '머버', '서어', '저처'];
-    const place = mkPlace({ id: 'order', name: '시험식당', category: '한식', address: '서울 강남구 테헤란로 1', jibun: '서울 강남구 역삼동 1', reviewMenus: names.map((label, index) => ({ label, count: 10 + index * 10 })) });
+    const place = mkPlace({ id: 'order', name: '시험식당', category: '한식', address: '서울 강남구 테헤란로 1', jibun: '서울 강남구 역삼동 1', menus: names, reviewMenus: names.map((label, index) => ({ label, count: 10 + index * 10 })) });
     const read = recommendKeywords({ place, limit: 100 });
     assert.equal(terms(read).includes('저처'), true);
     assert.equal(terms(read).includes('가나'), false);

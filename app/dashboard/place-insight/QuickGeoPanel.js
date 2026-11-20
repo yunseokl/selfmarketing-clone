@@ -6,11 +6,12 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
-import { AlertTriangle, ArrowRight, CalendarClock, CheckCircle2, Copy, Hourglass, RotateCcw, Timer, Zap } from 'lucide-react';
+import { AlertTriangle, ArrowRight, CalendarClock, CheckCircle2, Copy, Globe, Hourglass, RotateCcw, Timer, Zap } from 'lucide-react';
 import {
     buildOneDayPlan, buildQuickStrategies, buildQuickTimeline, clockAt, durationLabel, quickSummary,
     QUICK_CHECK_PREFIX, QUICK_PLATFORMS,
 } from '@/lib/place-geo-quick';
+import { GEO_TAB_LABELS, SITE_WORK_NOTE, SITE_WORK_TITLE } from '@/lib/place-geo';
 import base from './page.module.css';
 import styles from './QuickGeoPanel.module.css';
 
@@ -36,7 +37,7 @@ function Timeline({ timeline, onPick }) {
     const lastTick = timeline.ticks[timeline.ticks.length - 1];
     return (
         <div className={styles.timelineBox}>
-            <h3>AI별 반영 타임라인 <small>일을 끝낸 뒤 AI 답변에 반영되기까지 · 검증 안 됨</small></h3>
+            <h3>AI별 반영 타임라인 <small>일을 끝낸 뒤 AI 답변에 반영되기까지 · 어림값</small></h3>
             <div className={styles.tlScroll}>
                 <div className={styles.tl} style={{ '--cols': timeline.columns }}>
                     <div className={styles.tlAxis} aria-hidden="true">
@@ -57,7 +58,7 @@ function Timeline({ timeline, onPick }) {
                                     type="button"
                                     className={styles.tlRow}
                                     onClick={() => onPick(row.platform)}
-                                    aria-label={`${row.label}${row.note ? ` ${row.note}` : ''}, 반영까지 ${row.range}(검증 안 됨) — 이 AI의 통로 보기`}
+                                    aria-label={`${row.label}${row.note ? ` ${row.note}` : ''}, 반영까지 ${row.range}(어림값) — 이 AI의 통로 보기`}
                                 >
                                     <span className={styles.tlName}>
                                         <strong>{row.label}</strong>
@@ -136,12 +137,13 @@ function StrategyCard({ strategy, checked, onToggle }) {
     );
 }
 
-function StrategyGroup({ title, hint, Icon, strategies, prep, checked, onToggle }) {
+// note: 머리말 뒤에 이어 붙는 설명(홈페이지 전용 묶음의 "— 홈페이지를 만든 분(개발자)에게 그대로 전달하세요")
+function StrategyGroup({ title, note, hint, Icon, strategies, prep, checked, onToggle }) {
     if (strategies.length === 0) return null;
     return (
         <div className={styles.group}>
             <h3 className={prep ? styles.groupPrep : undefined}>
-                <Icon size={16} aria-hidden="true" /> {title} <small>{strategies.length}개 · {hint}</small>
+                <Icon size={16} aria-hidden="true" /> {title}{note && <> — {note}</>} <small>{strategies.length}개{hint ? ` · ${hint}` : ''}</small>
             </h3>
             <ul className={styles.cards}>
                 {strategies.map((strategy) => <StrategyCard key={strategy.id} strategy={strategy} checked={checked} onToggle={onToggle} />)}
@@ -190,12 +192,13 @@ function OneDayPlan({ plan, checked, onSetMany, onPick }) {
                                 {step.kind === 'strategy' && (
                                     <p className={styles.dayTags}>
                                         <span className={styles.tagAi}>{PLATFORM_LABEL[step.platform]}</span>
+                                        {step.siteWork && <span>{SITE_WORK_TITLE}</span>}
                                         {step.when !== 'now' && <span>준비되면</span>}
                                         {partial > 0 && !done && <span>{partial}/{step.checkIds.length} 단계 완료</span>}
                                     </p>
                                 )}
                                 <p>{step.detail}</p>
-                                {step.eta && <p className={styles.dayExpect}>예상 반영 {step.eta} (검증 안 됨)</p>}
+                                {step.eta && <p className={styles.dayExpect}>예상 반영 {step.eta} (어림값)</p>}
                                 {step.kind === 'strategy' && (
                                     <button type="button" className={styles.linkBtn} onClick={() => onPick(step.strategyId)}>
                                         실행 단계 보기 <ArrowRight size={14} aria-hidden="true" />
@@ -208,7 +211,7 @@ function OneDayPlan({ plan, checked, onSetMany, onPick }) {
             </ol>
             <p className={base.diagNote}>
                 체크하면 아래 가이드의 그 통로 단계가 함께 체크됩니다. 다시 재는 날은 AI별 반영 시간의 끝에 맞춘 추정이며,
-                그날 추천 목록에 든다는 보장은 없습니다. 오르지 않은 AI는 &lsquo;로드맵&rsquo; 탭의 주간 측정 때 같은 질문으로 다시 재 보세요.
+                그날 추천 목록에 든다는 보장은 없습니다. 오르지 않은 AI는 &lsquo;{GEO_TAB_LABELS.roadmap}&rsquo; 탭의 주간 다시 재기 때 같은 질문으로 다시 재 보세요.
             </p>
         </section>
     );
@@ -254,8 +257,10 @@ export default function QuickGeoPanel({ place, activity, analysis, progress, che
     const quickChecked = checked.filter((id) => id.startsWith(QUICK_CHECK_PREFIX));
     const platform = QUICK_PLATFORMS.find((item) => item.key === platformKey) || QUICK_PLATFORMS[0];
     const mine = strategies.filter((strategy) => strategy.platform === platform.key);
-    const now = mine.filter((strategy) => strategy.when === 'now');
-    const prep = mine.filter((strategy) => strategy.when !== 'now');
+    // 홈페이지가 있어야 하는 기술 작업(siteWork)은 지금 바로·준비 필요와 따로, 머리말 하나 아래로 모읍니다.
+    const site = mine.filter((strategy) => strategy.siteWork);
+    const now = mine.filter((strategy) => !strategy.siteWork && strategy.when === 'now');
+    const prep = mine.filter((strategy) => !strategy.siteWork && strategy.when !== 'now');
 
     const reset = () => {
         onSetMany(quickChecked, false);
@@ -273,7 +278,7 @@ export default function QuickGeoPanel({ place, activity, analysis, progress, che
                         <p>
                             AI마다 매장 정보를 가져가는 통로가 달라, 오늘 손댈 수 있는 일을 AI별 1-2-3 단계로 풀었습니다.
                             일은 오늘 끝나도 AI 답변에 반영되기까지는 몇 시간에서 며칠이 걸립니다.
-                            &lsquo;로드맵&rsquo; 탭이 몇 주짜리 계획이라면 이 칸은 오늘 할 일입니다.
+                            &lsquo;{GEO_TAB_LABELS.roadmap}&rsquo; 탭이 몇 주짜리 계획이라면 이 칸은 오늘 할 일입니다.
                         </p>
                     </div>
                     <div className={styles.headTools}>
@@ -301,7 +306,7 @@ export default function QuickGeoPanel({ place, activity, analysis, progress, che
                                 onClick={() => setPlatformKey(item.key)}
                             >
                                 <strong>{item.label}</strong>
-                                <span className={styles.aiCount}>지금 바로 <b>{item.now}</b>개{item.prep > 0 && ` · 준비 필요 ${item.prep}개`}</span>
+                                <span className={styles.aiCount}>지금 바로 <b>{item.now}</b>개{item.prep > 0 && ` · 준비 필요 ${item.prep}개`}{item.site > 0 && ` · 홈페이지 작업 ${item.site}개`}</span>
                                 <span>반영까지 {item.windows.map((window) => window.range).join(' · ')}</span>
                                 {readiness && <span>{readiness}</span>}
                                 {item.done > 0 && <span className={styles.aiDone}><CheckCircle2 size={14} aria-hidden="true" /> {item.done}/{item.total} 끝냄</span>}
@@ -313,17 +318,18 @@ export default function QuickGeoPanel({ place, activity, analysis, progress, che
                 {/* key: AI를 바꾸면 새로 그려 등장 애니메이션이 다시 재생됩니다(아래 전략 카드는 AI마다 다른 카드라 저절로 새로 그려짐) */}
                 <p key={platform.key} className={styles.aiInfo}>
                     <b>{platform.label} 반영까지</b> {platform.claim}
-                    <small> — 전략 정리 후반에 제시된 값이며 검증되지 않았습니다. 일을 끝내는 시간과 AI 답변에 반영되는 시간은 다릅니다.</small>
+                    <small> — 네이버·AI 회사가 알려 준 시간이 아니라 어림값입니다. 일을 끝내는 시간과 AI 답변에 반영되는 시간은 다릅니다.</small>
                 </p>
 
                 <StrategyGroup title="지금 바로 할 수 있는 것" hint="위에서부터 차례로" Icon={Zap} strategies={now} checked={checked} onToggle={onToggle} />
+                <StrategyGroup title={SITE_WORK_TITLE} note={SITE_WORK_NOTE} Icon={Globe} strategies={site} prep checked={checked} onToggle={onToggle} />
                 <StrategyGroup title="준비가 필요한 것" hint="준비물을 갖춘 뒤" Icon={Hourglass} strategies={prep} prep checked={checked} onToggle={onToggle} />
 
                 <p className={base.diagNote}>
-                    반영 시간은 전략 정리 후반에 정정된 값으로, 각 서비스가 보장하지 않는 검증 안 된 추정입니다.
-                    카드의 예상 반영은 &lsquo;로드맵&rsquo; 탭에 같은 일이 있으면 그 단계의 값을, 없으면 그 AI의 값을 씁니다. 통로를 여는 순서이지 AI 추천을 보장하는 방법이 아닙니다.
-                    전략 정리에 있던 손님인 척 쓰는 댓글, 여러 계정 자문자답, 같은 방송 반복은 삭제·계정 제한 위험이 커서 매장 관계자임을 밝히고 사실만 쓰는 방식으로 바꿨습니다.
-                    결과는 &lsquo;AI 답변 실측&rsquo; 탭에 기록해 직전과 비교하세요.
+                    반영 시간은 네이버·AI 회사가 알려 준 값이 아니라 어림값이며, 각 서비스가 보장하지 않습니다.
+                    카드의 예상 반영은 &lsquo;{GEO_TAB_LABELS.roadmap}&rsquo; 탭에 같은 일이 있으면 그 단계의 값을, 없으면 그 AI의 값을 씁니다. 통로를 여는 순서이지 AI 추천을 보장하는 방법이 아닙니다.
+                    손님인 척 쓰는 댓글, 여러 계정으로 하는 자문자답, 같은 방송 반복은 삭제·계정 제한 위험이 커서 안내하지 않고, 매장 관계자임을 밝히고 사실만 쓰는 방식으로만 안내합니다.
+                    결과는 &lsquo;{GEO_TAB_LABELS.measure}&rsquo; 탭에 기록해 직전과 비교하세요.
                 </p>
             </section>
         </>

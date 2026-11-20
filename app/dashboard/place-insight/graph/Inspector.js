@@ -475,6 +475,22 @@ export default function Inspector({
     const renderItem = (item) => {
         const tint = colorOf(item.group);
         const style = { '--c': tint.hex, '--cv': tint.vividHex };
+        // 이을 점이 없는 추천 이유(업종·내 순위 같은 문장): 누를 수 없는 문장만 보입니다.
+        if (!item.id) {
+            return view === 'list' ? (
+                <div className={styles.row} style={style} data-static="true">
+                    <span className={styles.rowTop}>
+                        <i aria-hidden="true" />
+                        <strong data-name>{item.name}</strong>
+                    </span>
+                </div>
+            ) : (
+                <span className={styles.chip} style={style} data-static="true">
+                    <i aria-hidden="true" />
+                    <span className={styles.chipName} data-name>{item.label}</span>
+                </span>
+            );
+        }
         if (view === 'list') {
             const note = item.why || item.about;
             return (
