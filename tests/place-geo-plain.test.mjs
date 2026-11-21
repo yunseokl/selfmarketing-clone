@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
     analyzeGeoAeo, buildFanout, externalSteps, GEO_TAB_LABELS, SITE_WORK_HEADER, notApplicableTag, UNVERIFIED_TAG, NOT_APPLICABLE_TAG,
-    feedTopicWords, headlineMenus, PLATFORMS,
+    feedTopicWords, headlineMenus, PLATFORMS, placeCriteria, mainItemWord, menuWord, fitMenuText,
 } from '../lib/place-geo.js';
 import { buildQuickStrategies, buildOneDayPlan, quickSummary } from '../lib/place-geo-quick.js';
 import { buildPromptSet, AI_GUIDES } from '../lib/place-geo-prompts.js';
@@ -182,6 +182,67 @@ test('카드의 숫자 굴림 칸은 숫자열을 글자로 두지 않는다(읽
     assert.equal(/className=\{styles\.srOnly\}>\{text\}</.test(source), true, '읽히는 값(srOnly)이 있어야 함');
     const css = readFileSync(new URL('../app/dashboard/place-insight/graph/Inspector.module.css', import.meta.url), 'utf8');
     assert.equal(/\.rollStrip::before\s*\{[^}]*content:\s*'0\\A 1\\A 2/.test(css), true, '굴림용 숫자열은 CSS content 로 그려야 함');
+});
+
+// 노트북 7차: ① 미용실 글의 대표 항목 이름은 '대표 시술'(영어 초안은 Popular treatments) ② 약국·병의원의 조건형 질문에 '단체 이용'이 없다
+// ③ 점유율 문구는 '순위를 조회한 키워드' ④ 서치어드바이저 제목에는 한 줄 풀이가 붙는다
+test('노트북 7차: 업종 말·조건형 질문·점유율 문구·서치어드바이저 풀이', () => {
+    assert.equal(mainItemWord(SALON.place), '대표 시술');
+    assert.equal(mainItemWord(PHARMACY.place), '대표 취급 품목·서비스');
+    assert.equal(mainItemWord(RESTAURANT.place), '대표 메뉴');
+    const salon = analyzeGeoAeo({ place: SALON.place, activity: SALON.activity, ranks: SALON.ranks ?? null, nowMs: NOW });
+    const drafts = buildQuickStrategies(SALON.place, SALON.activity, { atomic: salon.atomic, fanout: salon.fanout, nowMs: NOW }).map((item) => item.draft?.text || '').join('\n');
+    assert.equal(drafts.includes('- 대표 메뉴:'), false, '미용실 초안에 음식점 말');
+    assert.equal(drafts.includes('Popular menu'), false);
+    assert.equal(/- 대표 시술:|- Popular treatments:/.test(drafts), true, '미용실 초안에 업종 말 항목이 있어야 함');
+    // 약국·병의원: 자료에 '단체 이용'이 있어도 조건에서 뺀다. 음식점은 그대로 둔다.
+    const withGroup = (sample) => ({ ...sample.place, conveniences: [...(sample.place.conveniences || []), '단체 이용 가능'] });
+    assert.equal(placeCriteria(withGroup(PHARMACY)).some((item) => item.key === 'group'), false);
+    assert.equal(placeCriteria({ ...withGroup(PHARMACY), category: '내과' }).some((item) => item.key === 'group'), false);
+    assert.equal(placeCriteria(withGroup(RESTAURANT)).some((item) => item.key === 'group'), true);
+    for (const [name, sample] of SAMPLES) {
+        const analysis = analyzeGeoAeo({ place: sample.place, activity: sample.activity, ranks: sample.ranks ?? null, nowMs: NOW });
+        const json = JSON.stringify(analysis);
+        assert.equal(/대표키워드 \d+개 중 5위 안/.test(json), false, `${name}: 점유율 문구가 등록 키워드 수처럼 읽힘`);
+    }
+    const advisor = buildQuickStrategies(RESTAURANT.place, RESTAURANT.activity, { nowMs: NOW }).find((item) => /서치어드바이저/.test(item.title));
+    assert.equal(Boolean(advisor) && /서치어드바이저: 내 글을 네이버에 알리는 무료 도구/.test(advisor.title), true, '오늘 할 일 제목에 서치어드바이저 풀이');
+});
+
+// 10차: 후보 꼬리표는 화면과 처방전이 같은 말이고(long 포함), 키워드 구역의 고정 문구도 업종 말을 따른다(시술·품목·메뉴).
+test('후보 꼬리표는 화면과 처방전이 같은 말이고, 키워드 구역 고정 문구는 업종 말을 따른다', async () => {
+    const { LACKS_TAG } = await import('../lib/place-prescription.js');
+    const page = readFileSync(new URL('../app/dashboard/place-insight/page.js', import.meta.url), 'utf8');
+    for (const [key, text] of Object.entries(LACKS_TAG)) assert.equal(page.includes(`${key}: '${text}'`), true, `화면 LACKS_LABEL 에 ${key}: '${text}' 가 있어야 함`);
+    assert.equal(LACKS_TAG.long, '이름이 길어 지역 조합 불가');
+    // 고정 문구 변환: 미용 '시술', 약국·병의원 '품목', 음식점 '메뉴'(그대로). '메뉴판'·따옴표 안 자료는 그대로.
+    assert.equal(fitMenuText('시술', '주력 메뉴 아님'), '주력 시술 아님');
+    assert.equal(fitMenuText('품목', '메뉴 설명'), '품목 설명');
+    assert.equal(fitMenuText('품목', '메뉴판에 한 줄로 올라 있는 품목'), '메뉴판에 한 줄로 올라 있는 품목');
+    assert.equal(fitMenuText('메뉴', '주력 메뉴 아님'), '주력 메뉴 아님');
+    for (const [word, type] of [['시술', SALON], ['품목', PHARMACY], ['메뉴', RESTAURANT]]) {
+        const w = menuWord(type.place);
+        assert.equal(word === '시술' ? w === '시술' : word === '메뉴' ? w === '메뉴' : w !== '메뉴' && w !== '시술', true, `${word}: menuWord=${w}`);
+    }
+    assert.equal(/<KeywordItemWord\.Provider value=\{keywordItemWord\(place\)\}>/.test(page), true, '키워드 구역을 업종 말 컨텍스트로 감쌈');
+});
+
+// 폰 7차: 메뉴판 묶음 단추는 다른 접힘 단추처럼 44px, 추천 이유 칩은 폰에서 13px, 흐린 범례 안내는 6초, 여러 낱말을 묶은 줄의 제목은 "○○ 외 N개".
+test('폰 화면 규칙: 접힘 안 단추 44px · 이유 칩 13px · 흐린 범례 안내 6초 · 묶인 낱말 제목', () => {
+    const dir = new URL('../app/dashboard/place-insight/', import.meta.url);
+    const css = readFileSync(new URL('page.module.css', dir), 'utf8');
+    const phone = css.slice(css.indexOf('@media (pointer: coarse), (max-width: 768px)'));
+    assert.equal(/\.foldBtn,\s*\.foldNestedBtn\s*\{\s*min-height:\s*44px/.test(phone), true, '.foldNestedBtn 이 44px 규칙에 들어 있어야 함');
+    assert.equal(/\.tickerSum small,\s*\.reason\s*\{\s*font-size:\s*13px/.test(css), true, '폰에서 .reason 은 13px');
+    const graph = readFileSync(new URL('PlaceGraph.js', dir), 'utf8');
+    assert.equal(/setEmptyGroup\(null\), 6000/.test(graph), true, '흐린 범례 안내는 6초');
+    const page = readFileSync(new URL('page.js', dir), 'utf8');
+    assert.equal(/entry\.term\}\{others\.size > 0/.test(page), true, '묶인 낱말이 있으면 제목에 외 N개');
+    // 메뉴판 묶음의 머리 숫자는 줄 수가 아니라 줄마다 묶인 낱말(words)을 합산한 실제 낱말 수(숫자를 박아 두지 않음), 다르면 줄 수도 함께
+    assert.equal(/boardWords\.length\}개\{boardWords\.length !== board\.length/.test(page), true, '묶음 머리에 실제 낱말 수와 줄 수');
+    // '지역 확인 못 함' 칩이 있을 때만 폰에서도 읽히는 풀이 한 줄(.note 는 13px)
+    assert.equal(/unknownShown && \(\s*<p className=\{styles\.note\}>/.test(page), true, '지역 확인 못 함 풀이 한 줄');
+    assert.equal(/\.note\s*\{[^}]*font-size:\s*13px/.test(css), true);
 });
 
 // 화면 파일(JSX)에 적힌 글자에도 내부 자료 이름·옛 탭 이름·업계 용어 원문이 남지 않아야 합니다(주석은 제외).

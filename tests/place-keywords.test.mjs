@@ -400,7 +400,9 @@ test('관문 9(자) — 메뉴 낱말은 매장의 주력 갈래에 맞을 때�
     // 곁들임이라는 단정은 어느 이유에도 없다
     for (const entry of result.excluded) assert.equal(/곁들임|주력 메뉴로 보기 어렵/.test(entry.reason), false, entry.reason);
     // (8차 S-2: 메뉴판 한 줄 품목 캐비아·고노와다도 같은 이유로 걸려 이유와 함께 남는다. 9차: 주간 인기 메뉴에 나온 해물돌판짜파게티는 손님 쪽 근거가 있어 메뉴판 한 줄 묶음(캐비아…)에 섞지 않고 따로 한 줄)
-    assert.deepEqual(result.excluded.filter((entry) => entry.rule === 'offMain').map((entry) => entry.term), ['갈치', '볼락구이', '캐비아', '해물돌판짜파게티', '고노와다']);
+    // (9차: 메뉴판 한 줄 품목 가운데 이름에 든 품목 낱말(광어방어의 광어·방어, 민어조기구이의 민어·조기구이, 아나고튀김의 아나고)이나 철자가 비슷한 이름(대물뽈락구이 ↔ 볼락구이)이
+    // 리뷰·결제에 있는 것은 "메뉴판에만 있는 품목" 묶음(캐비아…)에서 빠져 따로 한 줄이 된다)
+    assert.deepEqual(result.excluded.filter((entry) => entry.rule === 'offMain').map((entry) => entry.term), ['갈치', '볼락구이', '광어방어', '캐비아', '대물뽈락구이', '해물돌판짜파게티', '고노와다', '민어조기구이', '아나고튀김']);
     // 회 갈래 낱말은 통과: 끝말이 '회'(숙성회)이거나 회 메뉴의 이름에 들어 있음(광어 → "대물 숙성회 정식(광어)", 대방어 → "대방어 숙성회")
     for (const word of ['강남구청숙성회', '강남구청광어', '강남구청대방어']) assert.equal(keywordsOf(result).includes(word), true, word);
     // 김밥·보쌈은 그 자체가 다른 업종 이름이라 전처럼 '가'에 걸린다(이유도 그대로)
@@ -561,7 +563,8 @@ test('관문 3 — 낱말 다듬기: 띄어쓰기·괄호·매장 이름이 붙�
     }
     const result = full(FULL_RESTAURANT, { limit: 100 });
     // 결제 단말의 "대물볼락구이"는 매장 이름(대물섬)을 떼어 리뷰의 "볼락구이"와 한 낱말이 된다(전에는 "강남구청대물볼락구이"가 따로 있었음)
-    assert.equal(result.items.some((item) => item.term.startsWith('대물')) || result.excluded.some((entry) => entry.term.startsWith('대물')), false);
+    // (메뉴판 한 줄의 "대물뽈락구이"는 철자가 다른 별개의 메뉴판 줄이라 따로 남는다 — 결제·리뷰의 대물볼락구이는 한 낱말로 합쳐진 그대로)
+    assert.equal(result.items.some((item) => item.term.startsWith('대물')) || result.excluded.some((entry) => entry.term.startsWith('대물') && entry.term !== '대물뽈락구이'), false);
     // (횟집에서는 볼락구이가 주력 갈래 밖이라 걸러지므로, 업종이 '생선구이'인 같은 매장으로 근거가 합쳐지는지 본다)
     assert.equal(excludedOf(result, '볼락구이').rule, 'offMain');
     const grill = recommendKeywords({ place: { ...FULL_RESTAURANT.place, category: '생선구이' }, activity: FULL_RESTAURANT.activity, rivals: FULL_RESTAURANT.rivalPool, limit: 100 });
@@ -646,7 +649,7 @@ test('관문 5 — 한쪽이 다른 쪽을 품는 메뉴 낱말은 하나로 묶
     const salon = full(FULL_SALON, { limit: 100 });
     assert.equal(excludedOf(salon, '시스루댄디컷'), undefined);
     const sheerDandy = salon.items.find((item) => item.keyword === '강남역시스루댄디컷');
-    assert.deepEqual(sheerDandy.reasons.at(-1), { kind: 'note', text: "'댄디컷' 가운데 리뷰가 가장 많은 메뉴" });
+    assert.deepEqual(sheerDandy.reasons.at(-1), { kind: 'note', text: "'댄디컷' 가운데 리뷰가 가장 많은 시술" });
     assert.equal(sheerDandy.evidence.parts.some((part) => part.kind === 'note'), false); // note 는 근거 점수에 넣지 않는다
     assert.equal(sheerDandy.score, sheerDandy.evidence.points);
     assert.equal('merged' in salon.items.find((item) => item.keyword === '강남역댄디컷'), false);
@@ -656,7 +659,7 @@ test('관문 5 — 한쪽이 다른 쪽을 품는 메뉴 낱말은 하나로 묶
     assert.equal(excludedOf(dandyFull, '시스루댄디컷'), undefined);
     const sheerFamily = dandyFull.candidates.find((item) => item.term === '시스루댄디컷');
     assert.equal(sheerFamily.lacks, 'family');
-    assert.match(sheerFamily.why, /^리뷰 827회로 '댄디컷' 가운데 가장 많이 말해진 메뉴이지만, '댄디컷'이 든 키워드를 이미 두 칸 쓰고 있어 추천에 넣지 않았습니다\. 한 칸을 이 메뉴로 바꿀지 직접 판단하세요\.$/);
+    assert.match(sheerFamily.why, /^리뷰 827회로 '댄디컷' 가운데 가장 많이 말해진 시술이지만, '댄디컷'이 든 키워드를 이미 두 칸 쓰고 있어 추천에 넣지 않았습니다\. 한 칸을 이 시술로 바꿀지 직접 판단하세요\.$/);
     // 업종 낱말·업종 연관어끼리는 묶지 않는다(약국·대형약국·동물약국은 서로 다른 검색어)
     const pharmacy = full(FULL_PHARMACY, { limit: 100 });
     for (const word of ['청주약국', '청주대형약국', '청주동물약국']) assert.equal(keywordsOf(pharmacy).includes(word), true, word);
@@ -1072,7 +1075,7 @@ test('걸러낸 것(excluded)의 모양과, 추천·자동 순위 조회에는 �
             assert.equal(Array.isArray(entry.keywords) && entry.keywords.length >= 1, true, entry.term);
             assert.equal(['offMain', 'otherBusiness', 'thin', 'brand', 'unrelated'].includes(entry.rule) ? /\.$/.test(entry.reason) : /^[^.]+\.$/.test(entry.reason), true, entry.reason);
             assert.equal(/검색량|조회수|제철|계절/.test(entry.reason), false, entry.reason);
-            assert.equal(Object.keys(entry).every((key) => ['term', 'keywords', 'rule', 'reason', 'into', 'board', 'words', 'popular', 'useIn', 'lead', 'why'].includes(key)), true);
+            assert.equal(Object.keys(entry).every((key) => ['term', 'keywords', 'rule', 'reason', 'into', 'board', 'words', 'popular', 'similar', 'useIn', 'lead', 'why'].includes(key)), true);
             // into 는 묶인 낱말(merged)이나 대신 쓸 손님 말(classification)에만 있다(그 낱말이 화면에 보일 때만 — 아래 '이유 문장 전수 확인')
             if ('into' in entry) assert.equal(['merged', 'classification'].includes(entry.rule), true, `${entry.rule} ${entry.term}`);
             for (const word of entry.keywords) assert.equal(passedWords.has(word), false, word);
@@ -1088,7 +1091,7 @@ test('걸러낸 것(excluded)의 모양과, 추천·자동 순위 조회에는 �
             // 이유는 사장님이 읽을 한 문장이고, 가진 자료로 말할 수 없는 "검색량"은 쓰지 않는다
             assert.equal(['offMain', 'otherBusiness', 'thin', 'brand', 'unrelated'].includes(entry.rule) ? /\.$/.test(entry.reason) : /^[^.]+\.$/.test(entry.reason), true, entry.reason);
             assert.equal(/검색량|조회수/.test(entry.reason), false, entry.reason);
-            assert.equal(Object.keys(entry).every((key) => ['term', 'keywords', 'rule', 'reason', 'into', 'board', 'words', 'popular', 'useIn', 'lead', 'why'].includes(key)), true);
+            assert.equal(Object.keys(entry).every((key) => ['term', 'keywords', 'rule', 'reason', 'into', 'board', 'words', 'popular', 'similar', 'useIn', 'lead', 'why'].includes(key)), true);
             // 걸러낸 조합은 추천에 없다
             for (const word of entry.keywords) assert.equal(passedWords.has(word), false, word);
         }
@@ -1146,7 +1149,7 @@ function auditExcluded(input, result, label) {
         const at = `${label} [${entry.rule}] ${entry.term}: ${entry.reason}`;
         const words = quotedIn(entry.reason);
         const withFacts = ['offMain', 'otherBusiness'].includes(entry.rule);
-        assert.equal(Object.keys(entry).every((key) => ['term', 'keywords', 'rule', 'reason', 'into', 'board', ...(withFacts ? ['words', 'popular', 'useIn', 'lead', 'why'] : [])].includes(key)), true, at);
+        assert.equal(Object.keys(entry).every((key) => ['term', 'keywords', 'rule', 'reason', 'into', 'board', ...(withFacts ? ['words', 'popular', 'similar', 'useIn', 'lead', 'why'] : [])].includes(key)), true, at);
         assert.equal([...RULES, ...EXTRA_RULES].includes(entry.rule), true, at);
         // 이유는 사장님이 읽을 한 문장. 손님이 찾는 메뉴를 키워드에서 빼는 두 규칙(사실 → 이유 → 대신 쓸 자리)은 문장 셋까지, 근거가 얇은 낱말(thin)은 둘까지
         if (withFacts || ['thin', 'brand', 'unrelated'].includes(entry.rule)) {
@@ -1289,14 +1292,20 @@ function auditExcluded(input, result, label) {
                 assert.equal(/손님이 많이 찾는 메뉴입니다/.test(entry.reason), entry.popular.reviewRank === 1 || (entry.popular.posRank !== null && entry.popular.posRank <= 3), at);
                 assert.equal(/^'[^']+'(?:·'[^']+')*[은는] /.test(entry.reason), true, at);
             } else {
-                // 손님 자료에 나오지 않는 메뉴: 사실 문장이 없다
+                // 손님 자료에 나오지 않는 메뉴: "찾는·나오는 메뉴입니다" 문장이 없다. 다만 이름에 든 품목 낱말·비슷한 이름이 리뷰·결제에 있으면(similar) 그 사실만 적고 자료와 같다
                 assert.deepEqual([reviewHits.length, posAt, inBriefing], [0, -1, false], at);
                 assert.equal(/찾는 메뉴입니다|나오는 메뉴입니다/.test(entry.reason), false, at);
+                for (const hit of entry.similar ?? []) {
+                    assert.equal(entry.reason.includes(`'${hit.label}'`), true, `${at} / ${hit.label}`);
+                    if (hit.reviews !== undefined) assert.equal(reviews.get(squash(hit.label)), hit.reviews, `${at} / ${hit.label}`);
+                    if (hit.posRank !== undefined) assert.equal(squash(posList[hit.posRank - 1]?.name).includes(squash(hit.label)) || squash(hit.label).includes(squash(posList[hit.posRank - 1]?.name)), true, `${at} / ${hit.label}`);
+                }
+                assert.equal(Boolean(entry.similar?.length) === /이름에 든 |이름이 비슷한 /.test(entry.reason), true, at);
             }
             // 대신 쓸 자리: 손님 자료에 나오거나 메뉴판에 그 낱말이 든 메뉴가 있을 때만
             const menusWith = menus.filter((name) => keys.some((key) => name.includes(key))).length;
             // (8차 S-2: 메뉴판에 한 줄뿐인 품목만 든 줄(board)은 손님이 찾는다는 자료가 없어 "쓰기 좋은 곳"을 권하지 않는다)
-            const useful = Boolean(entry.popular) || (menusWith > 0 && entry.board !== true);
+            const useful = Boolean(entry.popular) || Boolean(entry.similar?.length) || (menusWith > 0 && entry.board !== true);
             assert.deepEqual(entry.useIn ?? null, useful ? ['메뉴 설명', '소식', '소개글'] : null, at);
             assert.equal(entry.reason.includes('메뉴 설명·소식·소개글에는 쓰기 좋은 낱말입니다.'), useful && !/업종·매장 이름에서 그 근거/.test(entry.reason), at);
         }
@@ -1426,7 +1435,8 @@ test('한 낱말이 다른 낱말을 품고 이유가 같은 줄은 한 줄로 �
     // (8차 S-2: 메뉴판 한 줄 품목이 관문에 걸린 줄 일곱이 한식 뒤에 늘었다)
     assert.deepEqual(restaurant.excluded.map((entry) => `${entry.rule}:${entry.term}`), [
         'otherBusiness:김밥', 'offMain:갈치', 'merged:광어회', 'offMain:볼락구이', 'channel:포장', 'otherBusiness:보쌈', 'broad:한식',
-        'otherBusiness:칼국수', 'otherBusiness:손만두', 'offMain:캐비아', 'vague:조림', 'offMain:해물돌판짜파게티', 'offMain:고노와다', 'otherBusiness:얼큰해장라면', 'otherBusiness:매운탕',
+        'otherBusiness:칼국수', 'otherBusiness:손만두', 'offMain:광어방어', 'offMain:캐비아', 'vague:조림', 'offMain:대물뽈락구이', 'offMain:해물돌판짜파게티', 'offMain:고노와다', 'otherBusiness:얼큰해장라면', 'otherBusiness:매운탕',
+        'offMain:민어조기구이', 'offMain:아나고튀김',
         'rank:압구정', 'region:횟집', 'region:회식', 'region:점심',
     ]);
     assert.deepEqual(excludedOf(restaurant, '갈치').keywords, ['강남구청갈치', '강남구청갈치조림', '강남구청순살갈치조림']);

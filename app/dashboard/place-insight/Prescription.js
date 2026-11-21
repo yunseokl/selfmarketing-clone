@@ -393,19 +393,19 @@ function Rivals({ section }) {
                     ))}
                 </table>
             )}
-            {section.firsts.length > 0 && <p className={styles.note}>내 매장이 1위인 키워드: {section.firsts.join(', ')}</p>}
+            {section.firsts.length > 0 && <p className={styles.note}>내 {section.noun}이 1위인 키워드: {section.firsts.join(', ')}</p>}
             {section.more > 0 && <p className={styles.note}>이 밖에 키워드 {section.more}개는 이 표에 싣지 않았습니다.</p>}
             {section.pool && (
                 <div className={`${styles.part} ${styles.keep}`}>
                     <h3 className={styles.partTitle}>
                         조회한 상위 {formatNumber(section.pool.count)}곳 전체와 비교
-                        <span>{section.pool.keyword} 검색 결과 기준(광고 제외, 내 매장 제외)</span>
+                        <span>{section.pool.keyword} 검색 결과 기준(광고 제외, 내 {section.noun} 제외)</span>
                     </h3>
                     <table className={styles.table}>
                         <thead>
                             <tr>
                                 <th scope="col">항목</th>
-                                <th scope="col" className={styles.colCount}>내 매장</th>
+                                <th scope="col" className={styles.colCount}>내 {section.noun}</th>
                                 <th scope="col" className={styles.colCount}>상위 중간값</th>
                                 <th scope="col" className={styles.colCount}>상위 최고</th>
                                 <th scope="col" className={styles.colVerdict}>판정</th>
@@ -771,7 +771,7 @@ function Keywords({ section }) {
                                                 <span key={entry.word}>
                                                     {wordIndex > 0 && ' · '}
                                                     {entry.mine || entry.next ? <b>{entry.word}</b> : entry.word}
-                                                    {entry.mine && <small className={styles.wordMark}>내 매장도 씀</small>}
+                                                    {entry.mine && <small className={styles.wordMark}>내 {section.noun}도 씀</small>}
                                                     {entry.next && !entry.mine && <small className={styles.wordMark}>5칸 최종안에 든 말</small>}
                                                 </span>
                                             ))}
@@ -783,7 +783,7 @@ function Keywords({ section }) {
                     </table>
                     {section.rivalKeywords.common.length > 0 && (
                         <p className={styles.note}>
-                            두 곳 이상이 함께 쓰는 키워드: {section.rivalKeywords.common.map((entry) => `${entry.word} ${entry.count}곳${entry.mine ? '(내 매장도 씀)' : entry.next ? '(5칸 최종안에 든 말)' : ''}`).join(' · ')}
+                            두 곳 이상이 함께 쓰는 키워드: {section.rivalKeywords.common.map((entry) => `${entry.word} ${entry.count}곳${entry.mine ? `(내 ${section.noun}도 씀)` : entry.next ? '(5칸 최종안에 든 말)' : ''}`).join(' · ')}
                         </p>
                     )}
                 </div>
@@ -808,8 +808,11 @@ function Keywords({ section }) {
                                 {chunk.map((row) => (
                                     <tr key={`${row.label}-${row.words}`}>
                                         <td className={styles.sub}>{row.label}</td>
-                                        <th scope="row">{row.words}</th>
-                                        <td className={styles.sub}>{row.reason}</td>
+                                        <th scope="row">{row.wide ? row.short : row.words}</th>
+                                        <td className={styles.sub}>
+                                            {row.wide && <span className={styles.wordList}>{row.words}</span>}
+                                            {row.reason}
+                                        </td>
                                     </tr>
                                 ))}
                             </tbody>

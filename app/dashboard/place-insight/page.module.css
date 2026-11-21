@@ -3853,7 +3853,8 @@
 
     .savedChip button,
     .recoRank,
-    .foldBtn {
+    .foldBtn,
+    .foldNestedBtn {
         min-height: 44px;
     }
 
@@ -4109,7 +4110,7 @@
     .graphBtn,
     .loadingText li,
     .tickerSum small,
-    .reason[data-kind='note'] {
+    .reason {
         font-size: 13px;
     }
 

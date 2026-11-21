@@ -794,13 +794,19 @@ const PlaceGraph = forwardRef(function PlaceGraph(
     // 걸러 보는 동안 밝혀진 점 가운데 이름이 켜진 점의 수. 좁은 화면에서는 이름표 자리가 모자라 일부 점의 이름이 빠질 수 있어,
     // 이름이 다 켜지지 않았을 때만 띠와 아래 줄에서 말없이 빠지지 않게 알립니다(엔진 상태를 읽기만 하고 자리 찾기는 건드리지 않음).
     const [nameStat, setNameStat] = useState(null);
-    // 항목이 없어 흐리게 둔 범례 단추를 눌렀을 때 아래 줄에 잠깐(3.5초) 이유를 보여 줍니다.
+    // 항목이 없어 흐리게 둔 범례 단추를 눌렀을 때 아래 줄에 잠깐(6초) 이유를 보여 줍니다(짧으면 읽기 전에 사라져 놓치기 쉽습니다).
     const [emptyGroup, setEmptyGroup] = useState(null);
     useEffect(() => {
         if (!emptyGroup) return undefined;
-        const timer = setTimeout(() => setEmptyGroup(null), 3500);
+        const timer = setTimeout(() => setEmptyGroup(null), 6000);
         return () => clearTimeout(timer);
     }, [emptyGroup]);
+    // 안내가 길어진 만큼, 그 사이에 점을 가리키거나 누르면 안내는 거두어 점의 이름이 지나간 뒤에 옛 안내가 다시 나오지 않게 합니다.
+    // (점을 눌러 카드가 열리는 경우도 같습니다. 카드가 열리면 읽는 점이 없어도 안내를 거둡니다.)
+    const readId = readNode ? readNode.id : null;
+    useEffect(() => {
+        if (readId || selectedId) setEmptyGroup(null);
+    }, [readId, selectedId]);
     // 걸러 보는 대상이 바뀌면(묶음·연결·종류) 이름표가 다시 자리를 잡으므로, 그때마다 '자리 잡는 중'으로 돌아갑니다.
     const nameKey = `${activeRelation || ''}|${filterGroup || ''}|${activeKlass || ''}`;
     useEffect(() => {

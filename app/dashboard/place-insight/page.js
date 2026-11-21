@@ -16,7 +16,7 @@ import { keywordFrequency, diagnoseRank, parseCount, buildActionItems, distanceK
 import { recommendKeywords, pickRankKeywords, rankScope, regionStatusOf } from '@/lib/place-keywords';
 // 업종 때문에 해당 없는 항목(병의원의 새소식·쿠폰, 약국의 쿠폰·예약): 경고색 없이 "해당 없음"과 이유로 보여 줍니다.
 import { healthKind, notApplicableOf } from '@/lib/place-industry';
-import { notApplicableTag } from '@/lib/place-geo';
+import { notApplicableTag, menuWord, fitMenuText } from '@/lib/place-geo';
 // 숫자·날짜·순위 표기는 연결 그래프와 본문이 같은 글자를 쓰도록 lib/place-graph 의 것을 함께 씁니다.
 import { buildPlaceGraph, buildIdleGraph, ONTOLOGY, ontologyFor, itemWord, formatNumber, agoLabel, won, rankLabel, rankTone, sampleSuffix } from '@/lib/place-graph';
 import styles from './page.module.css';
@@ -646,6 +646,9 @@ function TodoSection({ place, actions }) {
 
 /* ───────── 키워드 순위 ───────── */
 
+// '지역 확인 못 함' 칩의 풀이. 칩에 마우스를 올리면 title 로 뜨고, 폰에서는 title 이 안 보이므로 같은 뜻의 설명 한 줄을 칸 아래에 한 번 보입니다.
+const UNKNOWN_REGION_TITLE = '이 키워드의 지역을 확인하지 못했습니다';
+
 // 등록한 키워드 한 칸 아래에 붙는 진단: 지역이 들어 있는지, 블로그 후기에 그 낱말이 몇 번 나오는지
 function slotState(entry, blogTotal) {
     if (!entry) return null;
@@ -654,7 +657,7 @@ function slotState(entry, blogTotal) {
     const status = regionStatusOf(entry);
     if (status === 'known') return { tone: entry.concern ? undefined : 'good', text: ['지역 포함', blog].filter(Boolean).join(' · ') };
     // 앞말이 지역인지 확인하지 못한 키워드는 지역이 없다고 단정하지 않습니다.
-    if (status === 'unknown') return { tone: undefined, text: ['지역 확인 못 함', blog].filter(Boolean).join(' · '), title: '이 키워드의 지역을 확인하지 못했습니다' };
+    if (status === 'unknown') return { tone: undefined, text: ['지역 확인 못 함', blog].filter(Boolean).join(' · '), title: UNKNOWN_REGION_TITLE };
     return { tone: 'warn', text: ['지역 없음', blog].filter(Boolean).join(' · ') };
 }
 
@@ -671,7 +674,8 @@ const RULE_LABEL = {
 
 // 후보(candidates[].lacks)의 꼬리표. 값이 없으면(옛 결과) '자료가 적음', 모르는 값이면 꼬리표를 달지 않습니다.
 //   menu 품목(메뉴판·예약·결제)에서 확인 못 함 · voice 품목에는 있지만 손님 리뷰·상위 매장 키워드에서는 확인 못 함 · share 리뷰 수가 주력 메뉴들에 견줘 적음 · data 자료가 아예 없음
-const LACKS_LABEL = { menu: '품목 자료에 없음', voice: '리뷰·상위 매장에 없음', share: '리뷰 비중 낮음', data: '자료가 적음', family: '같은 낱말 두 칸 사용 중' };
+//   family 같은 낱말을 이미 두 칸 씀 · long 지역을 붙이면 대표키워드 글자 수를 넘는 긴 이름이라 지역 조합을 못 만듦(이때 keyword 는 지역 없는 낱말; 처방전의 같은 꼬리표와 같은 말)
+const LACKS_LABEL = { menu: '품목 자료에 없음', voice: '리뷰·상위 매장에 없음', share: '리뷰 비중 낮음', data: '자료가 적음', family: '같은 낱말 두 칸 사용 중', long: '이름이 길어 지역 조합 불가' };
 
 function lacksLabel(lacks) {
     if (lacks === undefined || lacks === null || lacks === '') return LACKS_LABEL.data;
@@ -680,6 +684,20 @@ function lacksLabel(lacks) {
 
 function ruleLabel(rule, fallback = '추천 제외') {
     return (typeof rule === 'string' && RULE_LABEL[rule]) || fallback;
+}
+
+// 키워드 구역의 고정 문구(이름표 '주력 메뉴 아님', '메뉴 설명' 꼬리표, 빈 추천 안내 같은 것)에 박힌 '메뉴'를 업종 말로 바꿉니다.
+// 키워드 엔진 문장과 같은 기준입니다: 미용·네일·피부 '시술', 약국·병의원·동물병원 '품목', 그 밖(음식점·카페·업종을 모를 때 포함) '메뉴'.
+// '메뉴판'·따옴표 안의 자료는 fitMenuText 가 그대로 둡니다.
+function keywordItemWord(place) {
+    const word = menuWord(place);
+    if (word === '시술') return '시술';
+    return word === '메뉴' || word === '서비스' ? '메뉴' : '품목';
+}
+const KeywordItemWord = createContext('메뉴');
+function useKeywordFit() {
+    const word = useContext(KeywordItemWord);
+    return useCallback((text) => (typeof text === 'string' ? fitMenuText(word, text) : text), [word]);
 }
 
 // 접어 두는 한 줄(추천에서 뺀 키워드·등록 키워드에서 살펴볼 점). 누르면 아래에 목록이 펼쳐집니다.
@@ -719,11 +737,12 @@ function ConcernRow({ entry }) {
     // 분류 이름 줄은 spoken.why 가 같은 까닭("…분류 이름이라")을 이미 말하므로 concern.reason 을 되풀이하지 않습니다.
     const reasonShown = !(spoken?.why && concern.rule === 'classification');
     const support = spokenSupport(entry);
+    const fit = useKeywordFit();
     return (
         <li>
             <p className={styles.foldHead}>
                 <strong>{entry.keyword}</strong>
-                <span className={styles.ruleTag}>{ruleLabel(concern.rule, '확인 필요')}</span>
+                <span className={styles.ruleTag}>{fit(ruleLabel(concern.rule, '확인 필요'))}</span>
             </p>
             {spoken?.why && <p>{spoken.why}</p>}
             {reasonShown && <p>{concern.reason}</p>}
@@ -744,6 +763,9 @@ function KeywordSlots({ keywords, diagnosis, blogTotal, onCopy }) {
     const stateOf = new Map((diagnosis || []).map((entry) => [entry.keyword, slotState(entry, blogTotal)]));
     const concerns = (diagnosis || []).filter((entry) => entry.concern && list.includes(entry.keyword));
     const concernOf = new Map(concerns.map((entry) => [entry.keyword, entry.concern]));
+    // '지역 확인 못 함' 칩이 하나라도 있을 때만(키워드가 여럿이어도 한 번만) 풀이 한 줄을 보입니다.
+    const unknownShown = list.some((word) => stateOf.get(word)?.title === UNKNOWN_REGION_TITLE);
+    const fit = useKeywordFit();
     return (
         <div className={`${styles.slots} ${styles.rise}`} style={{ '--d': 1 }}>
             <div className={styles.slotsHead}>
@@ -767,11 +789,14 @@ function KeywordSlots({ keywords, diagnosis, blogTotal, onCopy }) {
                             <li key={word || `empty-${index}`} data-empty={word ? undefined : 'true'} data-concern={concern ? 'true' : undefined} data-node={word ? `kw:${word}` : undefined} style={{ '--d': index }}>
                                 <span>{word || '빈 칸'}</span>
                                 {state && <small className={styles.slotState} data-tone={state.tone} title={state.title}>{state.text}</small>}
-                                {concern && <small className={styles.slotConcern}>살펴볼 점{ruleLabel(concern.rule, '') ? ` · ${ruleLabel(concern.rule, '')}` : ''}</small>}
+                                {concern && <small className={styles.slotConcern}>살펴볼 점{ruleLabel(concern.rule, '') ? ` · ${fit(ruleLabel(concern.rule, ''))}` : ''}</small>}
                             </li>
                         );
                     })}
                 </ol>
+            )}
+            {keywords !== null && unknownShown && (
+                <p className={styles.note}>&lsquo;지역 확인 못 함&rsquo;은 이 키워드의 지역을 확인하지 못했다는 뜻입니다.</p>
             )}
             {concerns.length > 0 && (
                 <Fold id="kw-concerns" label={`등록 키워드에서 살펴볼 점 ${concerns.length}개`}>
@@ -804,18 +829,22 @@ function byRegion(entries) {
 // 추천에서 뺀 키워드 한 줄. 사실(lead)·이유(why)가 있으면 "사실 한 줄 / 이유 한 줄 / 쓰기 좋은 곳(useIn)" 세 줄로,
 // 없으면(옛 결과·다른 규칙) 이유 한 문장 reason 을 그대로 그립니다. 새 필드가 없어도 깨지지 않습니다.
 // '낱말'·'낱말'·'낱말' 처럼 공백 없이 가운뎃점으로만 이어진 긴 목록이 한 덩어리로 안 접히지 않게, 가운뎃점 뒤에 줄바꿈 자리(보이지 않는 공백)를 둡니다.
-const softWrap = (text) => text.replace(/·/g, '·​');
+const softWrap = (text) => text.replace(/·/g, '·\u200B');
 
 function ExcludedRow({ entry }) {
     const lead = typeof entry.lead === 'string' ? softWrap(entry.lead.trim()) : '';
     const why = typeof entry.why === 'string' ? softWrap(entry.why.trim()) : '';
     const useIn = Array.isArray(entry.useIn) ? entry.useIn.filter((place) => typeof place === 'string' && place) : [];
     const split = Boolean(lead || why);
+    const fit = useKeywordFit();
+    // 한 줄이 낱말 여럿을 묶은 것이면(엔진이 words 로 묶인 낱말을 줌) 제목에 그 수를 적어, 까닭 문장이 늘어놓는 낱말과 제목이 어긋나 보이지 않게 합니다.
+    // 몇 개가 묶였는지는 줄마다 다르므로 개수를 가정하지 않고 words 에서 셉니다(term 자신은 빼고).
+    const others = Array.isArray(entry.words) ? new Set(entry.words.filter((word) => typeof word === 'string' && word && word !== entry.term)) : new Set();
     return (
         <li>
             <p className={styles.foldHead}>
-                <strong>{entry.term}</strong>
-                <span className={styles.ruleTag}>{ruleLabel(entry.rule)}</span>
+                <strong>{entry.term}{others.size > 0 ? ` 외 ${others.size}개` : ''}</strong>
+                <span className={styles.ruleTag}>{fit(ruleLabel(entry.rule))}</span>
             </p>
             {split ? (
                 <>
@@ -824,7 +853,7 @@ function ExcludedRow({ entry }) {
                     {useIn.length > 0 && (
                         <p className={styles.foldUse}>
                             <span>쓰기 좋은 곳</span>
-                            {useIn.map((place) => <span key={place} className={styles.useTag}>{place}</span>)}
+                            {useIn.map((place) => <span key={place} className={styles.useTag}>{fit(place)}</span>)}
                         </p>
                     )}
                 </>
@@ -857,6 +886,10 @@ function ExcludedFold({ excluded }) {
     const grouped = boardAll.length >= BOARD_GROUP_MIN;
     const board = grouped ? boardAll : [];
     const single = grouped ? rest.filter((entry) => entry.board !== true) : rest;
+    // 한 줄이 낱말 여럿을 묶은 것이면(words) 머리의 숫자는 줄 수가 아니라 실제 낱말 수입니다. 둘이 다르면 "낱말 14개 · 5줄"처럼 둘 다 적습니다.
+    // (위 '추천에서 뺀 키워드 N개'의 N 은 줄 수입니다. 줄·묶음·지역만 바꾼 묶음의 줄을 모두 합친 수라서 안쪽의 '줄' 수와 맞습니다.)
+    // 숫자는 줄마다 words 에서 세므로 엔진이 묶음 구성을 바꿔도 그대로 맞습니다.
+    const boardWords = [...new Set(board.flatMap((entry) => [entry.term, ...(Array.isArray(entry.words) ? entry.words : [])]).filter((word) => typeof word === 'string' && word))];
     return (
         <Fold id="kw-excluded" label={`추천에서 뺀 키워드 ${excluded.length}개`}>
             {single.map((entry) => <ExcludedRow key={`${entry.rule}-${entry.term}`} entry={entry} />)}
@@ -864,13 +897,13 @@ function ExcludedFold({ excluded }) {
                 <li>
                     <p className={styles.foldHead}>
                         <strong>메뉴판 품목에서 나온 말</strong>
-                        <span className={styles.ruleTag}>낱말 {board.length}개</span>
+                        <span className={styles.ruleTag}>낱말 {boardWords.length}개{boardWords.length !== board.length ? ` · ${board.length}줄` : ''}</span>
                     </p>
                     <p>메뉴판에 한 줄로 올라 있는 품목에서 나온 말입니다. 말마다 까닭이 달라 아래 단추로 펼쳐서 읽을 수 있습니다.</p>
-                    <p className={styles.foldWords}>{board.map((entry) => entry.term).join(' · ')}</p>
+                    <p className={styles.foldWords}>{boardWords.join(' · ')}</p>
                     <button type="button" className={styles.foldNestedBtn} aria-expanded={boardOpen} aria-controls="kw-excluded-board" onClick={() => setBoardOpen((prev) => !prev)}>
                         <ChevronDown size={16} aria-hidden="true" />
-                        {boardOpen ? '까닭 접기' : `말마다 까닭 보기 (${board.length}개)`}
+                        {boardOpen ? '까닭 접기' : `까닭 보기 (${board.length}줄)`}
                     </button>
                     {boardOpen && (
                         <ul id="kw-excluded-board" className={styles.foldNested}>
@@ -958,6 +991,7 @@ const EMPTY_NOTE = {
 // 추천 키워드: 지역 + 업종(메뉴·서비스) 조합과 근거. 누르면 그 키워드의 순위를 순위 표에 덧붙여 조회합니다.
 function KeywordReco({ recommendation, ranks, rankPick, rivalRegistered = null, comparing, ranking, unavailable, canCompare, feedOk = true, onRank, onRankAll, onCompare, onCopy }) {
     const [more, setMore] = useState(false);
+    const fit = useKeywordFit();
     // 그래프에서 고른 추천 키워드가 '더 보기' 뒤에 접혀 있으면 펼칩니다.
     useUnfold(
         (id) => !more && id.startsWith('kw:') && (recommendation?.items || []).findIndex((item) => `kw:${item.keyword}` === id) >= RECO_SHOWN,
@@ -1003,7 +1037,7 @@ function KeywordReco({ recommendation, ranks, rankPick, rivalRegistered = null, 
                 ? ' 리뷰에 나온 말이 있지만 메뉴판·예약·결제 품목에서 확인되지 않아, 추천하지 않고 아래에 사장님이 직접 판단할 말로만 두었습니다.'
                 // 까닭이 말마다 다르거나(voice·share 등) 모르는 값이면 까닭은 줄마다 적은 문장을 보게 합니다.
                 : ' 추천하지 않은 말은 아래에 사장님이 직접 판단할 말로만 두었습니다. 말마다 까닭을 적었습니다.';
-    const emptyNote = `${emptyBase}${candidateNote}`;
+    const emptyNote = fit(`${emptyBase}${candidateNote}`);
     // 등록 키워드의 '살펴볼 점'에 이미 같은 문장이 나온 뺀 키워드(상호와 같은 말 등)는 아래 접힘에서 되풀이하지 않습니다.
     const concernTexts = new Set(registered.filter((entry) => entry.concern?.reason).map((entry) => entry.concern.reason.trim()));
     const excludedShown = (excluded || []).filter((entry) => {
@@ -1073,7 +1107,7 @@ function KeywordReco({ recommendation, ranks, rankPick, rivalRegistered = null, 
             )}
 
             {regions.length === 0 ? (
-                <p className={styles.note}>{EMPTY_NOTE.noRegion}</p>
+                <p className={styles.note}>{fit(EMPTY_NOTE.noRegion)}</p>
             ) : items.length === 0 ? (
                 <p className={styles.note}>{emptyNote.replace('FEED_WORD', feedOk ? '소식·' : '')}</p>
             ) : (
@@ -2770,6 +2804,7 @@ export default function PlaceInsightPage() {
                                 키워드를 검색했을 때 내 매장이 몇 번째에 나오는지 네이버 목록에서 광고를 빼고 셉니다. 한 번에 {MAX_KEYWORDS}개까지, 쉼표로 구분해 입력하세요.
                             </SectionHead>
 
+                            <KeywordItemWord.Provider value={keywordItemWord(place)}>
                             <KeywordSlots keywords={place.keywords} diagnosis={recommendation?.registered} blogTotal={recommendation?.blogTotal} onCopy={copyKeywords} />
 
                             <KeywordReco
@@ -2788,6 +2823,7 @@ export default function PlaceInsightPage() {
                                 onCompare={() => comparable && loadRivals(comparable)}
                                 onCopy={(words) => copyWords(words, '추천 키워드')}
                             />
+                            </KeywordItemWord.Provider>
 
                             <form className={`${styles.rankForm} ${styles.rise}`} style={{ '--d': 2 }} onSubmit={runRanks}>
                                 <div className={styles.inputWrap}>

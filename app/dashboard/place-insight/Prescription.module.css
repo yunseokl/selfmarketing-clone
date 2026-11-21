@@ -1213,3 +1213,11 @@
 .nowrap {
     white-space: nowrap;
 }
+
+/* 뺀 키워드 표: 낱말이 많은 줄은 좁은 '낱말·조합' 칸에 쌓지 않고 이유 칸 첫머리에 가로로 이어 씁니다 */
+.wordList {
+    display: block;
+    margin-bottom: 0.6mm;
+    font-weight: 700;
+    color: var(--rx-ink);
+}

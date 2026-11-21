@@ -1575,9 +1575,9 @@ test('AI 검색: 본문 진단과 같은 점수를 쉬운 이름으로 내고, �
     assert.deepEqual([nodeOf(graph, 'gf:entity').full, nodeOf(graph, 'gf:entity').detail], ['기본 정보(상호·주소·전화)', '상호·주소·전화·영업시간·업종이 모두 등록돼 있습니다.']);
     // 항목 점수는 sub 에만. 근거 문장에서 그 점수를 다시 적은 마디("점유율 15점")는 빼고, 배점은 총점에서 차지하는 비중으로 적는다
     const competition = geo.factors.find((factor) => factor.key === 'competition');
-    assert.equal(competition.evidence, '대표키워드 5개 중 5위 안 2개 · 10위 안 2개 · 점유율 15점');
+    assert.equal(competition.evidence, '순위를 조회한 키워드 5개 중 5위 안 2개 · 10위 안 2개 · 점유율 15점');
     assert.deepEqual([nodeOf(graph, 'gf:competition').sub, nodeOf(graph, 'gf:competition').detail, nodeOf(graph, 'gf:competition').facts],
-        ['15점', '대표키워드 5개 중 5위 안 2개 · 10위 안 2개', [{ label: '총점에서 차지하는 비중', value: '14%' }]]); // 배점 15 / 전체 110
+        ['15점', '순위를 조회한 키워드 5개 중 5위 안 2개 · 10위 안 2개', [{ label: '총점에서 차지하는 비중', value: '14%' }]]); // 배점 15 / 전체 110
     assert.equal(Math.round((competition.fullWeight / geo.factors.reduce((sum, factor) => sum + factor.fullWeight, 0)) * 100), 14);
     assert.deepEqual(ids(graph, 'fq:'), fanout.map((item) => `fq:${item.key}`));
     assert.deepEqual([nodeOf(graph, 'geo:fanout').label, nodeOf(graph, 'geo:fanout').full, nodeOf(graph, 'geo:fanout').sub, nodeOf(graph, 'geo:fanout').type], ['AI가 묻는 질문', 'AI가 나눠 묻는 질문', '7/8 답함', 'concept']);
