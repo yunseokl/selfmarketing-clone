@@ -220,8 +220,8 @@ function Overview({ analysis, progress }) {
             </ul>
 
             <div className={styles.factorCols}>
-                <FactorList title="AI 추천 준비 세부 항목 (GEO)" factors={geo.factors} actions={actions} />
-                <FactorList title="AI 답변 준비 세부 항목 (AEO)" factors={aeo.factors} actions={actions} />
+                <FactorList title="AI 추천 준비 세부 항목" factors={geo.factors} actions={actions} />
+                <FactorList title="AI 답변 준비 세부 항목" factors={aeo.factors} actions={actions} />
             </div>
 
             <p className={base.diagNote}>
@@ -644,8 +644,8 @@ function CompetitionCard({ place, analysis, ranks, unavailable }) {
                     <h3>&lsquo;{signals.keyword}&rsquo; 상위 매장 AI 추천 신호 지수</h3>
                     <p className={styles.signalSummary}>
                         내 매장 <b>{scoreText(signals.mine)}</b>
-                        {signals.top5Average !== null && <> · 상위 5곳 평균 <b>{signals.top5Average}</b></>}
-                        {signals.position && <> · {signals.count}곳 중 <b>{signals.position}번째</b></>}
+                        {signals.top5Average !== null && <> · {signals.top5Count > 0 && signals.top5Count < 5 ? `검색 상위 5위 중 내 매장을 뺀 ${signals.top5Count}곳` : '검색 상위 5곳'} 평균 <b>{signals.top5Average}</b></>}
+                        {signals.position && <> · 지수로 줄 세우면 {signals.count}곳 중 <b>{signals.tied > 0 ? '공동 ' : ''}{signals.position}번째</b></>}
                     </p>
                     <ul className={styles.signalRows}>
                         {signals.rows.map((row) => (
@@ -662,6 +662,7 @@ function CompetitionCard({ place, analysis, ranks, unavailable }) {
                     </ul>
                     <p className={base.diagNote}>
                         AI 추천 신호 지수는 같은 검색 결과 안에서 방문자 리뷰·블로그 리뷰·평점·사진·저장·운영 도구(예약·주문·쿠폰·페이)가 몇 번째쯤인지 평균한 값(0~100)입니다.
+                        표는 검색 순위 순서이고, 위의 &lsquo;번째&rsquo;는 이 지수가 높은 순서라 서로 다를 수 있습니다.
                         이미 받은 순위 목록만 써서 추가 조회가 없습니다.
                     </p>
                 </div>

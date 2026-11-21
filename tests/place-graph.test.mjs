@@ -115,11 +115,11 @@ function assertSound(graph, name) {
         assert.equal(GO.includes(node.go), true, `${name}: ${node.id} go '${node.go}'`);
         assert.equal((node.go === null) === (node.id === 'store'), true, `${name}: ${node.id} go`);
         assert.match(node.aria, / 살펴보기$/, `${name}: ${node.id} aria`);
-        // 화면에 나오는 말: 어려운 낱말 없음, 약어는 설명에만
+        // 화면에 나오는 말: 어려운 낱말 없음, 약어(GEO·AEO)는 설명 문장에도 쓰지 않는다
         for (const [field, text] of [['label', node.label], ['full', node.full], ['sub', node.sub], ['detail', node.detail], ['go', node.go]]) {
             if (typeof text !== 'string') continue;
             assert.equal(JARGON.test(text), false, `${name}: ${node.id}.${field} '${text}'`);
-            if (field !== 'detail') assert.equal(ABBR.test(text), false, `${name}: ${node.id}.${field} 약어 '${text}'`);
+            assert.equal(ABBR.test(text), false, `${name}: ${node.id}.${field} 약어 '${text}'`);
         }
         if (node.spot !== undefined) spots.push(node.spot);
         if (node.id === 'store') {
@@ -1558,8 +1558,9 @@ test('AI 검색: 본문 진단과 같은 점수를 쉬운 이름으로 내고, �
     assert.deepEqual([nodeOf(graph, 'geo:score').sub, nodeOf(graph, 'aeo:score').sub], [`${geo.score}점`, `${aeo.score}점`]);
     assert.deepEqual(nodeOf(graph, 'geo:score').facts, [{ label: '등급', value: '양호' }, { label: '점검 항목', value: '9개' }]);
     assert.deepEqual([nodeOf(graph, 'geo:score').full, nodeOf(graph, 'aeo:score').full], ['AI 추천 목록에 들 준비', 'AI 질문에 바로 답할 준비']);
-    assert.match(nodeOf(graph, 'geo:score').detail, /\(GEO\)\.$/);
-    assert.match(nodeOf(graph, 'aeo:score').detail, /\(AEO\)\.$/);
+    assert.equal(nodeOf(graph, 'geo:score').detail, 'AI가 추천 목록을 만들 때 쓸 정보(리뷰·블로그 글·기본 정보)가 갖춰졌는지 본 혼잘마 자체 점검 점수입니다.');
+    assert.equal(nodeOf(graph, 'aeo:score').detail, '주차·가격·영업시간 같은 손님 질문에 AI가 바로 답할 정보가 있는지 본 혼잘마 자체 점검 점수입니다.');
+    assert.equal(nodeOf(graph, 'hub:geo').detail, 'AI가 내 매장을 추천하고 손님 질문에 답할 준비가 됐는지 본 혼잘마 자체 점검입니다.');
     assert.deepEqual([geo.score, aeo.score], [74, 82]);
     assert.deepEqual(nodeOf(graph, 'hub:geo').facts, [
         { label: 'AI 추천 준비', value: '74점', tone: 'good' }, { label: 'AI 답변 준비', value: '82점', tone: 'good' }, { label: '바로 답할 수 있는 질문', value: '7개 / 8개' },

@@ -44,23 +44,25 @@ function Rolling({ value }) {
     const [, before, digits, after] = match;
     const count = digits.replace(/\D/g, '').length;
     let nth = 0;
+    // 읽히는 글자는 srOnly 의 '값 하나'뿐입니다. 눈에 보이는 조각(앞뒤 글자·쉼표·굴러가는 숫자열 0123456789)은 글자 노드가 아니라
+    // CSS 의 content(data-t)로 그려서, 화면 낭독·글 추출(innerText·textContent)에 '0개 0123456789 개' 같은 것이 같이 잡히지 않게 합니다.
     return (
         <span className={styles.rolling}>
             <span className={styles.srOnly}>{text}</span>
-            {before && <span aria-hidden="true">{keepEdges(before)}</span>}
+            {before && <span className={styles.rollText} data-t={keepEdges(before)} aria-hidden="true" />}
             {[...digits].map((char, index) => {
                 if (!/\d/.test(char)) {
-                    return <span key={index} className={styles.rollMark} style={{ '--i': nth }} aria-hidden="true">{char}</span>;
+                    return <span key={index} className={`${styles.rollMark} ${styles.rollText}`} data-t={char} style={{ '--i': nth }} aria-hidden="true" />;
                 }
                 const order = count - 1 - nth;
                 nth += 1;
                 return (
                     <span key={index} className={styles.rollDigit} aria-hidden="true">
-                        <span style={{ '--d': armed ? Number(char) : 0, '--i': order }}>0123456789</span>
+                        <span className={styles.rollStrip} style={{ '--d': armed ? Number(char) : 0, '--i': order }} />
                     </span>
                 );
             })}
-            {after && <span aria-hidden="true">{keepEdges(after)}</span>}
+            {after && <span className={styles.rollText} data-t={keepEdges(after)} aria-hidden="true" />}
         </span>
     );
 }

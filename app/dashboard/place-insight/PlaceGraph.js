@@ -794,12 +794,26 @@ const PlaceGraph = forwardRef(function PlaceGraph(
     // 걸러 보는 동안 밝혀진 점 가운데 이름이 켜진 점의 수. 좁은 화면에서는 이름표 자리가 모자라 일부 점의 이름이 빠질 수 있어,
     // 이름이 다 켜지지 않았을 때만 띠와 아래 줄에서 말없이 빠지지 않게 알립니다(엔진 상태를 읽기만 하고 자리 찾기는 건드리지 않음).
     const [nameStat, setNameStat] = useState(null);
+    // 항목이 없어 흐리게 둔 범례 단추를 눌렀을 때 아래 줄에 잠깐(3.5초) 이유를 보여 줍니다.
+    const [emptyGroup, setEmptyGroup] = useState(null);
+    useEffect(() => {
+        if (!emptyGroup) return undefined;
+        const timer = setTimeout(() => setEmptyGroup(null), 3500);
+        return () => clearTimeout(timer);
+    }, [emptyGroup]);
+    // 걸러 보는 대상이 바뀌면(묶음·연결·종류) 이름표가 다시 자리를 잡으므로, 그때마다 '자리 잡는 중'으로 돌아갑니다.
+    const nameKey = `${activeRelation || ''}|${filterGroup || ''}|${activeKlass || ''}`;
     useEffect(() => {
         if (!filtering || !live) {
             setNameStat(null);
             return undefined;
         }
         const classes = ontology?.classes;
+        // 걸러 본 직후에는 이름표가 하나씩 켜지는 중이라 '이름 0/16' 같은 중간 값이 보입니다.
+        // 같은 값이 연속으로 읽히고(자리가 잡히고) 걸러 본 지 1초가 지난 뒤에만 '자리 잡은 값'으로 칩니다.
+        const startedAt = Date.now();
+        let lastKey = '';
+        let sameReads = 0;
         const read = () => {
             const engine = engineRef.current;
             const hot = engine?.hotSet;
@@ -816,13 +830,20 @@ const PlaceGraph = forwardRef(function PlaceGraph(
                 total += 1;
                 if (p.lab && p.lab.on && p.lab.a > 0.5) named += 1;
             }
-            setNameStat((prev) => (prev && prev.named === named && prev.total === total ? prev : { named, total }));
+            const key = `${named}/${total}`;
+            sameReads = key === lastKey ? sameReads + 1 : 0;
+            lastKey = key;
+            // 값이 연속으로 같고 1초가 지났거나, 그래프가 돌면서 값이 계속 흔들려도 3초가 지나면 '자리 잡은 값'으로 칩니다.
+            const elapsed = Date.now() - startedAt;
+            const settled = (sameReads >= 2 && elapsed >= 1000) || elapsed >= 3000;
+            setNameStat((prev) => (prev && prev.named === named && prev.total === total && prev.settled === settled ? prev : { named, total, settled }));
         };
         read();
-        const timer = setInterval(read, 600);
+        const timer = setInterval(read, 400);
         return () => clearInterval(timer);
-    }, [filtering, live, ontology]);
-    const namesMissing = filtering && nameStat && nameStat.total > 0 && nameStat.named < nameStat.total;
+    }, [filtering, live, ontology, nameKey]);
+    // 자리가 잡히기 전의 값(이름표가 켜지는 중)은 '모자란다'고 알리지 않습니다.
+    const namesMissing = filtering && nameStat && nameStat.settled && nameStat.total > 0 && nameStat.named < nameStat.total;
     const relationItem = activeRelation ? relationList.find((item) => item.rel === activeRelation) : null;
     const klassItem = activeKlass ? classList.find((item) => item.type === activeKlass) : null;
     // 띠에 쓰는 수: 종류 칩의 합과 같게(묶음 중심 점은 세지 않음)
@@ -885,7 +906,12 @@ const PlaceGraph = forwardRef(function PlaceGraph(
                                         data-empty={empty ? 'true' : undefined}
                                         title={empty ? '이 묶음에는 따로 살펴볼 항목이 없습니다.' : undefined}
                                         onClick={() => {
-                                            if (!live || empty) return;
+                                            if (!live) return;
+                                            if (empty) {
+                                                setEmptyGroup(item.group);
+                                                return;
+                                            }
+                                            setEmptyGroup(null);
                                             setPicked(null);
                                             setRelation(null);
                                             setKlass(null);
@@ -1281,6 +1307,9 @@ const PlaceGraph = forwardRef(function PlaceGraph(
                         {readNode.sub && <span className={styles.readoutValue}>{readNode.sub}</span>}
                         {readNode.detail && <span className={styles.readoutText}>{readNode.detail}</span>}
                     </>
+                ) : emptyGroup ? (
+                    // 흐리게 둔(항목 없는) 범례 단추를 누르면, 폰에서는 title 이 안 보이므로 이 줄에 이유를 잠깐 보여 줍니다.
+                    <span className={styles.readoutHint} role="status">{groupLabels.get(emptyGroup) || '이'}: 이 묶음에는 따로 살펴볼 항목이 없습니다.</span>
                 ) : live ? (
                     <span className={styles.readoutHint}>{guide}</span>
                 ) : (

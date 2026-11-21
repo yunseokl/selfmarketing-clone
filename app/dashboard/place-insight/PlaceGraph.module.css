@@ -1222,9 +1222,9 @@
         line-height: 18px;
     }
 
-    /* 한 줄 요약은 폰에서 두 줄까지 넘어갑니다. */
+    /* 한 줄 요약은 폰에서 줄을 바꿔 끝까지 보여 줍니다(360 폭에서 3줄이 되어도 문장 중간에서 자르지 않습니다). */
     .headline {
-        display: -webkit-box;
+        display: block;
         order: 3;
         flex-basis: 100%;
         font-size: 13px;
@@ -1233,8 +1233,6 @@
         color: var(--g-text-2);
         white-space: normal;
         word-break: keep-all;
-        -webkit-box-orient: vertical;
-        -webkit-line-clamp: 2;
     }
 
     .counts {

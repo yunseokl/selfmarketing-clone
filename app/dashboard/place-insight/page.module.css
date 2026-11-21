@@ -1967,6 +1967,8 @@
 
 .foldList {
     display: grid;
+    /* 열 폭을 칸 폭에 고정합니다. 공백 없이 길게 이어진 낱말 목록('A'·'B'·'C'…)이 있어도 목록이 칸 밖으로 밀려 나가지 않게 합니다. */
+    grid-template-columns: minmax(0, 1fr);
     gap: 3px;
     margin-top: 4px;
     list-style: none;
@@ -1974,13 +1976,63 @@
 
 .foldList li {
     display: grid;
+    grid-template-columns: minmax(0, 1fr);
     gap: 2px;
+    min-width: 0;
     padding: 8px 12px;
     font-size: 13px;
     line-height: 1.55;
     color: var(--ink-2);
     background: var(--raised-2);
     border-radius: var(--r);
+    overflow-wrap: anywhere;
+}
+
+/* 메뉴판 품목에서 나온 말을 한 묶음으로 접어 둔 줄: 낱말은 한 문단으로 보이고, 말마다의 까닭은 펼쳐서 읽습니다. */
+.foldNestedBtn {
+    justify-self: start;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 36px;
+    margin-top: 2px;
+    padding: 0 10px 0 6px;
+    font: inherit;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--ink-2);
+    background: none;
+    border: 0;
+    border-radius: var(--r);
+    cursor: pointer;
+    transition: color 0.15s ease, background-color 0.15s ease;
+}
+
+.foldNestedBtn:hover {
+    color: var(--ink);
+    background: var(--sunk);
+}
+
+.foldNestedBtn svg {
+    flex-shrink: 0;
+    transition: transform 0.3s var(--ease);
+}
+
+.foldNestedBtn[aria-expanded='true'] svg {
+    transform: rotate(180deg);
+}
+
+.foldNested {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 3px;
+    margin-top: 4px;
+    list-style: none;
+}
+
+.foldList .foldNested li {
+    background: transparent;
+    border: 1px solid var(--hair);
 }
 
 .foldList b {
@@ -4055,7 +4107,14 @@
     .kpis dt,
     .source,
     .graphBtn,
-    .loadingText li {
+    .loadingText li,
+    .tickerSum small,
+    .reason[data-kind='note'] {
         font-size: 13px;
+    }
+
+    /* 문장으로 된 근거 칩(두 번째 칸 이유 등)은 줄이 여러 개가 되므로 줄 간격도 넉넉히 */
+    .reason[data-kind='note'] {
+        line-height: 1.5;
     }
 }

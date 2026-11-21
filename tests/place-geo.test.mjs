@@ -928,6 +928,22 @@ test('GEO 신호 지수는 같은 목록 안 백분위 평균이고 내 매장 �
     assert.equal(result.mine, 0);
     assert.equal(result.position, 3);
     assert.equal(result.top5Average, Math.round((100 + byName.B) / 2));
+    // 평균은 내 매장을 뺀 곳의 평균이라, 몇 곳의 평균인지(내가 5위 안이면 4곳이 최대)를 함께 준다
+    assert.equal(result.top5Count, 2);
+    assert.equal(result.tied, 0);
+    // 지수가 같으면 같은 자리(공동): 폰 6차 "내 매장 42 · 5곳 중 4번째"는 같은 42 인 다른 곳이 앞에 있어 4번째로 밀려 읽혔다
+    const tie = compareGeoSignals({ keyword: 'k', top: [
+        { rank: 1, placeId: 'a', name: 'a', visitorReviews: 900, blogReviews: 300 },
+        { rank: 2, placeId: 'b', name: 'b', visitorReviews: 100, blogReviews: 20 },
+        { rank: 3, placeId: '777', name: '내 매장', isTarget: true, visitorReviews: 100, blogReviews: 20 },
+        { rank: 4, placeId: 'd', name: 'd', visitorReviews: 800, blogReviews: 250 },
+        { rank: 5, placeId: 'e', name: 'e', visitorReviews: 10, blogReviews: 2 },
+    ], target: null });
+    const byTie = Object.fromEntries(tie.rows.map((row) => [row.name, row.index]));
+    assert.equal(byTie.b, byTie['내 매장']);
+    assert.equal(tie.position, 3); // 나보다 높은 곳 a·d 둘 + 1 (b 와 같은 자리)
+    assert.equal(tie.tied, 1);
+    assert.equal(tie.top5Count, 4);
     assert.equal(compareGeoSignals(null), null);
     assert.equal(compareGeoSignals({ top: [] }), null);
 });

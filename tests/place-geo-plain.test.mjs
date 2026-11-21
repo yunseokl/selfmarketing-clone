@@ -158,6 +158,32 @@ test('반영 시간은 "어림값"이라고 쉬운 말로 적고, 효과를 단�
     }
 });
 
+// 노트북 심사: AI 가 무엇을 한다고 단정하는 문장("~이 됩니다"·"~하지 못합니다")은 "~일 수 있습니다"로 쓴다. 세 업종 모두 본다.
+test('AI 검색 글은 AI 의 동작을 단정하지 않는다(될 수 있다·보인다로 쓴다)', () => {
+    const claims = [
+        '"공식 설명"이 됩니다', '"답변 문장"이 됩니다', '다른 매장을 다시 찾지 않아도 됩니다', 'AI가 읽지 못합니다', 'AI가 헷갈리지 않습니다',
+        '요약할 문장이 늘어납니다', '요약할 문장이 자연스럽게 늘어납니다', '손님 불만으로 이어집니다', '틀린 정보를 퍼뜨립니다', '같은 매장으로 묶습니다', '유사 문서로 처리됩니다', '저품질·스팸으로 처리됩니다',
+        '모든 AI가 매장을 같은 실체로 알아보는 기본값입니다', '요약할 문장이 없습니다',
+    ];
+    for (const [name, sample] of SAMPLES) {
+        const analysis = analyzeGeoAeo({ place: sample.place, activity: sample.activity, ranks: sample.ranks ?? null, nowMs: NOW });
+        const strategies = buildQuickStrategies(sample.place, sample.activity, { atomic: analysis.atomic, fanout: analysis.fanout, nowMs: NOW });
+        const joined = [...strings(strategies), ...strings(analysis.actions), ...strings(analysis.geo), ...strings(analysis.aeo), ...strings(analysis.templates), ...strings(analysis.avoid || []), ...strings(analysis.checklist || [])].join('\n');
+        // (검사 대상이 비어 있어서 통과하는 일이 없게, 고친 문장이 실제로 이 글들 안에 있는지도 한 번 본다)
+        assert.equal(joined.includes('수 있습니다'), true, `${name}: 검사 대상 글이 비어 있음`);
+        for (const claim of claims) assert.equal(joined.includes(claim), false, `${name}: ${claim}`);
+    }
+});
+
+// 노트북 심사: 숫자 굴림 칸의 0123456789 가 글 추출·화면 낭독에 "0개 0123456789 개"처럼 섞였다. 굴림용 숫자열은 CSS 내용으로만 그린다.
+test('카드의 숫자 굴림 칸은 숫자열을 글자로 두지 않는다(읽히는 값은 srOnly 의 실제 값 하나)', () => {
+    const source = readFileSync(new URL('../app/dashboard/place-insight/graph/Inspector.js', import.meta.url), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').split('\n').filter((line) => !/^\s*\/\//.test(line)).join('\n');
+    assert.equal(source.includes('0123456789'), false, 'Inspector.js 에 굴림용 숫자열이 글자로 남아 있음');
+    assert.equal(/className=\{styles\.srOnly\}>\{text\}</.test(source), true, '읽히는 값(srOnly)이 있어야 함');
+    const css = readFileSync(new URL('../app/dashboard/place-insight/graph/Inspector.module.css', import.meta.url), 'utf8');
+    assert.equal(/\.rollStrip::before\s*\{[^}]*content:\s*'0\\A 1\\A 2/.test(css), true, '굴림용 숫자열은 CSS content 로 그려야 함');
+});
+
 // 화면 파일(JSX)에 적힌 글자에도 내부 자료 이름·옛 탭 이름·업계 용어 원문이 남지 않아야 합니다(주석은 제외).
 test('AI 검색 화면 파일의 글자에는 내부 자료 이름·옛 탭 이름이 남아 있지 않다', () => {
     const dir = new URL('../app/dashboard/place-insight/', import.meta.url);
@@ -167,6 +193,45 @@ test('AI 검색 화면 파일의 글자에는 내부 자료 이름·옛 탭 이�
         const source = readFileSync(new URL(name, dir), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').split('\n').filter((line) => !/^\s*\/\//.test(line)).join('\n');
         for (const word of forbidden) assert.equal(source.includes(word), false, `${name} 에 "${word}" 가 남아 있음`);
     }
+});
+
+// 폰 6차: 제목·타일·세부 항목 이름에는 약어(GEO·AEO)를 쓰지 않고, 구역 설명 한 줄에서 한 번만 풀어 줍니다. 제목에는 WebSub·Gist 같은 도구 이름도 올리지 않습니다.
+test('GEO·AEO 약어는 구역 설명에 한 번만 나오고, 카드 제목에는 WebSub·Gist 가 없다', () => {
+    const dir = new URL('../app/dashboard/place-insight/', import.meta.url);
+    const stripped = (name) => readFileSync(new URL(name, dir), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').split('\n').filter((line) => !/^\s*\/\//.test(line) && !/console\.error/.test(line)).join('\n');
+    const files = ['GeoAeoPanel.js', 'GeoSections.js', 'QuickGeoPanel.js', 'SomTracker.js'];
+    const found = files.flatMap((name) => (stripped(name).match(/\b(?:GEO|AEO)\b/g) || []).map(() => name));
+    assert.deepEqual(found, ['GeoSections.js', 'GeoSections.js']); // 'GEO·AEO' 한 번(GEO 와 AEO 한 쌍)
+    assert.ok(stripped('GeoSections.js').includes('업계에서는 이 점검을 GEO·AEO라고 부릅니다'));
+    for (const [name, sample] of SAMPLES) {
+        const { strategies } = everyText(sample.place, sample);
+        for (const card of strategies) {
+            assert.equal(/WebSub|Gist/.test(card.title), false, `${name}: 제목에 도구 이름 — ${card.title}`);
+        }
+    }
+});
+
+// 노트북·폰 6차: 약국·병의원·미용실의 AI 검색 구역 전체에 음식점 말 '메뉴'가 남지 않습니다(스마트플레이스의 '메뉴판'·'메뉴 탭', 구글의 Q&A '메뉴',
+// 따옴표 안의 자료는 예외). 업종 말은 약국 '취급 품목·서비스', 병의원·동물병원 '진료 과목·서비스', 미용실 '시술'.
+test('약국·병의원·미용실의 AI 검색 글에는 음식점 말 "메뉴"가 남지 않고 조사가 맞는다', () => {
+    const keep = ['메뉴판', '메뉴 탭', '메뉴탭', "Q&A' 메뉴", '따라 메뉴가'];
+    const bare = (text) => keep.reduce((value, phrase) => value.split(phrase).join(''), text).replace(/[‘'“"][^‘’'“”"\n]{1,40}[’'”"]/g, '');
+    const clinic = { ...PHARMACY, place: { ...PHARMACY.place, name: '시험내과의원', category: '내과' } };
+    const pet = { ...PHARMACY, place: { ...PHARMACY.place, name: '시험동물병원', category: '동물병원' } };
+    for (const [name, sample] of [['약국', PHARMACY], ['병의원', clinic], ['동물병원', pet], ['미용실', SALON]]) {
+        const { texts } = everyText(sample.place, sample);
+        const left = texts.filter((text) => /메뉴/.test(bare(text)));
+        assert.deepEqual(left, [], `${name}: 업종과 안 맞는 '메뉴'가 남음`);
+        // 조사(받침에 맞게): "대표 취급 품목·서비스를", "대표 시술을"
+        const wrong = texts.filter((text) => /(서비스|진료 과목·서비스)(을|은|이|과)(?![가-힣])|시술(를|는|가|와)(?![가-힣])/.test(text));
+        assert.deepEqual(wrong, [], `${name}: 조사가 안 맞음`);
+    }
+    const salon = analyzeGeoAeo({ place: SALON.place, activity: SALON.activity, ranks: SALON.ranks ?? null, nowMs: NOW });
+    assert.ok(salon.fanout.some((item) => item.question.endsWith('대표 시술은 무엇인가요?')));
+    assert.ok(salon.geo.factors.some((factor) => factor.label === '최신성(최근 리뷰·소식·시술)'));
+    // 음식점은 그대로 '메뉴'
+    const restaurant = analyzeGeoAeo({ place: RESTAURANT.place, activity: RESTAURANT.activity, ranks: RESTAURANT.ranks ?? null, nowMs: NOW });
+    assert.ok(restaurant.geo.factors.some((factor) => factor.label === '최신성(최근 리뷰·소식·메뉴)'));
 });
 
 // 가게를 한마디로 설명하는 자리(한 줄 소개·질문·제목·소개글)의 대표 메뉴는 키워드 추천이 뺀 낱말(횟집의 김밥)을 쓰지 않습니다.

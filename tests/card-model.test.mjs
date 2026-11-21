@@ -406,6 +406,24 @@ test('추천 이유: 이을 점이 하나도 없으면 연결 묶음이 없어�
     assert.deepEqual(model.groups[at].triple, { subject: null, predicate: '추천 이유가 됨', object: '강남횟집', symmetric: false });
 });
 
+test('추천 이유: 이유 문장이 칩 문구를 앞머리만 붙여 되풀이하면 설명 줄을 그리지 않고, 더 알려 주는 문장은 그대로 둔다', () => {
+    const graph = sample();
+    const links = graph.links.map((link) => {
+        if (link.rel !== 'supports' || link.target !== 'kw:a') return link;
+        if (link.source === 'rm:1') return { ...link, why: "'강남횟집' 추천 이유: 리뷰 22회." };
+        return link;
+    });
+    const node = { ...graph.nodeById.get('kw:a'), reasons: [
+        { kind: 'review', text: '리뷰 22회', sources: ['rm:1'] },
+        { kind: 'blog', text: '블로그 25/52', sources: ['bt:1'] },
+    ] };
+    const nodeById = new Map(graph.nodeById).set(node.id, node);
+    const model = buildCardModel({ node, links, nodeById, ontology: SCHEMA, groupNames: NAMES });
+    const items = model.groups.find((group) => group.rel === 'supports' && group.direction === 'in').items;
+    assert.equal(items[0].why, ''); // 칩과 같은 말뿐이라 지움
+    assert.equal(items[1].why, "블로그 25개에 나온 '숙성회'가 추천 이유입니다."); // 칩에 없는 설명은 둠
+});
+
 test('추천 이유: reasons 가 없는 점은 지금까지처럼 연결로 그린다', () => {
     const graph = sample();
     const model = buildCardModel({ node: graph.nodeById.get('kw:a'), links: graph.links, nodeById: graph.nodeById, ontology: SCHEMA, groupNames: NAMES });

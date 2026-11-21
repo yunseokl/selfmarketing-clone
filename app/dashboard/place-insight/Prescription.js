@@ -123,14 +123,20 @@ export const TABLE_WHOLE_MAX = 10;
 // 그러면 앞 쪽 아래가 너무 비는 문서만(쪽 아래 빈 공간 25% 이내가 우선) 앞 2줄·뒤 2줄을 지키며 쪽을 넘겨 이어지게 합니다(문서의 data-split).
 export const EXCLUDED_CHUNK_MIN = 5;
 
-function rowChunks(rows, whole = TABLE_WHOLE_MAX) {
+// edge: 앞·뒤에 한 묶음으로 남기는 줄 수(기본 2, 나눌 수 있는 표는 3)
+function rowChunks(rows, whole = TABLE_WHOLE_MAX, edge = 2) {
     if (rows.length <= whole) return [rows];
-    return [rows.slice(0, 2), rows.slice(2, rows.length - 2), rows.slice(-2)].filter((chunk) => chunk.length > 0);
+    return [rows.slice(0, edge), rows.slice(edge, rows.length - edge), rows.slice(-edge)].filter((chunk) => chunk.length > 0);
 }
 
 function chunkClass(index, total) {
     return total === 1 || index === 0 || index === total - 1 ? styles.rowKeep : undefined;
 }
+
+// 쪽을 넘겨 이어질 수 있는 표(나눔 방식 true)는 앞 3줄·뒤 3줄이 한 묶음(rowChunks)이라 6줄 이상일 때만 나눕니다. 5줄 이하 표는 어느 방식에서도
+// 통째로 움직여 "3줄/2줄"·"2줄/1줄"처럼 한두 줄만 따로 떨어지지 않습니다(쪽 아래가 비면 다른 간격 배율을 고릅니다).
+const SPLIT_EDGE = 3;
+const SPLIT_MIN_ROWS = SPLIT_EDGE * 2;
 
 // 3줄 이하 표가 든 묶음은 통째로(제목·표·풀이가 한 쪽에), 더 긴 표는 위 묶음으로 나눠 끊습니다.
 function partClass(rowCount, extra, whole = TABLE_WHOLE_MAX) {
@@ -210,6 +216,8 @@ function WeekTasks({ week, index }) {
 }
 
 function Slots({ slots, index }) {
+    // 표 아래 한 줄: 아직 조회하지 않은 순위 안내(바꿀 칸이 있으면 그 키워드 이름과 함께) · 순위를 아직 하나도 조회하지 않았을 때의 다음 행동 · 근거 약한 채움 안내
+    const slotNote = [slots.unranked.length > 0 ? slots.unrankedText : '', slots.rankText, slots.weakText].filter(Boolean).join(' ');
     return (
         <section className={styles.block}>
             <BlockTitle index={index} note={slotsNote(slots)}>대표키워드 5칸 최종안</BlockTitle>
@@ -251,13 +259,7 @@ function Slots({ slots, index }) {
                     )}
                 </tbody>
             </table>
-            {((slots.unranked.length > 0 && slots.unrankedText) || slots.weakText) && (
-                <p className={styles.note}>
-                    {slots.unranked.length > 0 && slots.unrankedText ? slots.unrankedText : ''}
-                    {slots.unranked.length > 0 && slots.unrankedText && slots.weakText ? ' ' : ''}
-                    {slots.weakText || ''}
-                </p>
-            )}
+            {slotNote && <p className={styles.note}>{slotNote}</p>}
             {/* I. 이유 칸에 쓴 약어의 풀이(이 쪽만 떼어 줘도 읽히게) */}
             {slots.legend?.length > 0 && (
                 <p className={styles.legend}>
@@ -475,7 +477,7 @@ function DraftBody({ draft }) {
             );
         case 'menu':
             return (
-                <div className={draft.rows.length >= 4 ? `${styles.draftItem} ${styles.splitPart}` : styles.draftItem}>
+                <div className={draft.rows.length >= SPLIT_MIN_ROWS ? `${styles.draftItem} ${styles.splitPart}` : styles.draftItem}>
                     <table className={`${styles.table} ${styles.tableTight} ${styles.tableFlush}`}>
                         <thead>
                             <tr>
@@ -496,8 +498,8 @@ function DraftBody({ draft }) {
                             ))}
                         </tbody>
                     </table>
-                    {draft.form && <p className={styles.draftNote}><b>쓰는 꼴</b> ‘{draft.form}’ — ○○ 자리에 사실대로 적습니다(○○는 자리표시일 뿐 이 매장의 사실이 아닙니다).</p>}
-                    <p className={styles.draftNote}>어느 것에 이미 설명이 있는지는 조회한 자료로 알 수 없어, 설명이 비어 있는 것만 채우세요.</p>
+                    {draft.model && <p className={styles.draftNote}><b>{draft.model.head}</b> — {draft.model.text}</p>}
+                    {draft.note && <p className={styles.draftNote}>{draft.note}</p>}
                 </div>
             );
         case 'list':
@@ -610,7 +612,7 @@ function Keywords({ section }) {
         <section className={styles.section}>
             <SectionTitle section={section} />
             {section.rows.length > 0 && (
-                <div className={partClass(section.rows.length, section.rows.length >= 3 ? styles.splitPart : undefined)}>
+                <div className={partClass(section.rows.length, section.rows.length >= SPLIT_MIN_ROWS ? styles.splitPart : undefined)}>
                     <h3 className={styles.partTitle}>바꾸는 칸과 근거</h3>
                     <table className={styles.table}>
                         <thead>
@@ -734,7 +736,7 @@ function Keywords({ section }) {
                                     <th scope="row">{row.keyword}</th>
                                     <td>{row.where}</td>
                                     <td>
-                                        {row.sentence || <span className={styles.sub}>(직접 적기)</span>}
+                                        {row.sentence || <span className={styles.sub}>{row.blankWhy || '(직접 적기)'}</span>}
                                         {row.basis.length > 0 && <span className={styles.metricNote}>근거: {row.basis.join(' · ')}</span>}
                                     </td>
                                 </tr>
@@ -788,7 +790,7 @@ function Keywords({ section }) {
             )}
             {section.notes.map((note) => <p key={note} className={styles.note}>{note}</p>)}
             {section.excluded && (
-                <div className={partClass(section.excluded.rows.length, styles.excludedPart)}>
+                <div className={partClass(section.excluded.rows.length, section.excluded.rows.length >= SPLIT_MIN_ROWS ? styles.excludedPart : undefined)}>
                     <h3 className={styles.partTitle}>
                         추천에서 뺀 키워드와 이유
                         {section.excluded.more > 0 && <span>이 밖에 {section.excluded.more}개</span>}
@@ -801,7 +803,7 @@ function Keywords({ section }) {
                                 <th scope="col">이유</th>
                             </tr>
                         </thead>
-                        {rowChunks(section.excluded.rows, EXCLUDED_CHUNK_MIN - 1).map((chunk, index, all) => (
+                        {rowChunks(section.excluded.rows, SPLIT_MIN_ROWS - 1, SPLIT_EDGE).map((chunk, index, all) => (
                             <tbody key={`${chunk[0].label}-${chunk[0].words}`} className={chunkClass(index, all.length)}>
                                 {chunk.map((row) => (
                                     <tr key={`${row.label}-${row.words}`}>
@@ -1075,6 +1077,9 @@ const EMULATE_PAGE_MM = 268;
 const PRINT_PAGE_MM = 271;
 const GAP_OK = 0.2; // 마지막 쪽을 뺀 쪽 아래 빈 공간이 이 비율을 넘으면 감점(목표는 25% 이내지만 어림이 인쇄보다 조금 낙관적이라 더 엄격하게 잼)
 const LAST_MIN = 0.5; // 마지막 쪽이 이만큼은 차야 함
+// 마지막 쪽이 절반에 못 미치는 정도의 가중. 쪽 아래 빈 공간이 20%를 몇 %p 넘는 것(가중 30)과 견줘, 마지막 쪽이 절반 아래로 떨어지는 배율보다
+// 쪽 아래가 20%를 1~2%p 넘는 배율을 고르게 하는 값(긴 견본: 마지막 쪽 46%인 0.85 대신 쪽 아래 21%가 한 곳인 1.2).
+const LAST_WEIGHT = 20;
 
 function emulatePages(article, scale, split) {
     const rest = [...article.children].filter((node) => node.tagName !== 'HEADER' && !node.hasAttribute('data-page1'));
@@ -1116,14 +1121,19 @@ function pageIssues(result) {
     const gaps = result.fill.slice(0, -1).map((fill) => 1 - fill);
     const last = result.fill[result.fill.length - 1];
     // 쪽 아래 빈 공간은 쪽 수보다 앞서 지킵니다(가중 30: 빈 공간이 20%를 6%p 넘는 것이 쪽 하나보다 나쁨). 실제 인쇄와 어림은 몇 %p 어긋날 수 있어 기준을 20%로 엄격하게 둡니다.
-    return gaps.reduce((sum, gap) => sum + Math.max(0, gap - GAP_OK), 0) * 30 + Math.max(0, LAST_MIN - last) * 6;
+    return gaps.reduce((sum, gap) => sum + Math.max(0, gap - GAP_OK), 0) * 30 + Math.max(0, LAST_MIN - last) * LAST_WEIGHT;
 }
 
 function pagePenalty(result) {
     return result ? pageIssues(result) + result.pages * 1 : Infinity;
 }
 
-const SPLIT_COST = 0.8; // 10줄 이하 표를 나누는 것은 쪽 아래가 크게 비는 것보다 덜 나쁘지만 나누지 않는 쪽을 먼저 씁니다.
+// 10줄 이하 표를 나누는 방식(data-split): false 나누지 않음(한 쪽에 통째로, 한두 줄만 따로 떨어지지 않음) · true 나눔(앞 2줄·뒤 2줄은 같은 쪽).
+// 쪽 아래 25% 이내·마지막 쪽 절반 규칙이 먼저라, 나누지 않고는 그 규칙을 못 지키는 문서만 나눕니다(감점이 같으면 나누지 않는 쪽).
+// 줄 사이에 break-after/before: avoid 를 걸거나 tbody 묶음을 늘려 "앞뒤 3줄"을 지키게 하는 방식은 인쇄는 지키지만 쪽 나눔 어림(다단 상자)이
+// 같게 지키지 못해 어림과 인쇄가 어긋나서(어림은 7쪽, 인쇄는 쪽 아래 24%·33%가 빈 9쪽) 쓰지 않습니다.
+const SPLIT_MODES = [false, true];
+const SPLIT_COST = { false: 0, true: 0.8 };
 
 // 쪽 나눔을 재는 데 쓰는 시간의 상한(밀리초). 느린 기기에서 인쇄 창이 늦게 열리지 않게, 넘으면 그때까지 가장 좋았던 값으로 정합니다.
 const FIT_BUDGET_MS = 1500;
@@ -1133,7 +1143,7 @@ function choosePageFit(article) {
     const tries = [];
     const started = typeof performance !== 'undefined' ? performance.now() : 0;
     const overBudget = () => typeof performance !== 'undefined' && performance.now() - started > FIT_BUDGET_MS;
-    for (const split of [false, true]) {
+    for (const split of SPLIT_MODES) {
         for (const scale of SPACING_CHOICES) {
             if (overBudget() && Number.isFinite(best.penalty)) break;
             let result = null;
@@ -1142,8 +1152,8 @@ function choosePageFit(article) {
             } catch {
                 result = null;
             }
-            const penalty = pagePenalty(result) + (split ? SPLIT_COST : 0);
-            tries.push([split ? 1 : 0, scale, result?.pages ?? 0, result ? Math.round(result.fill[result.fill.length - 1] * 100) : 0, Math.round(penalty * 10) / 10]);
+            const penalty = pagePenalty(result) + SPLIT_COST[String(split)];
+            tries.push([SPLIT_MODES.indexOf(split), scale, result?.pages ?? 0, result ? Math.round(result.fill[result.fill.length - 1] * 100) : 0, Math.round(penalty * 10) / 10]);
             // 같은 정도면 먼저 본 것(나누지 않고 1에 가까운 것)을 씁니다.
             if (penalty < best.penalty - 0.05) best = { scale, split, penalty };
             // 처음(간격 1, 표 나누지 않음)부터 쪽 규칙을 모두 지키면 더 찾지 않습니다(인쇄 직전 계산을 짧게).
@@ -1218,7 +1228,7 @@ function PrescriptionDocument({ place, activity, ranks, recommendation, actions,
 
     if (!doc) return null;
     return createPortal(
-        <article ref={articleRef} className={styles.doc} data-prescription="" data-store={storeName} data-scale={scale ?? 1} data-split={split ? 'true' : 'false'} style={{ '--rx-s': scale ?? 1 }} lang="ko">
+        <article ref={articleRef} className={styles.doc} data-prescription="" data-store={storeName} data-scale={scale ?? 1} data-split={String(split)} style={{ '--rx-s': scale ?? 1 }} lang="ko">
             <header className={styles.head}>
                 <div className={styles.headTop}>
                     <h1>{doc.title}</h1>

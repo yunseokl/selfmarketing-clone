@@ -84,7 +84,7 @@ export function GeoStatus({ question, geo, aeo, som, today, onGo, onShowInGraph 
         <div className={styles.status}>
             <div className={styles.statusHead}>
                 <div className={styles.statusTitle}>
-                    <h2><Bot size={18} aria-hidden="true" /> AI 검색 노출 <small className={styles.headTag}>GEO·AEO</small></h2>
+                    <h2><Bot size={18} aria-hidden="true" /> AI 검색 노출</h2>
                     {onShowInGraph && (
                         <button type="button" className={`${base.graphBtn} ${styles.graphBtn}`} onClick={(event) => onShowInGraph('hub:geo', event)} aria-label="AI 검색: 연결 그래프에서 보기">
                             <Waypoints size={14} aria-hidden="true" />
@@ -92,11 +92,11 @@ export function GeoStatus({ question, geo, aeo, som, today, onGo, onShowInGraph 
                         </button>
                     )}
                 </div>
-                <p>손님이 AI에게 <q>{question}</q>을 물을 때 내 매장이 답에 나오는지 봅니다.</p>
+                <p>손님이 AI에게 <q>{question}</q>을 물을 때 내 매장이 답에 나오는지 봅니다. <small className={styles.jargon}>업계에서는 이 점검을 GEO·AEO라고 부릅니다.</small></p>
             </div>
             <ul className={styles.tiles} aria-label="AI 검색 요약">
-                <ScoreTile label="AI 추천 준비" tag="GEO" hint="추천 목록에 들 준비 — 리뷰·출처·기본 정보" score={geo} onClick={() => onGo('diagnosis')} node="geo:score" />
-                <ScoreTile label="AI 답변 준비" tag="AEO" hint="질문에 바로 답할 준비 — 주차·가격·영업시간 같은 세부 질문" score={aeo} onClick={() => onGo('diagnosis')} node="aeo:score" />
+                <ScoreTile label="AI 추천 준비" hint="추천 목록에 들 준비 — 리뷰·출처·기본 정보" score={geo} onClick={() => onGo('diagnosis')} node="geo:score" />
+                <ScoreTile label="AI 답변 준비" hint="질문에 바로 답할 준비 — 주차·가격·영업시간 같은 세부 질문" score={aeo} onClick={() => onGo('diagnosis')} node="aeo:score" />
                 <Tile label="AI 답변 점유율" tag="실제 결과" hint={somHint(som)} go={som ? '다시 재기' : '지금 재기'} onClick={() => onGo('measure')}>
                     {som ? <><CountUp value={som.overall} /><small>%</small><Delta value={som.delta} /></> : '-'}
                     {som?.due && <span className={`${styles.badge} ${styles.fair}`}>다시 잴 때</span>}

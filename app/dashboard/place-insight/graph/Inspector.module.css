@@ -370,14 +370,23 @@
     vertical-align: bottom;
 }
 
+/* 글자(글 추출에 잡히는 텍스트)가 아니라 CSS 내용으로 그립니다. 자릿수마다 한 줄씩 0~9 를 쌓고 translateY 로 올려 보입니다. */
+.rollText::before {
+    content: attr(data-t);
+    white-space: pre;
+}
+
 .rollDigit > span {
     display: block;
     width: 1ch;
-    white-space: normal;
-    word-break: break-all;
     transform: translateY(calc(var(--d) * -10%));
     transition: transform 0.8s var(--k-ease);
     transition-delay: calc(var(--i) * 40ms);
+}
+
+.rollStrip::before {
+    content: '0\A 1\A 2\A 3\A 4\A 5\A 6\A 7\A 8\A 9';
+    white-space: pre;
 }
 
 .rollMark {

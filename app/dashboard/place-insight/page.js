@@ -427,7 +427,7 @@ const IDLE_FEATURES = [
     ['실제 검색 순위', '키워드를 검색했을 때 내 매장이 몇 번째인지 네이버 목록에서 광고를 빼고 셉니다.'],
     ['상위 매장 비교', '상위 10곳의 방문자 리뷰·블로그 리뷰·저장 수를 내 매장과 나란히 놓습니다.'],
     ['지금 할 일', '답글률·소식·영업시간·쿠폰처럼 비어 있거나 오래된 항목을 먼저 할 순서로 정리합니다.'],
-    ['AI 검색 노출 점검', 'ChatGPT·Gemini·Claude·네이버 AI가 내 매장을 추천하고 질문에 답할 재료가 있는지 점수와 개선 제안, 답변 초안으로 보여 줍니다(GEO·AEO).'],
+    ['AI 검색 노출 점검', 'ChatGPT·Gemini·Claude·네이버 AI가 내 매장을 추천하고 질문에 답할 재료가 있는지 점수와 개선 제안, 답변 초안으로 보여 줍니다.'],
 ];
 
 function IdleRail() {
@@ -671,7 +671,7 @@ const RULE_LABEL = {
 
 // 후보(candidates[].lacks)의 꼬리표. 값이 없으면(옛 결과) '자료가 적음', 모르는 값이면 꼬리표를 달지 않습니다.
 //   menu 품목(메뉴판·예약·결제)에서 확인 못 함 · voice 품목에는 있지만 손님 리뷰·상위 매장 키워드에서는 확인 못 함 · share 리뷰 수가 주력 메뉴들에 견줘 적음 · data 자료가 아예 없음
-const LACKS_LABEL = { menu: '품목 자료에 없음', voice: '리뷰·상위 매장에 없음', share: '리뷰 비중 낮음', data: '자료가 적음' };
+const LACKS_LABEL = { menu: '품목 자료에 없음', voice: '리뷰·상위 매장에 없음', share: '리뷰 비중 낮음', data: '자료가 적음', family: '같은 낱말 두 칸 사용 중' };
 
 function lacksLabel(lacks) {
     if (lacks === undefined || lacks === null || lacks === '') return LACKS_LABEL.data;
@@ -696,21 +696,41 @@ function Fold({ id, label, children }) {
     );
 }
 
+// 분류 이름을 손님 말로 바꿔 쓰라는 까닭(spoken.why)이 있으면 그것을 먼저 말하고, 블로그 언급은 뒷받침으로 뒤에 붙입니다.
+// 읽은 블로그 후기마다 나오는 낱말(업종 이름 같은 것)은 개수 비교의 근거가 못 되므로 개수를 적지 않습니다.
+// 까닭이 없는 줄(블로그 개수 비교로만 고른 말)은 예전 문장 그대로입니다.
+function spokenSupport(entry) {
+    const { spoken } = entry;
+    if (!spoken) return null;
+    if (spoken.why) {
+        return spoken.everyPost
+            ? <>블로그 후기에는 &lsquo;{spoken.term}&rsquo; 말이 읽은 후기마다 나옵니다.</>
+            : <>블로그 후기 언급: &lsquo;{entry.keyword}&rsquo; {entry.blog ?? 0}개 · &lsquo;{spoken.term}&rsquo; {spoken.blog}개</>;
+    }
+    if (!spoken.keyword) return null;
+    return spoken.everyPost
+        ? <>&lsquo;{spoken.term}&rsquo; 낱말은 읽은 블로그 후기마다 나오는 흔한 말이라 개수로 견주지 않았습니다.</>
+        : <>블로그 후기 언급: &lsquo;{entry.keyword}&rsquo; {entry.blog ?? 0}개 · &lsquo;{spoken.term}&rsquo; {spoken.blog}개</>;
+}
+
 // 등록한 대표키워드 가운데 쓸모 관문에 걸린 것: 이유와(있으면) 대신 써 볼 말
 function ConcernRow({ entry }) {
     const { concern, spoken, suggest } = entry;
+    // 분류 이름 줄은 spoken.why 가 같은 까닭("…분류 이름이라")을 이미 말하므로 concern.reason 을 되풀이하지 않습니다.
+    const reasonShown = !(spoken?.why && concern.rule === 'classification');
+    const support = spokenSupport(entry);
     return (
         <li>
             <p className={styles.foldHead}>
                 <strong>{entry.keyword}</strong>
                 <span className={styles.ruleTag}>{ruleLabel(concern.rule, '확인 필요')}</span>
             </p>
-            <p>{concern.reason}</p>
+            {spoken?.why && <p>{spoken.why}</p>}
+            {reasonShown && <p>{concern.reason}</p>}
             {spoken?.keyword ? (
-                // 읽은 블로그 후기마다 나오는 낱말(업종 이름 같은 것)은 개수 비교의 근거가 못 되므로 개수를 적지 않습니다.
-                spoken.everyPost
-                    ? <p>대신 써 볼 말 <b>{spoken.keyword}</b> · &lsquo;{spoken.term}&rsquo; 낱말은 읽은 블로그 후기마다 나오는 흔한 말이라 개수로 견주지 않았습니다.</p>
-                    : <p>대신 써 볼 말 <b>{spoken.keyword}</b> · 블로그 후기 언급 &lsquo;{entry.keyword}&rsquo; {entry.blog ?? 0}개, &lsquo;{spoken.term}&rsquo; {spoken.blog}개</p>
+                <p>대신 써 볼 말 <b>{spoken.keyword}</b>{support && <> · {support}</>}</p>
+            ) : spoken?.why && support ? (
+                <p>{support}</p>
             ) : suggest ? (
                 <p>대신 써 볼 말 <b>{suggest}</b></p>
             ) : null}
@@ -783,9 +803,12 @@ function byRegion(entries) {
 
 // 추천에서 뺀 키워드 한 줄. 사실(lead)·이유(why)가 있으면 "사실 한 줄 / 이유 한 줄 / 쓰기 좋은 곳(useIn)" 세 줄로,
 // 없으면(옛 결과·다른 규칙) 이유 한 문장 reason 을 그대로 그립니다. 새 필드가 없어도 깨지지 않습니다.
+// '낱말'·'낱말'·'낱말' 처럼 공백 없이 가운뎃점으로만 이어진 긴 목록이 한 덩어리로 안 접히지 않게, 가운뎃점 뒤에 줄바꿈 자리(보이지 않는 공백)를 둡니다.
+const softWrap = (text) => text.replace(/·/g, '·​');
+
 function ExcludedRow({ entry }) {
-    const lead = typeof entry.lead === 'string' ? entry.lead.trim() : '';
-    const why = typeof entry.why === 'string' ? entry.why.trim() : '';
+    const lead = typeof entry.lead === 'string' ? softWrap(entry.lead.trim()) : '';
+    const why = typeof entry.why === 'string' ? softWrap(entry.why.trim()) : '';
     const useIn = Array.isArray(entry.useIn) ? entry.useIn.filter((place) => typeof place === 'string' && place) : [];
     const split = Boolean(lead || why);
     return (
@@ -806,7 +829,7 @@ function ExcludedRow({ entry }) {
                     )}
                 </>
             ) : (
-                <p>{entry.reason}</p>
+                <p>{softWrap(String(entry.reason || ''))}</p>
             )}
             {entry.keywords?.length > 0 && (
                 // 예는 둘까지만 보여 폰에서 한 줄이 길어지지 않게 합니다(나머지는 개수로).
@@ -821,13 +844,41 @@ function ExcludedRow({ entry }) {
 
 // 추천에서 뺀 키워드: 낱말(내 순위가 낮은 지역은 지역 이름)마다 이유 한 문장.
 // 개수가 많은 '지역만 바꾼 조합'만 맨 아래에 한 줄로 묶습니다(펼침 줄의 개수 = 낱말 줄 수 + 묶음 안의 낱말 수).
+// 메뉴판에 한 줄뿐인 품목에서 나온 말(board)이 셋 이상이면 낱말만 한 문단으로 보이는 한 줄로 묶고, 말마다의 까닭은 펼쳐서 읽게 합니다.
+// (줄마다 까닭이 달라 묶음 제목에서 까닭을 하나로 말하지 않습니다. 둘 이하면 묶지 않고 다른 줄처럼 그립니다.)
+const BOARD_GROUP_MIN = 3;
+
 function ExcludedFold({ excluded }) {
+    const [boardOpen, setBoardOpen] = useState(false);
     if (!excluded?.length) return null;
     const region = excluded.filter((entry) => entry.rule === 'region');
-    const single = excluded.filter((entry) => entry.rule !== 'region');
+    const rest = excluded.filter((entry) => entry.rule !== 'region');
+    const boardAll = rest.filter((entry) => entry.board === true);
+    const grouped = boardAll.length >= BOARD_GROUP_MIN;
+    const board = grouped ? boardAll : [];
+    const single = grouped ? rest.filter((entry) => entry.board !== true) : rest;
     return (
         <Fold id="kw-excluded" label={`추천에서 뺀 키워드 ${excluded.length}개`}>
             {single.map((entry) => <ExcludedRow key={`${entry.rule}-${entry.term}`} entry={entry} />)}
+            {board.length > 0 && (
+                <li>
+                    <p className={styles.foldHead}>
+                        <strong>메뉴판 품목에서 나온 말</strong>
+                        <span className={styles.ruleTag}>낱말 {board.length}개</span>
+                    </p>
+                    <p>메뉴판에 한 줄로 올라 있는 품목에서 나온 말입니다. 말마다 까닭이 달라 아래 단추로 펼쳐서 읽을 수 있습니다.</p>
+                    <p className={styles.foldWords}>{board.map((entry) => entry.term).join(' · ')}</p>
+                    <button type="button" className={styles.foldNestedBtn} aria-expanded={boardOpen} aria-controls="kw-excluded-board" onClick={() => setBoardOpen((prev) => !prev)}>
+                        <ChevronDown size={16} aria-hidden="true" />
+                        {boardOpen ? '까닭 접기' : `말마다 까닭 보기 (${board.length}개)`}
+                    </button>
+                    {boardOpen && (
+                        <ul id="kw-excluded-board" className={styles.foldNested}>
+                            {board.map((entry) => <ExcludedRow key={`${entry.rule}-${entry.term}`} entry={entry} />)}
+                        </ul>
+                    )}
+                </li>
+            )}
             {region.length > 0 && (
                 <li>
                     <p className={styles.foldHead}>
@@ -905,7 +956,7 @@ const EMPTY_NOTE = {
 };
 
 // 추천 키워드: 지역 + 업종(메뉴·서비스) 조합과 근거. 누르면 그 키워드의 순위를 순위 표에 덧붙여 조회합니다.
-function KeywordReco({ recommendation, ranks, rankPick, comparing, ranking, unavailable, canCompare, feedOk = true, onRank, onRankAll, onCompare, onCopy }) {
+function KeywordReco({ recommendation, ranks, rankPick, rivalRegistered = null, comparing, ranking, unavailable, canCompare, feedOk = true, onRank, onRankAll, onCompare, onCopy }) {
     const [more, setMore] = useState(false);
     // 그래프에서 고른 추천 키워드가 '더 보기' 뒤에 접혀 있으면 펼칩니다.
     useUnfold(
@@ -931,14 +982,18 @@ function KeywordReco({ recommendation, ranks, rankPick, comparing, ranking, unav
             : null;
     const shown = more ? items : items.slice(0, RECO_SHOWN);
     const rankOf = new Map(ranks.map((row) => [row.keyword, row]));
-    const unranked = items.filter((item) => !rankOf.has(item.keyword)).slice(0, MAX_KEYWORDS);
+    const unrankedAll = items.filter((item) => !rankOf.has(item.keyword));
+    // 순위 조회는 한 번에 MAX_KEYWORDS 개까지라, 안 본 것이 더 많으면 단추에 전체 수와 이번에 보는 수를 함께 적습니다.
+    const unranked = unrankedAll.slice(0, MAX_KEYWORDS);
     const swaps = registered.filter((entry) => regionStatusOf(entry) === 'none' && (entry.suggest || entry.spoken?.keyword));
     // '이미 지역과 업종을 잘 담고 있습니다'는 등록 키워드 모두가 지역을 확인했고 살펴볼 점이 없을 때만 말합니다(위 안내와 어긋나지 않게).
     const allClean = registered.every((entry) => !entry.concern && regionStatusOf(entry) === 'known');
     // 추천은 없는데 후보가 있으면 "왜 추천이 없고 아래 말은 무엇인지"가 한 흐름으로 읽히게 이어 줍니다.
     const candidateRows = candidates.filter((entry) => entry && typeof entry.keyword === 'string' && entry.keyword).slice(0, 8);
     // 후보가 모두 '자료가 아예 없음'이면 까닭을 여기서 한 번만 말하고(후보 줄은 낱말·근거 칩만), 아니면 후보 줄마다 까닭을 보입니다.
-    const dataOnly = items.length === 0 && candidateRows.length > 0 && candidateRows.every((entry) => entry.lacks === 'data');
+    // (추천이 0개이거나, 순위 확인용 칩만 있어 lib 가 emptyReason 을 준 경우)
+    const emptyShown = items.length === 0 || Boolean(emptyReason);
+    const dataOnly = emptyShown && candidateRows.length > 0 && candidateRows.every((entry) => entry.lacks === 'data');
     const emptyBase = emptyReason === 'enough' && (!allClean || dataOnly) ? '새로 추천할 조합이 없습니다.' : (EMPTY_NOTE[emptyReason] || EMPTY_NOTE.unknown);
     const candidateNote = candidateRows.length === 0
         ? ''
@@ -955,13 +1010,15 @@ function KeywordReco({ recommendation, ranks, rankPick, comparing, ranking, unav
         const text = String((entry.why || entry.reason || '')).trim();
         return !(text && concernTexts.has(text));
     });
+    const headCount = emptyReason ? items.filter((item) => item.registrable).length : items.length;
     return (
         <div id="kw-reco" className={`${styles.reco} ${styles.rise}`} style={{ '--d': 2 }}>
             <div className={styles.recoHead}>
                 <h3>
                     <Lightbulb size={16} aria-hidden="true" />
                     추천 키워드
-                    {items.length > 0 && <span className={styles.slotCount}>{items.length}</span>}
+                    {/* 엔진이 '등록할 수 있는 추천 0개'라는 까닭(emptyReason)을 줄 때는 순위 확인용 칩을 세지 않습니다. 아래 '새로 추천할 조합이 없습니다'와 어긋나지 않게 합니다. */}
+                    {headCount > 0 && <span className={styles.slotCount}>{headCount}</span>}
                 </h3>
                 <p>
                     주소·업종·리뷰·블로그 후기에 나온 말로 만든 &lsquo;지역 + 업종&rsquo; 조합입니다. 검색량은 알 수 없으니 순위를 먼저 확인한 뒤 대표키워드·소개글{feedOk ? '·소식' : ''}에 넣어 보세요.
@@ -1020,6 +1077,9 @@ function KeywordReco({ recommendation, ranks, rankPick, comparing, ranking, unav
             ) : items.length === 0 ? (
                 <p className={styles.note}>{emptyNote.replace('FEED_WORD', feedOk ? '소식·' : '')}</p>
             ) : (
+                <>
+                {/* 등록할 수 있는 추천이 하나도 없는데 '순위 확인용' 칩만 있는 경우에도 까닭(emptyReason)을 한 줄 먼저 말합니다. */}
+                {emptyReason && <p className={styles.note}>{emptyNote.replace('FEED_WORD', feedOk ? '소식·' : '')}</p>}
                 <ol className={styles.recoList}>
                     {shown.map((item, index) => {
                         const row = rankOf.get(item.keyword);
@@ -1052,6 +1112,7 @@ function KeywordReco({ recommendation, ranks, rankPick, comparing, ranking, unav
                         );
                     })}
                 </ol>
+                </>
             )}
 
             {swaps.length > 0 && (
@@ -1062,9 +1123,7 @@ function KeywordReco({ recommendation, ranks, rankPick, comparing, ranking, unav
                             <ChevronRight size={14} aria-hidden="true" />
                             {entry.spoken?.keyword ? (
                                 <span>
-                                    {entry.spoken.everyPost
-                                        ? <><b>{entry.spoken.keyword}</b> — &lsquo;{entry.spoken.term}&rsquo; 낱말은 읽은 블로그 후기마다 나오는 흔한 말이라 개수로 견주지 않았습니다.</>
-                                        : <><b>{entry.spoken.keyword}</b> — 블로그 후기 언급: &lsquo;{entry.keyword}&rsquo; {entry.blog ?? 0}개 · &lsquo;{entry.spoken.term}&rsquo; {entry.spoken.blog}개</>}
+                                    <b>{entry.spoken.keyword}</b> — {entry.spoken.why ? <>{entry.spoken.why} </> : null}{spokenSupport(entry)}
                                 </span>
                             ) : (
                                 <span><b>{entry.suggest}</b> — 지역을 붙이면 순위를 정확히 확인할 수 있습니다.</span>
@@ -1077,9 +1136,17 @@ function KeywordReco({ recommendation, ranks, rankPick, comparing, ranking, unav
             {items.length > 0 && (
                 <div className={styles.recoFoot}>
                     {unranked.length > 0 && (
-                        <button type="button" className={styles.secondaryBtn} onClick={() => onRankAll(unranked.map((item) => item.keyword))} disabled={ranking || unavailable}>
+                        <button
+                            type="button"
+                            className={styles.secondaryBtn}
+                            onClick={() => onRankAll(unranked.map((item) => item.keyword))}
+                            disabled={ranking || unavailable}
+                            title={unrankedAll.length > unranked.length ? `한 번에 ${MAX_KEYWORDS}개까지 조회합니다. 끝나면 남은 ${unrankedAll.length - unranked.length}개를 이어서 조회할 수 있습니다.` : undefined}
+                        >
                             <Search size={16} aria-hidden="true" />
-                            아직 안 본 {unranked.length}개 순위 조회
+                            {unrankedAll.length > unranked.length
+                                ? `아직 안 본 ${unrankedAll.length}개 중 ${unranked.length}개 순위 조회`
+                                : `아직 안 본 ${unranked.length}개 순위 조회`}
                         </button>
                     )}
                     <button type="button" className={styles.secondaryBtn} onClick={() => onCopy(items.filter((item) => item.registrable).map((item) => item.keyword))}>
@@ -1104,7 +1171,12 @@ function KeywordReco({ recommendation, ranks, rankPick, comparing, ranking, unav
             {regions.length > 0 && <ExcludedFold excluded={excludedShown} />}
             <p className={styles.note}>
                 {rivalCount > 0
-                    ? `상위 매장 ${rivalCount}곳이 등록한 대표키워드와 비교한 결과입니다. `
+                    // 읽은 상위 매장 가운데 대표키워드를 등록한 곳만 셉니다('등록 안 함'인 곳은 비교할 것이 없음).
+                    ? (rivalRegistered === null || rivalRegistered === rivalCount
+                        ? `상위 매장 ${rivalCount}곳이 등록한 대표키워드와 비교한 결과입니다. `
+                        : rivalRegistered === 0
+                            ? `상위 매장 ${rivalCount}곳을 읽었지만 등록한 대표키워드가 없어 비교할 것이 없습니다. `
+                            : `상위 매장 ${rivalCount}곳 가운데 대표키워드를 등록한 ${rivalRegistered}곳과 비교한 결과입니다. `)
                     : comparing ? '상위 매장의 대표키워드를 읽어 비교하는 중입니다. ' : ''}
                 &lsquo;맛집&rsquo;·&lsquo;잘하는&rsquo; 같은 홍보성 표현은 대표키워드 등록이 거절될 수 있어 &lsquo;순위 확인용&rsquo;으로만 표시합니다.
                 지역명이 들어간 대표키워드는 네이버가 수정할 수 있으니 소개글{feedOk ? '·소식' : ''}에도 같은 표현을 함께 쓰세요.{' '}
@@ -1804,7 +1876,7 @@ function OpsSection({ place, activity }) {
                         {na.booking ? `예약 — ${notApplicableTag('booking')}` : detail.hasBooking === null ? '예약 확인 불가' : detail.hasBooking ? '네이버 예약 연결됨' : '네이버 예약 없음'}
                         {!na.booking && detail.bookingItemCount > 0 ? ` (예약 상품 ${formatNumber(detail.bookingItemCount)}개)` : ''}
                         {na.coupon ? ' · 쿠폰 해당 없음' : couponCount !== null && couponCount !== undefined ? ` · 쿠폰 ${formatNumber(couponCount)}개` : ''}
-                        {na.feed ? ' · 소식 해당 없음' : detail.hasFeed !== null ? ` · 소식 ${detail.hasFeed ? `있음${Number.isFinite(feedGap) ? `(마지막 ${feedGap}일 전)` : ''}` : '없음'}` : ''}
+                        {na.feed ? ' · 소식 해당 없음' : detail.hasFeed !== null ? ` · ${detail.hasFeed ? (Number.isFinite(feedGap) ? `소식: 마지막 ${feedGap}일 전` : '소식 있음') : '소식 없음'}` : ''}
                         {naLines.map(([label, reason]) => (
                             <small key={label} className={styles.naReason}>{label}: {reason}</small>
                         ))}
@@ -2555,7 +2627,7 @@ export default function PlaceInsightPage() {
                 <header className={styles.top}>
                     <div className={styles.title}>
                         <h1>플레이스 분석</h1>
-                        <p>매장 주소나 코드 하나로 숨은 대표키워드, 검색 순위, 리뷰·소식 활동, 결제 데이터, AI 검색 노출 점검(GEO·AEO)과 지금 할 일을 한 화면에 모읍니다.</p>
+                        <p>매장 주소나 코드 하나로 숨은 대표키워드, 검색 순위, 리뷰·소식 활동, 결제 데이터, AI 검색 노출 점검과 지금 할 일을 한 화면에 모읍니다.</p>
                     </div>
                     <form className={styles.search} onSubmit={handleSubmit}>
                         <label htmlFor="place-url">플레이스 주소 또는 ID</label>
@@ -2705,6 +2777,7 @@ export default function PlaceInsightPage() {
                                 recommendation={recommendation}
                                 ranks={ranks}
                                 rankPick={rankPick}
+                                rivalRegistered={new Set(rivalPool.filter((rival) => Array.isArray(rival?.keywords) && rival.keywords.length > 0 && String(rival.placeId) !== String(place.placeId)).map((rival) => String(rival.placeId || rival.name))).size}
                                 comparing={comparing}
                                 ranking={ranking}
                                 unavailable={unavailable}

@@ -31,7 +31,14 @@
     letter-spacing: -0.025em;
 }
 
-/* 이름 옆에 작게 붙이는 약어(GEO·AEO) */
+/* 업계 용어 풀이 한 줄(GEO·AEO는 여기에만 한 번 적습니다) */
+.jargon {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--ink-3);
+}
+
+/* 이름 옆에 작게 붙이는 꼬리표('실제 결과') */
 .headTag,
 .tileTag {
     font-size: 12px;

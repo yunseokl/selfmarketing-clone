@@ -271,6 +271,13 @@ function addHints(items, nodeById, ontology) {
 //   이유마다 [{ kind, text, sources[] }]: sources 에 이어 줄 점의 id 가 있으면 그 연결을 가진 항목(눌러 그 점으로 감), 없으면 문장만 있는 항목(id 없음).
 //   같은 이유가 '이 키워드를 추천한 이유'(supports 의 들어오는 연결) 묶음에 또 나와 두 번 세어지지 않게, 그 묶음은 이 목록으로 갈아 끼웁니다.
 //   그 묶음이 없으면(이을 점이 하나도 없음) 갈래 순서에 맞는 자리에 새로 만듭니다.
+// 이유 문장이 앞머리("'○○' 추천 이유:")만 붙인 채 칩 문구를 그대로 되풀이하는지(따옴표·마침표·띄어쓰기 차이는 무시).
+function restatesLabel(why, label) {
+    const body = text(why).replace(/^.*?추천 이유\s*[:：]\s*/, '');
+    const norm = (value) => text(value).replace(/[\s'"‘’“”.,·]/g, '');
+    return Boolean(body) && norm(body) === norm(label);
+}
+
 export function applyReasons(groups, node, ontology) {
     const reasons = Array.isArray(node?.reasons) ? node.reasons.filter((reason) => reason && text(reason.text)) : [];
     if (reasons.length === 0) return groups;
@@ -283,8 +290,9 @@ export function applyReasons(groups, node, ontology) {
         const found = existing ? existing.items.find((item) => sources.includes(item.id) && !taken.has(item.key)) : null;
         if (found) {
             taken.add(found.key);
-            // 연결의 이유 문장(why)은 그대로 두고, 이름은 본문 칩과 같은 문구로 바꿉니다(배지는 같은 말이 되풀이되어 뺌).
-            return { ...found, label, name: label, full: label, lead: false, badge: '', badgeTone: '', hint: sources.length > 1 ? `외 ${sources.length - 1}곳` : '' };
+            // 연결의 이유 문장(why)은 두되, 이름은 본문 칩과 같은 문구로 바꿉니다(배지는 같은 말이 되풀이되어 뺌).
+            // 이유 문장이 칩 문구를 그대로 되풀이할 뿐이면("'강남구청모임' 추천 이유: 단체모임 …37명.") 설명 줄을 그리지 않습니다.
+            return { ...found, label, name: label, full: label, lead: false, badge: '', badgeTone: '', hint: sources.length > 1 ? `외 ${sources.length - 1}곳` : '', why: restatesLabel(found.why, label) ? '' : found.why };
         }
         return {
             key: `reason:${index}`, linkId: null, id: null, group: node.group, type: node.type, label, name: label, full: label,

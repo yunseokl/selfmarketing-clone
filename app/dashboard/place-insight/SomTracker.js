@@ -13,7 +13,7 @@ import {
 } from 'lucide-react';
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { kstDateStamp } from '@/lib/csv';
-import { PLATFORMS, SOM_MENTION, SOM_NONE, SOM_RANKS, brandAliases, somPoints, somRankLabel } from '@/lib/place-geo';
+import { PLATFORMS, SOM_MENTION, SOM_NONE, SOM_RANKS, brandAliases, somPoints, somRankLabel, menuWord, fitMenuText } from '@/lib/place-geo';
 import {
     AI_GUIDES, PROMPT_KINDS, aiOpenUrl, analyzeAnswer, buildPromptSet, dayLabel, isToday, mergeResults, promptFor, rankAdvice,
     remeasureStatus, somCsv, somOf, somReportText, somTrend,
@@ -516,7 +516,7 @@ export default function SomTracker({ place, activity, visible = true, onGo, onOp
                             </table>
                             {extraCount > 0 && (
                                 <button type="button" className={styles.linkBtn} aria-expanded={showExtra} onClick={() => setShowExtra((prev) => !prev)}>
-                                    {showExtra ? '세부 질문 접기' : `세부 질문 ${extraCount}개도 재기 — 메뉴·조건으로 물을 때`}
+                                    {showExtra ? '세부 질문 접기' : `세부 질문 ${extraCount}개도 재기 — ${menuWord(place)}·조건으로 물을 때`}
                                 </button>
                             )}
 
@@ -663,7 +663,7 @@ export default function SomTracker({ place, activity, visible = true, onGo, onOp
                                         <div className={styles.block}>
                                             <h5><Quote size={14} aria-hidden="true" /> AI가 내 매장을 이렇게 설명했습니다</h5>
                                             <blockquote className={styles.quote}>{analysis.quote}</blockquote>
-                                            <p className={styles.hint}>영업시간·가격·메뉴가 지금과 같은지 확인하세요. 다르면 그 정보가 실린 출처 글부터 고칩니다.</p>
+                                            <p className={styles.hint}>{fitMenuText(menuWord(place), '영업시간·가격·메뉴가 지금과 같은지 확인하세요. 다르면 그 정보가 실린 출처 글부터 고칩니다.')}</p>
                                         </div>
                                     )}
 

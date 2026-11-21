@@ -965,6 +965,11 @@
     flex-wrap: wrap;
     gap: 0 8mm;
     margin-top: 1.6mm;
+    /* 구역 제목·설명·점수가 그 아래 질문 표와 다른 쪽으로 갈라지지 않게(점수 줄만 앞 쪽 아래에 남지 않음) */
+    break-after: avoid;
+    page-break-after: avoid;
+    break-inside: avoid;
+    page-break-inside: avoid;
 }
 
 .scores b {
@@ -1191,6 +1196,17 @@
     /* 갈라진 조각마다 테두리가 닫힙니다(메뉴·시술 설명 초안 상자) */
     box-decoration-break: clone;
     -webkit-box-decoration-break: clone;
+}
+
+/* 하루 안에 해 볼 수 있는 일 같은 짧은 목록: 쪽을 넘겨 이어져도 앞 2개·뒤 2개 항목은 같은 쪽에 둡니다(한두 항목만 따로 떨어지지 않음). */
+.plainList li:first-child {
+    break-after: avoid;
+    page-break-after: avoid;
+}
+
+.plainList li:last-child {
+    break-before: avoid;
+    page-break-before: avoid;
 }
 
 /* 줄 끝에서 끊기면 어색한 값(예: "GEO 90 · AEO 91점") */

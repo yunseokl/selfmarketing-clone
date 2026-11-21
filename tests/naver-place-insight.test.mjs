@@ -2,9 +2,12 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createGate } from '../lib/place-gate.js';
 import {
-    extractSnapshot, normalizeListItem, topSignals, diagnoseRank,
+    extractSnapshot, extractMenus, normalizeListItem, topSignals, diagnoseRank,
     buildListBody, createPlaceClient, LIST_QUERY_RICH,
 } from '../lib/naver-place.js';
+import { recommendKeywords, mentionTerms, headlineMenuTerms } from '../lib/place-keywords.js';
+import { buildPlaceGraph } from '../lib/place-graph.js';
+import { PHARMACY, RESTAURANT, SALON, graphInput } from './place-graph.fixtures.mjs';
 
 // 이 테스트의 샘플 JSON 은 실제로 캡처된 네이버 플레이스 응답의 필드·구조를 본떠 구성했습니다.
 // (리스트 아이템: __typename "PlaceListBusinessesItem" / 상세: PlaceDetailBase·PlaceMenuItem·PlaceMenuCategory)
@@ -257,4 +260,48 @@ test('네이버가 확장 필드를 거절(400)하면 기본 쿼리로 강등해
     // 한 번 강등되면 다음 조회부터는 확장 쿼리를 다시 보내지 않는다(확장 400 프로브는 1회만)
     await client.getRank({ keyword: 'k2', placeId: '777', depth: 300 });
     assert.equal(queries.filter((q) => q === 'rich').length, 1);
+});
+
+// ---- 메뉴별 설명 글(description): 처방전이 "이미 쓴 설명"을 본보기로 쓰고 설명 있는 메뉴를 '설명 쓰기' 표에서 뺄 때 읽습니다 ----
+
+test('extractMenus 는 메뉴마다 설명 글(다듬은 문자열, 없으면 null)을 담고, 설명이 있는 메뉴 수가 menuDescribedCount 와 같다', () => {
+    const apollo = {
+        'PlaceDetailBase:5': { id: '5', name: '설명식당', reviewSettings: {} },
+        'PlaceMenuItem:1': { id: '1', name: '소금김밥', description: '  기본 김밥입니다.  ', hasImage: true, price: { displayText: '5,000원' } },
+        'PlaceMenuItem:2': { id: '2', name: '갈치조림', description: '', hasImage: false },
+        'PlaceMenuItem:3': { id: '3', name: '볼락구이', description: '   ', hasImage: false },
+        'PlaceMenuItem:4': { id: '4', name: '광어회', hasImage: false },
+        'Menu:5': { id: '5', name: '커트', description: '두피 상태에 맞춰 다듬는 커트' },
+    };
+    const menus = extractMenus(apollo);
+    assert.deepEqual(menus.map((menu) => [menu.name, menu.description]), [
+        ['소금김밥', '기본 김밥입니다.'], ['갈치조림', null], ['볼락구이', null], ['광어회', null], ['커트', '두피 상태에 맞춰 다듬는 커트'],
+    ]);
+    // 다른 필드는 그대로
+    assert.deepEqual(menus[0], { name: '소금김밥', price: '5,000원', hasImage: true, description: '기본 김밥입니다.', recommended: false });
+    // 같은 기준: 다듬은 뒤 비어 있지 않은 설명만 센다
+    assert.equal(extractSnapshot(apollo, '5').menuDescribedCount, menus.filter((menu) => menu.description).length);
+});
+
+test('메뉴 설명 글은 키워드 추천·메뉴 낱말·그래프 결과를 바꾸지 않는다(견본 3종: 설명이 있어도 없어도 같다)', () => {
+    const TEXT = '숙성회 광어 김밥 아메리카노 댄디컷 새우튀김 일반의약품 영양제 무료주차 예약필수 시그니처';
+    const variant = (sample, describe) => {
+        const base = sample.place.detail.menus?.length ? sample.place.detail.menus : [{ name: '대표 메뉴 A' }, { name: '대표 메뉴 B' }];
+        return { ...sample, place: { ...sample.place, detail: { ...sample.place.detail, menus: base.map((menu) => ({ ...menu, description: describe ? TEXT : null })) } } };
+    };
+    for (const [name, sample] of [['음식점', RESTAURANT], ['약국', PHARMACY], ['미용실', SALON]]) {
+        const without = variant(sample, false);
+        const withText = variant(sample, true);
+        const recommend = (item) => recommendKeywords({ place: item.place, activity: item.activity ?? null, rivals: item.rivalPool || [], ranks: item.ranks || [] });
+        assert.deepEqual(recommend(withText), recommend(without), `${name}: 추천`);
+        assert.deepEqual(mentionTerms(withText.place), mentionTerms(without.place), `${name}: 블로그 언급을 물어볼 낱말`);
+        assert.deepEqual(headlineMenuTerms(withText.place, withText.activity ?? null), headlineMenuTerms(without.place, without.activity ?? null), `${name}: 한 줄 소개 메뉴 낱말`);
+        const graph = (item) => {
+            const audit = [];
+            const built = buildPlaceGraph({ ...graphInput(item), audit });
+            assert.deepEqual(audit, [], `${name}: 그래프가 버린 것`);
+            return built;
+        };
+        assert.deepEqual(graph(withText), graph(without), `${name}: 그래프`);
+    }
 });
