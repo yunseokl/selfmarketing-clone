@@ -1198,6 +1198,19 @@
     -webkit-box-decoration-break: clone;
 }
 
+/* 시술·메뉴 설명 초안 표가 쪽을 넘겨 이어질 때, 표 뒤의 보기·안내 글은 마지막 줄과 같은 쪽에 둡니다(안내 글만 다음 쪽 맨 위에 홀로 남지 않음). */
+.doc[data-split='true'] .splitPart .draftNote {
+    break-before: avoid;
+    page-break-before: avoid;
+}
+
+/* 나눔 방식 true 에서는 AI 검색 준비의 제목·설명·점수 줄이 질문 표와 쪽을 달리할 수 있습니다(앞 쪽 아래가 크게 비는 문서만).
+ * 제목은 설명·점수와 늘 함께 가고(break-after: avoid 는 .title·.lead 에 그대로), 표는 자기 소제목과 함께 다음 쪽으로 갑니다. */
+.doc[data-split='true'] .scores {
+    break-after: auto;
+    page-break-after: auto;
+}
+
 /* 하루 안에 해 볼 수 있는 일 같은 짧은 목록: 쪽을 넘겨 이어져도 앞 2개·뒤 2개 항목은 같은 쪽에 둡니다(한두 항목만 따로 떨어지지 않음). */
 .plainList li:first-child {
     break-after: avoid;

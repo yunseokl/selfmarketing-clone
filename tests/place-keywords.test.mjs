@@ -402,7 +402,9 @@ test('관문 9(자) — 메뉴 낱말은 매장의 주력 갈래에 맞을 때�
     // (8차 S-2: 메뉴판 한 줄 품목 캐비아·고노와다도 같은 이유로 걸려 이유와 함께 남는다. 9차: 주간 인기 메뉴에 나온 해물돌판짜파게티는 손님 쪽 근거가 있어 메뉴판 한 줄 묶음(캐비아…)에 섞지 않고 따로 한 줄)
     // (9차: 메뉴판 한 줄 품목 가운데 이름에 든 품목 낱말(광어방어의 광어·방어, 민어조기구이의 민어·조기구이, 아나고튀김의 아나고)이나 철자가 비슷한 이름(대물뽈락구이 ↔ 볼락구이)이
     // 리뷰·결제에 있는 것은 "메뉴판에만 있는 품목" 묶음(캐비아…)에서 빠져 따로 한 줄이 된다)
-    assert.deepEqual(result.excluded.filter((entry) => entry.rule === 'offMain').map((entry) => entry.term), ['갈치', '볼락구이', '광어방어', '캐비아', '대물뽈락구이', '해물돌판짜파게티', '고노와다', '민어조기구이', '아나고튀김']);
+    // (11차: 이름에 든 '광어'가 이 매장의 주력 낱말(리뷰 34회, 회 메뉴 이름에 듦)인 광어방어는 "회 메뉴로는 보이지 않는다"가 아니라 '광어'와 겹치는 말로 묶여 offMain 이 아니다)
+    assert.deepEqual(result.excluded.filter((entry) => entry.rule === 'offMain').map((entry) => entry.term), ['갈치', '볼락구이', '캐비아', '대물뽈락구이', '해물돌판짜파게티', '고노와다', '민어조기구이', '아나고튀김']);
+    assert.deepEqual([result.excluded.find((entry) => entry.term === '광어방어').rule, result.excluded.find((entry) => entry.term === '광어방어').into], ['merged', '광어']);
     // 회 갈래 낱말은 통과: 끝말이 '회'(숙성회)이거나 회 메뉴의 이름에 들어 있음(광어 → "대물 숙성회 정식(광어)", 대방어 → "대방어 숙성회")
     for (const word of ['강남구청숙성회', '강남구청광어', '강남구청대방어']) assert.equal(keywordsOf(result).includes(word), true, word);
     // 김밥·보쌈은 그 자체가 다른 업종 이름이라 전처럼 '가'에 걸린다(이유도 그대로)
@@ -1435,7 +1437,7 @@ test('한 낱말이 다른 낱말을 품고 이유가 같은 줄은 한 줄로 �
     // (8차 S-2: 메뉴판 한 줄 품목이 관문에 걸린 줄 일곱이 한식 뒤에 늘었다)
     assert.deepEqual(restaurant.excluded.map((entry) => `${entry.rule}:${entry.term}`), [
         'otherBusiness:김밥', 'offMain:갈치', 'merged:광어회', 'offMain:볼락구이', 'channel:포장', 'otherBusiness:보쌈', 'broad:한식',
-        'otherBusiness:칼국수', 'otherBusiness:손만두', 'offMain:광어방어', 'offMain:캐비아', 'vague:조림', 'offMain:대물뽈락구이', 'offMain:해물돌판짜파게티', 'offMain:고노와다', 'otherBusiness:얼큰해장라면', 'otherBusiness:매운탕',
+        'otherBusiness:칼국수', 'otherBusiness:손만두', 'merged:광어방어', 'offMain:캐비아', 'vague:조림', 'offMain:대물뽈락구이', 'offMain:해물돌판짜파게티', 'offMain:고노와다', 'otherBusiness:얼큰해장라면', 'otherBusiness:매운탕',
         'offMain:민어조기구이', 'offMain:아나고튀김',
         'rank:압구정', 'region:횟집', 'region:회식', 'region:점심',
     ]);

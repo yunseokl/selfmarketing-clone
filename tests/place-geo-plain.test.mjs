@@ -209,12 +209,33 @@ test('노트북 7차: 업종 말·조건형 질문·점유율 문구·서치어�
     assert.equal(Boolean(advisor) && /서치어드바이저: 내 글을 네이버에 알리는 무료 도구/.test(advisor.title), true, '오늘 할 일 제목에 서치어드바이저 풀이');
 });
 
+// 마무리 수정: 주차·편의시설 답은 앞에서 말한 '주차(무료)'를 편의시설 목록에서 되풀이하지 않고, 약국·병의원에서는 '단체 이용 가능'도 뺀다.
+test('주차·편의시설 답: 주차를 두 번 말하지 않고 약국·병의원은 단체 이용을 뺀다', () => {
+    const answerOf = (place, activity) => buildFanout(place, activity).find((item) => item.key === 'parking').answer;
+    const pharmacy = answerOf(PHARMACY.place, PHARMACY.activity);
+    assert.equal(pharmacy.startsWith('주차할 수 있습니다'), true);
+    assert.equal((pharmacy.match(/주차/g) || []).length, 1, `주차가 두 번 이상: ${pharmacy}`);
+    assert.equal(/단체/.test(pharmacy), false, `약국 답에 단체 이용: ${pharmacy}`);
+    assert.equal(pharmacy.includes('남/녀 화장실 구분'), true, '다른 편의시설은 그대로');
+    // 병의원도 같다
+    const clinic = answerOf({ ...PHARMACY.place, category: '내과' }, PHARMACY.activity);
+    assert.equal(/단체/.test(clinic), false, `병의원 답에 단체 이용: ${clinic}`);
+    // 음식점·미용실은 '단체 이용 가능'을 그대로 둔다(발레파킹을 앞에서 말했으면 그 항목도 목록에서 빠진다)
+    assert.equal(answerOf(RESTAURANT.place, RESTAURANT.activity).includes('단체 이용 가능'), true);
+    assert.equal(answerOf(SALON.place, SALON.activity).includes('단체 이용 가능'), true);
+    const valet = answerOf({ ...RESTAURANT.place, conveniences: ['포장', '주차', '발렛파킹', '예약'], detail: { ...RESTAURANT.place.detail, facilities: [] } }, RESTAURANT.activity);
+    assert.equal(valet, '주차할 수 있습니다(유료), 발레파킹도 됩니다. 편의시설: 포장, 예약.');
+    // 주차 정보가 없으면 편의시설 목록에 적힌 주차는 그대로 둔다(앞에서 말한 것이 없으므로)
+    const noParking = answerOf({ ...RESTAURANT.place, conveniences: ['포장', '주차'], detail: { ...RESTAURANT.place.detail, parking: null, facilities: [] } }, RESTAURANT.activity);
+    assert.equal(noParking, '편의시설: 포장, 주차.');
+});
+
 // 10차: 후보 꼬리표는 화면과 처방전이 같은 말이고(long 포함), 키워드 구역의 고정 문구도 업종 말을 따른다(시술·품목·메뉴).
 test('후보 꼬리표는 화면과 처방전이 같은 말이고, 키워드 구역 고정 문구는 업종 말을 따른다', async () => {
     const { LACKS_TAG } = await import('../lib/place-prescription.js');
     const page = readFileSync(new URL('../app/dashboard/place-insight/page.js', import.meta.url), 'utf8');
     for (const [key, text] of Object.entries(LACKS_TAG)) assert.equal(page.includes(`${key}: '${text}'`), true, `화면 LACKS_LABEL 에 ${key}: '${text}' 가 있어야 함`);
-    assert.equal(LACKS_TAG.long, '이름이 길어 지역 조합 불가');
+    assert.equal(LACKS_TAG.long, '이름이 긴 말');
     // 고정 문구 변환: 미용 '시술', 약국·병의원 '품목', 음식점 '메뉴'(그대로). '메뉴판'·따옴표 안 자료는 그대로.
     assert.equal(fitMenuText('시술', '주력 메뉴 아님'), '주력 시술 아님');
     assert.equal(fitMenuText('품목', '메뉴 설명'), '품목 설명');
@@ -238,8 +259,23 @@ test('폰 화면 규칙: 접힘 안 단추 44px · 이유 칩 13px · 흐린 범
     assert.equal(/setEmptyGroup\(null\), 6000/.test(graph), true, '흐린 범례 안내는 6초');
     const page = readFileSync(new URL('page.js', dir), 'utf8');
     assert.equal(/entry\.term\}\{others\.size > 0/.test(page), true, '묶인 낱말이 있으면 제목에 외 N개');
-    // 메뉴판 묶음의 머리 숫자는 줄 수가 아니라 줄마다 묶인 낱말(words)을 합산한 실제 낱말 수(숫자를 박아 두지 않음), 다르면 줄 수도 함께
-    assert.equal(/boardWords\.length\}개\{boardWords\.length !== board\.length/.test(page), true, '묶음 머리에 실제 낱말 수와 줄 수');
+    // 메뉴판 묶음의 머리 숫자는 줄마다 묶인 낱말(words)을 합산한 실제 낱말 수(숫자를 박아 두지 않음), 다르면 줄 수도 함께("낱말 10개 · 5줄", 같으면 "5줄")
+    assert.equal(/groupCount\('낱말', boardWords\.length, board\.length\)/.test(page), true, '메뉴판 묶음 머리에 실제 낱말 수와 줄 수');
+    // 지역만 바꾼 조합도 같은 꼴("조합 4개 · 3줄"), 맨 위 수는 세 가지 줄을 모두 더한 '줄' 수라서 묶음 머리의 마지막 '줄'끼리 더하면 맞는다(23 = 15 + 5 + 3)
+    assert.equal(/groupCount\('조합', regionCombos, region\.length\)/.test(page), true, '지역 묶음 머리에 조합 수와 줄 수');
+    assert.equal(/const groupCount = \(unit, count, lines\) => \(count > 0 && count !== lines \? `\$\{unit\} \$\{count\}개 · \$\{lines\}줄` : `\$\{lines\}줄`\)/.test(page), true, '수가 다르면 둘 다, 같으면 줄만');
+    assert.equal(/lineTotal = single\.length \+ board\.length \+ region\.length/.test(page), true, '맨 위 수는 줄을 모두 더한 수');
+    assert.equal(/label=\{`추천에서 뺀 키워드 · \$\{lineTotal\}줄`\}/.test(page), true, '맨 위 머리는 줄 단위');
+    // 길게 눌러 끌기 안내는 이름이 보이는 점만 된다는 사실대로(graph/gesture.js armHold 는 이름이 켜진 점·이름표·묶음 중심만 잡는다)
+    assert.equal(graph.includes('이름이 보이는 점은 길게 눌러 당깁니다'), true, '길게 눌러 당기기 안내');
+    assert.equal(graph.includes("'점을 누르면 이름, 이름을 누르면 살펴봅니다 · 점을 길게 눌러 끌면"), false, '옛 안내가 남아 있음');
+    // 폰 안내 줄은 두 줄이 한계(48px 고정, 360 폭 268px)라 문장을 늘리지 않는다: 손가락용 문장 전체가 65자 미만(세 줄이 된 65자는 잘렸다)
+    const touchGuide = graph.match(/\? '(점을 누르면 이름[^']*)'/)?.[1] || '';
+    assert.equal(touchGuide.length > 0 && touchGuide.length <= 62, true, `폰 안내 문장 길이 ${touchGuide.length}자`);
+    // 경쟁 비교: '내 매장을 뺀'은 내 매장이 검색 5위 안일 때만 말한다
+    const geoPanel = readFileSync(new URL('GeoAeoPanel.js', dir), 'utf8');
+    assert.equal(/if \(signals\.mineInTop5\) return `검색 상위 5위 중 내 매장을 뺀 \$\{count\}곳`/.test(geoPanel), true, '내 매장이 5위 안일 때만 뺀 곳 수');
+    assert.equal(geoPanel.includes('검색 상위 매장 ${count}곳'), true, '5위 밖이면 상위 매장 몇 곳');
     // '지역 확인 못 함' 칩이 있을 때만 폰에서도 읽히는 풀이 한 줄(.note 는 13px)
     assert.equal(/unknownShown && \(\s*<p className=\{styles\.note\}>/.test(page), true, '지역 확인 못 함 풀이 한 줄');
     assert.equal(/\.note\s*\{[^}]*font-size:\s*13px/.test(css), true);

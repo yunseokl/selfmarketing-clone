@@ -544,6 +544,14 @@ function rankText(row) {
     return row.status === 'not_listed' ? '목록에 없음' : '순위 밖';
 }
 
+// '상위 매장 평균'이 어느 매장들의 평균인지 사실대로 말합니다.
+// 내 매장이 검색 5위 안에 있을 때만 '내 매장을 뺀'이라 하고(최대 4곳), 5위 밖이거나 순위를 모르면 뺄 것이 없으니 그냥 상위 매장 몇 곳이라 합니다.
+function top5Label(signals) {
+    const count = signals.top5Count;
+    if (signals.mineInTop5) return `검색 상위 5위 중 내 매장을 뺀 ${count}곳`;
+    return count >= 5 ? '검색 상위 5곳' : `검색 상위 매장 ${count}곳`;
+}
+
 function CompetitionCard({ place, analysis, ranks, unavailable }) {
     const { share } = analysis;
     const results = useMemo(
@@ -644,7 +652,7 @@ function CompetitionCard({ place, analysis, ranks, unavailable }) {
                     <h3>&lsquo;{signals.keyword}&rsquo; 상위 매장 AI 추천 신호 지수</h3>
                     <p className={styles.signalSummary}>
                         내 매장 <b>{scoreText(signals.mine)}</b>
-                        {signals.top5Average !== null && <> · {signals.top5Count > 0 && signals.top5Count < 5 ? `검색 상위 5위 중 내 매장을 뺀 ${signals.top5Count}곳` : '검색 상위 5곳'} 평균 <b>{signals.top5Average}</b></>}
+                        {signals.top5Average !== null && <> · {top5Label(signals)} 평균 <b>{signals.top5Average}</b></>}
                         {signals.position && <> · 지수로 줄 세우면 {signals.count}곳 중 <b>{signals.tied > 0 ? '공동 ' : ''}{signals.position}번째</b></>}
                     </p>
                     <ul className={styles.signalRows}>

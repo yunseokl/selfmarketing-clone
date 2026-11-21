@@ -930,6 +930,8 @@ test('GEO 신호 지수는 같은 목록 안 백분위 평균이고 내 매장 �
     assert.equal(result.top5Average, Math.round((100 + byName.B) / 2));
     // 평균은 내 매장을 뺀 곳의 평균이라, 몇 곳의 평균인지(내가 5위 안이면 4곳이 최대)를 함께 준다
     assert.equal(result.top5Count, 2);
+    // 내 매장이 5위 안이라 '내 매장을 뺀'이라고 말해도 된다
+    assert.equal(result.mineInTop5, true);
     assert.equal(result.tied, 0);
     // 지수가 같으면 같은 자리(공동): 폰 6차 "내 매장 42 · 5곳 중 4번째"는 같은 42 인 다른 곳이 앞에 있어 4번째로 밀려 읽혔다
     const tie = compareGeoSignals({ keyword: 'k', top: [
@@ -954,6 +956,19 @@ test('내 매장이 목록 밖이면 매장 정보로 비교 행을 만든다', 
     const mine = result.rows.find((row) => row.isTarget);
     assert.equal(mine.rank, null);
     assert.ok(mine.index > 0 && mine.index < 100);
+    // 내 매장이 5위 안이 아니면(순위를 모르면) 상위 5위에서 뺄 것이 없다: 화면이 '내 매장을 뺀'이라고 말하지 않게 false
+    assert.equal(result.mineInTop5, false);
+    assert.equal(result.top5Count, 2);
+});
+
+test('내 매장이 검색 5위 밖(18위)이면 mineInTop5 는 false, 5위 안이면 true', () => {
+    const top = [1, 2, 3, 4, 5].map((rank) => ({ rank, placeId: `r${rank}`, name: `R${rank}`, visitorReviews: 100 * rank, blogReviews: 10 * rank }));
+    const out = compareGeoSignals({ keyword: 'k', top, target: { rank: 18, placeId: '777', name: '내 매장', isTarget: true, visitorReviews: 50, blogReviews: 5 } });
+    assert.equal(out.mineInTop5, false);
+    assert.equal(out.top5Count, 5);
+    const inside = compareGeoSignals({ keyword: 'k', top: [...top.slice(0, 2), { rank: 3, placeId: '777', name: '내 매장', isTarget: true, visitorReviews: 50, blogReviews: 5 }, ...top.slice(3)] });
+    assert.equal(inside.mineInTop5, true);
+    assert.equal(inside.top5Count, 4);
 });
 
 test('매장 화면 정보만으로 낸 점수와 경쟁 매장이 앞선 항목', () => {

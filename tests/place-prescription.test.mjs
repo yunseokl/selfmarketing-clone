@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import {
     buildPrescription, splitAdvice, fillStatus, prescriptionFileName, dateStamp, dateTimeLabel, dayLabel, minutesLabel, ranksText,
     slotProposal, pickDiagnoses, rivalComparison, TASK_INFO, DIAGNOSIS_MIN_SCORE, METRICS_MIN, METRICS_MAX, DRAFT_MARK,
@@ -731,12 +732,13 @@ test('추천에서 뺀 키워드: 낱말마다 이유 한 줄, 지역만 바꾼 
     assert.deepEqual([merged.words, merged.reason], ['남성전문미용실 → 미용실', "'미용실'이 들어 있는 말이라 하나로 묶음"]);
     // 시스루댄디컷은 댄디컷에 묶이지 않고 따로 추천된다(묶음 줄 없음)
     assert.ok(!salon.rows.some((row) => row.label === '겹치는 낱말' && /시스루댄디컷/.test(row.words)));
-    const swapped = salon.rows.find((row) => row.label === '지역만 바꿈');
+    // 지역만 바꾼 조합은 빠진 까닭이 같은 것끼리 한 줄(까닭이 다르면 줄을 나눔 — 9차 감점 1): 5칸·등록 낱말 줄이 첫 줄
+    const swapped = salon.rows.find((row) => row.label === '지역만 바꿈' && /^이미 5칸이나 등록 키워드에 있는 낱말/.test(row.reason));
     // 역 변형과 같은 뿌리의 동·구('강남'→'강남역')는 한 지역으로 합쳐, 지역만 바꾼 조합은 다른 지역(역삼)만 남는다
     assert.match(swapped.words, /역삼\+댄디컷/);
     assert.match(swapped.words, /역삼\+다운펌/);
     // 조합은 12개까지 전부 적고, 그보다 많을 때만 개수로("외 N개")
-    assert.ok(swapped.words.split(' · ').length >= 7 && !/ 외 \d+개/.test(swapped.words), swapped.words);
+    assert.ok(swapped.words.split(' · ').length >= 5 && !/ 외 \d+개/.test(swapped.words), swapped.words);
     assert.doesNotMatch(swapped.words, /(^| · )댄디컷( · |$)/, '추천한 강남역댄디컷과 모순처럼 읽히는 "댄디컷"만의 표기를 쓰지 않는다');
     // 5칸에 같은 낱말이 두 번 들어가지 않은 문서는 규칙만 한마디(두 번 든 낱말이 있으면 그 낱말을 적음 — 6차 관찰 7)
     assert.equal(swapped.reason, '이미 5칸이나 등록 키워드에 있는 낱말에 지역만 바꾼 조합이라 따로 권하지 않음(같은 낱말은 두 칸까지만 권함)');
@@ -1990,7 +1992,7 @@ test('직접 판단할 말: 앞의 3개만(추천이 정한 차례 = 화면과 �
         for (const group of keywords.judgeGroups) {
             for (const item of group.items) {
                 const entry = candidates.find((candidate) => candidate.keyword === item.keyword);
-                assert.equal(item.tag, { menu: '품목 자료에 없음', voice: '리뷰·상위 매장에 없음', share: '리뷰 비중 낮음', data: '자료가 적음', family: '같은 낱말 두 칸 사용 중', long: '이름이 길어 지역 조합 불가' }[entry.lacks], `${name}: ${item.keyword}`);
+                assert.equal(item.tag, { menu: '품목 자료에 없음', voice: '리뷰·상위 매장에 없음', share: '리뷰 비중 낮음', data: '자료가 적음', family: '같은 낱말 두 칸 사용 중', long: '이름이 긴 말' }[entry.lacks], `${name}: ${item.keyword}`);
             }
         }
         // 묶음의 까닭은 그 후보들의 lib why 그대로이고, 문장이 똑같은 것만 한 묶음이다(숫자만 다른 까닭은 줄마다 — 종이에 변수 N 을 쓰지 않는다)
@@ -2031,7 +2033,7 @@ test('직접 판단할 말: 앞의 3개만(추천이 정한 차례 = 화면과 �
 });
 
 test('후보 이름표(lacks)는 화면과 같은 말이고, 값이 없으면 "자료가 적음", 모르는 값이면 이름표를 달지 않는다', () => {
-    assert.deepEqual(LACKS_TAG, { menu: '품목 자료에 없음', voice: '리뷰·상위 매장에 없음', share: '리뷰 비중 낮음', data: '자료가 적음', family: '같은 낱말 두 칸 사용 중', long: '이름이 길어 지역 조합 불가' });
+    assert.deepEqual(LACKS_TAG, { menu: '품목 자료에 없음', voice: '리뷰·상위 매장에 없음', share: '리뷰 비중 낮음', data: '자료가 적음', family: '같은 낱말 두 칸 사용 중', long: '이름이 긴 말' });
     assert.equal(lacksTag('family'), '같은 낱말 두 칸 사용 중');
     assert.equal(lacksTag('voice'), '리뷰·상위 매장에 없음');
     assert.equal(lacksTag('share'), '리뷰 비중 낮음');
@@ -2541,16 +2543,31 @@ test('8차 관찰: 이미 쓴 설명 본보기는 광고성 표현(최고·1등 
     assert.ok(!onlyBrag.rows.some((row) => row.name === tidyMenuName(base.detail.menus[0].name)));
 });
 
-test('10차 키워드: lacks long(지역을 붙이면 대표키워드 15자를 넘는 영어 이름)은 이름표와 까닭을 가지고, 모르는 값이 아니다', () => {
+test('10차 키워드: lacks long(지역을 붙이면 대표키워드 한 칸에 다 들어가지 않을 수 있는 영어 이름)은 이름표와 까닭을 가지고, 모르는 값이 아니다', () => {
     const { input } = docOf(SALON);
     const reco = input.recommendation;
     const row = (lacks, why = '') => sectionOf(docOf(SALON, { recommendation: { ...reco, candidates: [{ ...reco.candidates[0], lacks, why }] } }).doc, 'keywords').judge[0];
-    assert.equal(row('long').tag, '이름이 길어 지역 조합 불가');
-    assert.equal(lacksTag('long'), '이름이 길어 지역 조합 불가');
+    assert.equal(row('long').tag, '이름이 긴 말');
+    assert.equal(lacksTag('long'), '이름이 긴 말');
     assert.equal(row('long').why, JUDGE_WHY_LONG);
-    const libWhy = '이름이 15자보다 길어 대표키워드로 쓸 수 없어 추천에 넣지 않았습니다. 줄여 쓸 이름이 있는지 직접 판단하세요.';
-    assert.equal(row('long', libWhy).why, libWhy);
-    assert.match(JUDGE_WHY_LONG, /^이름이 길어 지역을 붙이면 대표키워드 글자 수\(15자\)를 넘어/);
+    assert.match(JUDGE_WHY_LONG, /^이름이 길어 지역을 붙이면 대표키워드 한 칸에 다 들어가지 않을 수 있거나/);
+});
+
+test('9차 관찰 1: 대표키워드 글자 수 숫자는 공식 확인이 안 된 값이라 어느 경로로도 종이에 찍지 않는다(고정 문장·엔진이 준 문장 모두)', () => {
+    const { input } = docOf(SALON);
+    const reco = input.recommendation;
+    const row = (lacks, why) => sectionOf(docOf(SALON, { recommendation: { ...reco, candidates: [{ ...reco.candidates[0], lacks, why }] } }).doc, 'keywords').judge[0];
+    assert.doesNotMatch(JUDGE_WHY_LONG, /\d+자/);
+    // 엔진(lib/place-keywords.js longWhy)의 두 문장: 지역을 붙이면 넘는 이름 / 이름 자체가 긴 것
+    const withRegion = '이름이 길어 지역을 붙이면 대표키워드 글자 수(15자)를 넘어 추천에 넣지 않았습니다. 지역 없이 쓸지 직접 판단하세요.';
+    const tooLong = '이름이 15자보다 길어 대표키워드로 쓸 수 없어 추천에 넣지 않았습니다. 줄여 쓸 이름이 있는지 직접 판단하세요.';
+    assert.equal(row('long', withRegion).why, '이름이 길어 지역을 붙이면 대표키워드 한 칸에 다 들어가지 않을 수 있어 추천에 넣지 않았습니다. 지역 없이 쓸지 직접 판단하세요.');
+    assert.equal(row('long', tooLong).why, '이름이 길어 대표키워드 한 칸에 다 들어가지 않을 수 있어 추천에 넣지 않았습니다. 줄여 쓸 이름이 있는지 직접 판단하세요.');
+    // 엔진 문장이 숫자 없이 바뀌어도(또는 다른 까닭이어도) 그대로 통과
+    const plain = '이름이 길어 지역을 붙이면 대표키워드 한 칸에 다 들어가지 않을 수 있어 추천에 넣지 않았습니다.';
+    assert.equal(row('long', plain).why, plain);
+    // 문서 전체에 "글자 수(N자)"·"N자보다 길어"가 없다
+    assert.doesNotMatch(JSON.stringify(docOf(SALON, { recommendation: { ...reco, candidates: [{ ...reco.candidates[0], lacks: 'long', why: withRegion }] } }).doc), /글자 수\(\d+자\)|\d+자보다 길어/);
 });
 
 test('10차 키워드: board 줄이 모두 words(묶인 낱말 전체)를 가져도 뺀 표의 묶음 줄은 그 낱말을 그대로 적고, 리뷰·결제 사실이 있는 줄은 따로 둔다', () => {
@@ -2593,4 +2610,193 @@ test('10차 키워드: 뺀 키워드 표에서 구분과 이유 문장이 똑같
         assert.doesNotMatch(merged.reason, /이 낱말은/);
         assert.match(merged.reason, /이 낱말들은/);
     }
+});
+
+/* ───────── 9차 채점 반영(처방전 16판) ───────── */
+
+// 지역만 바꿈 줄이 말하는 위치(5칸·등록 키워드 / 다음 후보 / 추천 목록뿐)가 실제 문서·추천 자료와 맞는지 센다.
+function regionClaims(sample, overrides = {}) {
+    const { doc, input } = docOf(sample, overrides);
+    const reco = input.recommendation;
+    const keywords = sectionOf(doc, 'keywords');
+    const termOf = (keyword) => (reco.items || []).find((item) => item.keyword === keyword)?.term
+        || (reco.registered || []).find((entry) => entry.keyword === keyword)?.core || null;
+    const five = new Set(doc.summary.slots.rows.map((row) => termOf(row.next)).filter(Boolean));
+    const registered = new Set((reco.registered || []).map((entry) => entry.core).filter(Boolean));
+    const next = new Set((keywords.next?.rows || []).map((row) => termOf(row.keyword)).filter(Boolean));
+    const listed = new Set((reco.items || []).filter((item) => !item.registered).map((item) => item.term));
+    const rows = (keywords.excluded?.rows || []).filter((row) => row.label === '지역만 바꿈');
+    return { doc, reco, rows, five, registered, next, listed };
+}
+const termsOf = (row) => row.words.replace(/ 외 \d+개$/, '').split(' · ').map((combo) => combo.split('+')[1] || combo);
+
+test('9차 감점 1: 지역만 바꿈 줄은 까닭이 같은 낱말끼리만 묶고, 줄마다 그 문장이 사실이다(견본 3종 × 조회 후·조회 전)', () => {
+    for (const [name, sample] of SAMPLES) {
+        for (const first of [false, true]) {
+            const at = `${name}${first ? ' 조회 전' : ''}`;
+            const { rows, five, registered, next, listed } = regionClaims(sample, first ? { ranks: [] } : {});
+            assert.ok(rows.length >= 1, at);
+            for (const row of rows) {
+                const terms = termsOf(row);
+                assert.ok(terms.length >= 1 && terms.every(Boolean), `${at}: ${row.words}`);
+                if (/^이미 5칸이나 등록 키워드에 있는 낱말/.test(row.reason)) {
+                    for (const term of terms) assert.ok(five.has(term) || registered.has(term), `${at}: '${term}'은 5칸·등록 키워드에 있어야 함`);
+                } else if (/'다음 후보' 표에 이미 있는 낱말/.test(row.reason)) {
+                    for (const term of terms) assert.ok(next.has(term) && !five.has(term) && !registered.has(term), `${at}: '${term}'은 다음 후보에만 있어야 함`);
+                } else if (/혼잘마 추천 키워드에는 이미 있으나 이 문서에는 싣지 않은 낱말/.test(row.reason)) {
+                    for (const term of terms) assert.ok(listed.has(term) && !next.has(term) && !five.has(term) && !registered.has(term), `${at}: '${term}'은 추천 목록에만 있어야 함`);
+                } else assert.fail(`${at}: 모르는 까닭 문장 — ${row.reason}`);
+            }
+            // 같은 낱말은 한 줄에만(까닭이 갈라지지 않음)
+            for (const term of new Set(rows.flatMap(termsOf))) assert.equal(rows.filter((row) => termsOf(row).includes(term)).length, 1, `${at}: '${term}'`);
+        }
+    }
+});
+
+test('9차 감점 1: 미용실은 세 줄(5칸·등록 낱말 / 다음 후보 / 추천 목록뿐), 음식점 조회 전도 까닭별로 나뉜다', () => {
+    const salon = regionClaims(SALON);
+    assert.equal(salon.rows.length, 3);
+    const byReason = (rows, pattern) => rows.find((row) => pattern.test(row.reason));
+    assert.deepEqual(termsOf(byReason(salon.rows, /^이미 5칸이나/)), ['미용실', '댄디컷', '다운펌', '볼륨매직', '쉐도우펌', '가르마펌']);
+    assert.deepEqual(termsOf(byReason(salon.rows, /'다음 후보' 표/)), ['아이롱펌', '슬릭컷', '필러스컷']);
+    assert.deepEqual(termsOf(byReason(salon.rows, /추천 키워드에는 이미 있으나/)), ['남자머리', '바버샵']);
+    const first = regionClaims(RESTAURANT, { ranks: [] });
+    assert.ok(first.rows.length >= 2);
+    assert.deepEqual(termsOf(byReason(first.rows, /^이미 5칸이나/)), ['횟집', '횟집', '회식', '회식', '점심', '점심']);
+    assert.deepEqual(termsOf(byReason(first.rows, /'다음 후보' 표/)), ['숙성회', '광어', '모임', '대방어']);
+    assert.deepEqual(termsOf(byReason(first.rows, /추천 키워드에는 이미 있으나/)), ['룸식당']);
+    // 까닭이 다른 지역만 바꿈 줄이 여럿이어도 표에서 떨어뜨리지 않고 이어 둔다
+    const at = sectionOf(docOf(RESTAURANT, { ranks: [] }).doc, 'keywords').excluded.rows.map((row, index) => (row.label === '지역만 바꿈' ? index : -1)).filter((index) => index >= 0);
+    assert.equal(at.length, 3);
+    assert.deepEqual(at, [at[0], at[0] + 1, at[0] + 2]);
+    // 옛 한 문장("이미 5칸이나 등록 키워드에 있는 낱말")이 5칸·등록 낱말이 아닌 조합에 붙지 않는다
+    assert.ok(!first.rows.some((row) => /^이미 5칸이나/.test(row.reason) && termsOf(row).some((term) => ['숙성회', '광어', '룸식당'].includes(term))));
+});
+
+test('9차 감점 1: 홍보성 낱말(맛집·잘하는 …)의 지역 조합은 표에 내지 않는다(같은 문서가 "넣지 않았습니다"라고 말함)', () => {
+    const { reco, rows, doc } = regionClaims(RESTAURANT, { ranks: [] });
+    // 엔진은 이 견본에서 '맛집'의 지역만 바꾼 조합 줄을 준다 — 시험이 의미 있으려면 먼저 그 사실을 확인
+    assert.ok(reco.excluded.some((entry) => entry.rule === 'region' && entry.term === '맛집'));
+    assert.ok(rows.every((row) => !/맛집/.test(row.words)));
+    assert.doesNotMatch(JSON.stringify(sectionOf(doc, 'keywords').excluded), /강남\+맛집/);
+    assert.match(sectionOf(doc, 'keywords').notes.join(' '), /'맛집'·'잘하는' 같은 홍보성 표현은/);
+    // 합계: 엔진 줄 9개 중 맛집 하나를 뺀 조합 수와 같다(외 N개 산수)
+    const engine = reco.excluded.filter((entry) => entry.rule === 'region' && entry.term !== '맛집');
+    const combos = engine.flatMap((entry) => (entry.keywords.length ? entry.keywords : [entry.term]));
+    assert.equal(rows.flatMap(termsOf).length, combos.length);
+    // 어느 업종 문서에도 홍보성 낱말 조합이 없다
+    for (const [name, sample] of SAMPLES) {
+        for (const first of [false, true]) {
+            const claims = regionClaims(sample, first ? { ranks: [] } : {});
+            assert.ok(claims.rows.every((row) => !/맛집|최고|1등|일등|추천|유명|인기|제일|최상|대박|잘하는/.test(row.words)), `${name}${first ? ' 조회 전' : ''}`);
+        }
+    }
+});
+
+test('9차 감점 1: 내 순위가 낮아 다른 지역으로 바꿔 권한 낱말은 엔진 문장 그대로 따로 한 줄', () => {
+    const { input } = docOf(SALON);
+    const reco = input.recommendation;
+    const reason = "'역삼다운펌'은 내 순위가 31위라 다른 지역의 '강남다운펌'으로 바꿔 권하며, '다운펌'에 지역만 바꾼 조합은 더 권하지 않습니다.";
+    const excluded = [...reco.excluded.filter((entry) => !(entry.rule === 'region' && entry.term === '다운펌')), { term: '다운펌', keywords: ['선릉역다운펌'], rule: 'region', reason }];
+    const rows = sectionOf(docOf(SALON, { recommendation: { ...reco, excluded } }).doc, 'keywords').excluded.rows.filter((row) => row.label === '지역만 바꿈');
+    const moved = rows.find((row) => row.reason === reason);
+    assert.ok(moved);
+    assert.equal(moved.words, '선릉역+다운펌');
+    assert.ok(!rows.some((row) => row !== moved && /다운펌/.test(row.words)));
+    assert.ok(rows.some((row) => /^이미 5칸이나/.test(row.reason)));
+});
+
+test('9차 관찰 3: 상위 매장 표의 머리 낱말은 업종 말(약국·병·의원)로 — 구역 자료에 업종 낱말(noun)이 있다', () => {
+    assert.equal(docOf(PHARMACY).doc.sections.find((section) => section.id === 'keywords').noun, '약국');
+    assert.equal(docOf(CLINIC).doc.sections.find((section) => section.id === 'keywords').noun, '병·의원');
+    assert.equal(docOf(RESTAURANT).doc.sections.find((section) => section.id === 'keywords').noun, '매장');
+    assert.equal(docOf(SALON).doc.sections.find((section) => section.id === 'keywords').noun, '매장');
+    const source = readFileSync(new URL('../app/dashboard/place-insight/Prescription.js', import.meta.url), 'utf8');
+    assert.match(source, /상위 \{section\.noun\}이 등록한 대표키워드/);
+    assert.match(source, /\{section\.noun\}\(검색 순위\)/);
+    assert.doesNotMatch(source, /상위 매장이 등록한 대표키워드<|>매장\(검색 순위\)</);
+});
+
+// 메뉴(시술)마다 설명 글을 넣은 자료: 8번째마다 설명이 있고 나머지는 없음(미리보기 ?desc=1 과 같은 만듦)
+function describedSample(sample) {
+    const base = graphInput(sample);
+    const menus = (base.place.detail?.menus || []).map((menu, index) => ({ ...menu, description: index % 8 === 0 ? `${menu.name}은 샴푸와 마무리가 포함된 시술입니다.` : null }));
+    return { ...base, place: { ...base.place, menuDescribedCount: menus.filter((menu) => menu.description).length, detail: { ...base.place.detail, menus } }, menus };
+}
+
+test('9차 관찰 5: 설명이 비어 있는 시술이 5개 이하이면 표에 전부 나오고, 하는 법도 그 개수를 말한다(설명 변형 미용실)', () => {
+    const sample = describedSample(SALON);
+    const { doc } = docOf(sample, { place: sample.place });
+    const task = sectionOf(doc, 'tasks').items.find((entry) => entry.key === 'menuDesc');
+    const empty = sample.menus.filter((menu) => !menu.description).map((menu) => tidyMenuName(menu.name));
+    assert.equal(empty.length, 4);
+    // 표에 설명 없는 시술이 전부(설명 있는 시술은 없음)
+    assert.deepEqual(task.draft.rows.map((row) => row.name).sort(), [...empty].sort());
+    assert.ok(task.draft.rows.every((row) => !sample.menus.find((menu) => tidyMenuName(menu.name) === row.name).description));
+    assert.match(task.steps[task.steps.length - 1], /^설명이 비어 있는 시술 4개 모두에 설명을 채웁니다\(표의 순서는 '고른 까닭' 칸 참고\)\.$/);
+    // 숫자 자료가 있는 시술이 먼저, 없는 시술은 등록 순서대로(지어낸 까닭 없음)
+    assert.match(task.draft.rows[0].why, /다운펌/);
+    assert.ok(task.draft.rows.slice(1).every((row) => /^등록한 시술\(예약·결제·리뷰 숫자가 없어 등록 순서대로\)$/.test(row.why)));
+    assert.equal(task.draft.note, '이미 설명이 있는 시술은 표에서 뺐습니다.');
+});
+
+test('9차 관찰 5: 설명이 비어 있는 메뉴가 많으면 표는 5개까지, 하는 법은 "5개씩"(설명 변형 음식점)', () => {
+    const sample = describedSample(RESTAURANT);
+    const { doc } = docOf(sample, { place: sample.place });
+    const task = sectionOf(doc, 'tasks').items.find((entry) => entry.key === 'menuDesc');
+    assert.equal(task.draft.rows.length, MENU_FRAMES_MAX);
+    assert.match(task.steps[task.steps.length - 1], /^등록한 메뉴 34개 가운데 아래 표의 메뉴부터 5개씩 채웁니다/);
+    assert.ok(task.draft.rows.every((row) => !sample.menus.find((menu) => tidyMenuName(menu.name) === row.name).description));
+});
+
+test('9차 관찰 5: 비어 있는 메뉴 수가 표에 나온 줄 수와 맞는다 — 비어 있는 수가 5 이하이면 줄 수와 같고, 아니면 5(견본 3종 × 설명 있는 메뉴 수 0~4)', () => {
+    for (const [name, base] of SAMPLES) {
+        const total = graphInput(base).place.detail?.menus?.length || 0;
+        if (!total) continue;
+        for (const every of [1, 2, 3, 4, 8]) {
+            const menus = graphInput(base).place.detail.menus.map((menu, index) => ({ ...menu, description: index % every === 0 ? '샴푸와 마무리가 포함된 시술입니다.' : null }));
+            const place = { ...graphInput(base).place, menuDescribedCount: menus.filter((menu) => menu.description).length, detail: { ...graphInput(base).place.detail, menus } };
+            const task = sectionOf(docOf(base, { place }).doc, 'tasks').items.find((entry) => entry.key === 'menuDesc');
+            const empty = menus.filter((menu) => !menu.description).length;
+            if (!task || empty === 0) continue;
+            assert.equal(task.draft.rows.length, Math.min(empty, MENU_FRAMES_MAX), `${name} 설명 ${menus.length - empty}/${menus.length}`);
+            const last = task.steps[task.steps.length - 1];
+            if (empty <= MENU_FRAMES_MAX) assert.match(last, new RegExp(`비어 있는 ${name === '미용실' ? '시술' : '메뉴'} ${empty}개 모두`), `${name} ${every}`);
+            else assert.match(last, /5개씩/, `${name} ${every}`);
+        }
+    }
+});
+
+test('9차 관찰 6(엔진 11차): 같은 낱말에 묶인 말("광어회 → 광어"·"광어방어 → 광어")은 이유 문장이 같아 한 줄로 합쳐 "광어회·광어방어 → 광어"로 적는다', () => {
+    for (const [name, sample] of [['음식점', RESTAURANT], ['긴 견본', LONG], ['미용실', SALON], ['약국', PHARMACY]]) {
+        const { doc, input } = docOf(sample);
+        const rows = sectionOf(doc, 'keywords').excluded.rows.filter((row) => row.label === '겹치는 낱말');
+        const byInto = new Map();
+        for (const entry of input.recommendation.excluded.filter((item) => item.rule === 'merged' && item.into)) byInto.set(entry.into, [...(byInto.get(entry.into) || []), entry.term]);
+        for (const [into, terms] of byInto) {
+            const holders = rows.filter((row) => row.words.endsWith(` → ${into}`));
+            assert.equal(holders.length, 1, `${name}: '${into}'에 묶인 말은 한 줄`);
+            for (const term of terms) assert.ok(holders[0].words.replace(` → ${into}`, '').split('·').includes(term), `${name}: ${term}`);
+            assert.equal(holders[0].reason, `'${into}'${/[가-힣]$/.test(into) && (into.charCodeAt(into.length - 1) - 0xac00) % 28 ? '이' : '가'} 들어 있는 말이라 하나로 묶음`);
+        }
+    }
+    // 둘 이상이 묶인 낱말이 있는 견본에서 실제로 한 줄에 둘 이상이 적힌다(시험이 의미 있는지)
+    const merged = sectionOf(docOf(RESTAURANT).doc, 'keywords').excluded.rows.find((row) => row.label === '겹치는 낱말' && row.words.endsWith(' → 광어'));
+    assert.ok(merged);
+    assert.match(merged.words, /^광어회·광어방어 → 광어$|^광어방어·광어회 → 광어$|^광어회 → 광어$/);
+});
+
+test('엔진 11차: 조건·꾸밈 낱말(attribute)의 이유가 두 문장이면 사장님이 할 일까지 전체를 쓴다(첫 문장만 잘리지 않음)', () => {
+    const two = "'진학상담'은 '상담'처럼 절차·요금을 가리키는 말로 끝나, 품목 이름으로 보지 않았습니다. 실제로 파는 서비스 이름이면 직접 판단하세요.";
+    assert.equal(excludedReason({ rule: 'attribute', term: '진학상담', reason: two }), "'진학상담'은 '상담'처럼 절차·요금을 가리키는 말로 끝나, 품목 이름으로 보지 않았습니다. 실제로 파는 서비스 이름이면 직접 판단하세요");
+    // 한 문장 이유는 그대로
+    const one = "'주차가능'은 시설 조건·알리는 통로·인상·꾸밈을 말하는 낱말이라, 지역을 붙여도 찾을 가게 종류나 메뉴가 아닙니다.";
+    assert.equal(excludedReason({ rule: 'attribute', term: '주차가능', reason: one }), one.replace(/\.$/, ''));
+    assert.match(excludedReason({ rule: 'attribute', term: '무료' }), /조건·꾸밈/);
+    // 문서의 뺀 키워드 표까지 이어진다
+    const { input } = docOf(RESTAURANT);
+    const reco = input.recommendation;
+    const excluded = [...reco.excluded, { term: '진학상담', keywords: [], rule: 'attribute', reason: two }];
+    const rows = sectionOf(docOf(RESTAURANT, { recommendation: { ...reco, excluded } }).doc, 'keywords').excluded.rows;
+    assert.ok(rows.some((row) => row.label === '조건·꾸밈 낱말' && /직접 판단하세요$/.test(row.reason)));
 });

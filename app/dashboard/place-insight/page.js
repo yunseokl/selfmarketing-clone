@@ -674,8 +674,8 @@ const RULE_LABEL = {
 
 // 후보(candidates[].lacks)의 꼬리표. 값이 없으면(옛 결과) '자료가 적음', 모르는 값이면 꼬리표를 달지 않습니다.
 //   menu 품목(메뉴판·예약·결제)에서 확인 못 함 · voice 품목에는 있지만 손님 리뷰·상위 매장 키워드에서는 확인 못 함 · share 리뷰 수가 주력 메뉴들에 견줘 적음 · data 자료가 아예 없음
-//   family 같은 낱말을 이미 두 칸 씀 · long 지역을 붙이면 대표키워드 글자 수를 넘는 긴 이름이라 지역 조합을 못 만듦(이때 keyword 는 지역 없는 낱말; 처방전의 같은 꼬리표와 같은 말)
-const LACKS_LABEL = { menu: '품목 자료에 없음', voice: '리뷰·상위 매장에 없음', share: '리뷰 비중 낮음', data: '자료가 적음', family: '같은 낱말 두 칸 사용 중', long: '이름이 길어 지역 조합 불가' };
+//   family 같은 낱말을 이미 두 칸 씀 · long 이름이 길어 한 칸에 안 들어가거나(keyword 는 지역 없는 낱말), 들어가도 손님이 그대로 찾는 말인지 확인 못 한 9자 이상 한글 이름(keyword 는 지역을 붙인 꼴). 처방전의 같은 꼬리표와 같은 말
+const LACKS_LABEL = { menu: '품목 자료에 없음', voice: '리뷰·상위 매장에 없음', share: '리뷰 비중 낮음', data: '자료가 적음', family: '같은 낱말 두 칸 사용 중', long: '이름이 긴 말' };
 
 function lacksLabel(lacks) {
     if (lacks === undefined || lacks === null || lacks === '') return LACKS_LABEL.data;
@@ -813,18 +813,18 @@ function KeywordSlots({ keywords, diagnosis, blogTotal, onCopy }) {
     );
 }
 
-// '지역만 바꾼 조합'은 지역 이름별로 묶어 짧게 보여 줍니다("압구정 + 점심 · 맛집 · 모임").
-function byRegion(entries) {
-    const groups = new Map();
-    for (const entry of entries) {
-        for (const keyword of entry.keywords || []) {
-            const region = keyword.endsWith(entry.term) ? keyword.slice(0, keyword.length - entry.term.length) : '';
-            if (!groups.has(region)) groups.set(region, []);
-            groups.get(region).push(region ? entry.term : keyword);
-        }
-    }
-    return [...groups];
+// '지역만 바꾼 조합'은 낱말 하나가 한 줄입니다("회식 + 논현 · 강남": 회식에 지역 이름만 바꿔 붙인 조합들).
+// 지역 이름은 조합(keyword)에서 낱말(term)을 뺀 앞말이고, 그렇게 나뉘지 않는 조합은 조합 그대로 적습니다.
+function regionPlaces(entry) {
+    const places = (entry.keywords || [])
+        .filter((keyword) => typeof keyword === 'string' && keyword)
+        .map((keyword) => (entry.term && keyword.endsWith(entry.term) && keyword.length > entry.term.length ? keyword.slice(0, keyword.length - entry.term.length) : keyword));
+    return [...new Set(places)];
 }
+
+// 묶음 머리의 수. 낱말(조합) 수와 줄 수가 같으면 줄 수만, 다르면 "낱말 10개 · 5줄"처럼 둘 다 적습니다.
+// (맨 위 '추천에서 뺀 키워드 · N줄'의 N 은 줄을 모두 더한 수라서, 마지막에 오는 '줄' 수끼리 더하면 맞습니다.)
+const groupCount = (unit, count, lines) => (count > 0 && count !== lines ? `${unit} ${count}개 · ${lines}줄` : `${lines}줄`);
 
 // 추천에서 뺀 키워드 한 줄. 사실(lead)·이유(why)가 있으면 "사실 한 줄 / 이유 한 줄 / 쓰기 좋은 곳(useIn)" 세 줄로,
 // 없으면(옛 결과·다른 규칙) 이유 한 문장 reason 을 그대로 그립니다. 새 필드가 없어도 깨지지 않습니다.
@@ -872,7 +872,8 @@ function ExcludedRow({ entry }) {
 }
 
 // 추천에서 뺀 키워드: 낱말(내 순위가 낮은 지역은 지역 이름)마다 이유 한 문장.
-// 개수가 많은 '지역만 바꾼 조합'만 맨 아래에 한 줄로 묶습니다(펼침 줄의 개수 = 낱말 줄 수 + 묶음 안의 낱말 수).
+// 세는 단위는 '줄' 하나입니다(낱말 하나 = 한 줄, 한 줄이 낱말 여럿을 묶으면 제목에 '외 N개'). 맨 위의 수 = 낱말 줄 + 메뉴판 묶음의 줄 + 지역만 바꾼 조합의 줄.
+// 개수가 많은 '지역만 바꾼 조합'만 맨 아래에 묶습니다(낱말마다 한 줄, 한 줄에 그 낱말에 붙여 바꾼 지역 이름들).
 // 메뉴판에 한 줄뿐인 품목에서 나온 말(board)이 셋 이상이면 낱말만 한 문단으로 보이는 한 줄로 묶고, 말마다의 까닭은 펼쳐서 읽게 합니다.
 // (줄마다 까닭이 달라 묶음 제목에서 까닭을 하나로 말하지 않습니다. 둘 이하면 묶지 않고 다른 줄처럼 그립니다.)
 const BOARD_GROUP_MIN = 3;
@@ -886,18 +887,20 @@ function ExcludedFold({ excluded }) {
     const grouped = boardAll.length >= BOARD_GROUP_MIN;
     const board = grouped ? boardAll : [];
     const single = grouped ? rest.filter((entry) => entry.board !== true) : rest;
-    // 한 줄이 낱말 여럿을 묶은 것이면(words) 머리의 숫자는 줄 수가 아니라 실제 낱말 수입니다. 둘이 다르면 "낱말 14개 · 5줄"처럼 둘 다 적습니다.
-    // (위 '추천에서 뺀 키워드 N개'의 N 은 줄 수입니다. 줄·묶음·지역만 바꾼 묶음의 줄을 모두 합친 수라서 안쪽의 '줄' 수와 맞습니다.)
-    // 숫자는 줄마다 words 에서 세므로 엔진이 묶음 구성을 바꿔도 그대로 맞습니다.
+    // 한 줄이 낱말 여럿을 묶은 것이면(words) 묶음 머리에 실제 낱말 수도 함께 적습니다. 둘이 다르면 "낱말 10개 · 5줄"처럼 둘 다 적습니다.
+    // 맨 위의 수는 줄·메뉴판 묶음의 줄·지역만 바꾼 조합의 줄을 모두 더한 수라서, 각 묶음 머리의 '줄' 수와 맞습니다.
+    // 숫자는 모두 자료(줄마다 words·keywords)에서 세므로 엔진이 묶음 구성을 바꿔도 그대로 맞습니다.
     const boardWords = [...new Set(board.flatMap((entry) => [entry.term, ...(Array.isArray(entry.words) ? entry.words : [])]).filter((word) => typeof word === 'string' && word))];
+    const regionCombos = region.reduce((sum, entry) => sum + regionPlaces(entry).length, 0);
+    const lineTotal = single.length + board.length + region.length;
     return (
-        <Fold id="kw-excluded" label={`추천에서 뺀 키워드 ${excluded.length}개`}>
+        <Fold id="kw-excluded" label={`추천에서 뺀 키워드 · ${lineTotal}줄`}>
             {single.map((entry) => <ExcludedRow key={`${entry.rule}-${entry.term}`} entry={entry} />)}
             {board.length > 0 && (
                 <li>
                     <p className={styles.foldHead}>
                         <strong>메뉴판 품목에서 나온 말</strong>
-                        <span className={styles.ruleTag}>낱말 {boardWords.length}개{boardWords.length !== board.length ? ` · ${board.length}줄` : ''}</span>
+                        <span className={styles.ruleTag}>{groupCount('낱말', boardWords.length, board.length)}</span>
                     </p>
                     <p>메뉴판에 한 줄로 올라 있는 품목에서 나온 말입니다. 말마다 까닭이 달라 아래 단추로 펼쳐서 읽을 수 있습니다.</p>
                     <p className={styles.foldWords}>{boardWords.join(' · ')}</p>
@@ -916,13 +919,13 @@ function ExcludedFold({ excluded }) {
                 <li>
                     <p className={styles.foldHead}>
                         <strong>지역만 바꾼 조합</strong>
-                        <span className={styles.ruleTag}>낱말 {region.length}개</span>
+                        <span className={styles.ruleTag}>{groupCount('조합', regionCombos, region.length)}</span>
                     </p>
                     <p>같은 낱말로 이미 등록했거나 추천한 조합이 있어, 지역 이름만 바꾼 조합은 더 권하지 않았습니다.</p>
-                    {byRegion(region).map(([name, words]) => (
-                        <p key={name || 'etc'} className={styles.foldWords}>
-                            {name && <b>{name} +</b>}
-                            <span>{words.join(' · ')}</span>
+                    {region.map((entry, index) => (
+                        <p key={`${entry.term}-${index}`} className={styles.foldWords}>
+                            <b>{entry.term} +</b>
+                            <span>{regionPlaces(entry).join(' · ')}</span>
                         </p>
                     ))}
                 </li>

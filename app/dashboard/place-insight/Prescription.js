@@ -137,6 +137,8 @@ function chunkClass(index, total) {
 // 통째로 움직여 "3줄/2줄"·"2줄/1줄"처럼 한두 줄만 따로 떨어지지 않습니다(쪽 아래가 비면 다른 간격 배율을 고릅니다).
 const SPLIT_EDGE = 3;
 const SPLIT_MIN_ROWS = SPLIT_EDGE * 2;
+// 메뉴·시술 설명 초안 표(보통 5줄)는 앞 2줄·뒤 2줄을 지키는 대신 5줄부터 나눌 수 있게 합니다(조회 전 문서의 쪽 아래 빈 공간을 줄이려는 것, 나눔 방식 true 일 때만).
+const MENU_SPLIT_MIN_ROWS = 5;
 
 // 3줄 이하 표가 든 묶음은 통째로(제목·표·풀이가 한 쪽에), 더 긴 표는 위 묶음으로 나눠 끊습니다.
 function partClass(rowCount, extra, whole = TABLE_WHOLE_MAX) {
@@ -477,7 +479,7 @@ function DraftBody({ draft }) {
             );
         case 'menu':
             return (
-                <div className={draft.rows.length >= SPLIT_MIN_ROWS ? `${styles.draftItem} ${styles.splitPart}` : styles.draftItem}>
+                <div className={draft.rows.length >= MENU_SPLIT_MIN_ROWS ? `${styles.draftItem} ${styles.splitPart}` : styles.draftItem}>
                     <table className={`${styles.table} ${styles.tableTight} ${styles.tableFlush}`}>
                         <thead>
                             <tr>
@@ -487,16 +489,20 @@ function DraftBody({ draft }) {
                                 <th scope="col">설명 초안(이름에서 읽히는 것만 채움, (직접 적기)는 사장님만 아는 것)</th>
                             </tr>
                         </thead>
-                        <tbody>
-                            {draft.rows.map((row) => (
-                                <tr key={row.name}>
-                                    <th scope="row">{row.name}</th>
-                                    <td className={styles.numCell}>{row.price || '-'}</td>
-                                    <td className={styles.sub}>{row.why || '-'}</td>
-                                    <td>{row.frame}</td>
-                                </tr>
-                            ))}
-                        </tbody>
+                        {/* 5줄 이상 표는 나눔 방식 true 에서 쪽을 넘겨 이어질 수 있습니다. 앞 2줄은 한 묶음(첫 줄만 앞 쪽 아래에 남지 않음), 나머지는 쪽이 끝나는 곳에서 자연스럽게 넘어가고,
+                            표 뒤의 보기·안내 글은 마지막 줄과 같은 쪽에 둡니다(CSS). 뒤 줄을 묶음으로 막으면 크롬이 표를 쪽 끝까지 늘려 상자 안이 비어 보입니다. */}
+                        {(draft.rows.length >= MENU_SPLIT_MIN_ROWS ? [draft.rows.slice(0, 2), draft.rows.slice(2)] : [draft.rows]).map((chunk, index) => (
+                            <tbody key={chunk[0].name} className={index === 0 ? styles.rowKeep : undefined}>
+                                {chunk.map((row) => (
+                                    <tr key={row.name}>
+                                        <th scope="row">{row.name}</th>
+                                        <td className={styles.numCell}>{row.price || '-'}</td>
+                                        <td className={styles.sub}>{row.why || '-'}</td>
+                                        <td>{row.frame}</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        ))}
                     </table>
                     {draft.model && <p className={styles.draftNote}><b>{draft.model.head}</b> — {draft.model.text}</p>}
                     {draft.note && <p className={styles.draftNote}>{draft.note}</p>}
@@ -748,13 +754,13 @@ function Keywords({ section }) {
             {section.rivalKeywords && (
                 <div className={partClass(section.rivalKeywords.rows.length)}>
                     <h3 className={styles.partTitle}>
-                        상위 매장이 등록한 대표키워드
-                        <span>검색 상위 매장이 어떤 말로 등록했는지 참고하세요{section.rivalKeywords.total > section.rivalKeywords.rows.length ? ` · ${section.rivalKeywords.total}곳 중 ${section.rivalKeywords.rows.length}곳` : ''}</span>
+                        상위 {section.noun}이 등록한 대표키워드
+                        <span>검색 상위 {section.noun}이 어떤 말로 등록했는지 참고하세요{section.rivalKeywords.total > section.rivalKeywords.rows.length ? ` · ${section.rivalKeywords.total}곳 중 ${section.rivalKeywords.rows.length}곳` : ''}</span>
                     </h3>
                     <table className={styles.table}>
                         <thead>
                             <tr>
-                                <th scope="col" className={styles.colWord}>매장(검색 순위)</th>
+                                <th scope="col" className={styles.colWord}>{section.noun}(검색 순위)</th>
                                 <th scope="col">등록한 대표키워드</th>
                             </tr>
                         </thead>
@@ -905,44 +911,36 @@ function Ai({ section }) {
 }
 
 function Plan({ section }) {
+    // 주차 줄(+ 넘치는 일 줄). 나눔 방식 true 에서는 앞 2줄·뒤 2줄을 지키며 쪽을 넘겨 이어질 수 있습니다(rowChunks: 4줄이면 2·2줄).
+    const planRows = [
+        ...section.weeks.map((week) => ({ key: `week-${week.no}`, head: `${week.no}주차`, items: week.items, mark: true })),
+        ...(section.overflow.length > 0 ? [{ key: 'overflow', head: `이 밖에 ${section.overflow.length}개`, items: section.overflow, mark: false }] : []),
+    ];
     return (
         <section className={styles.section}>
             <SectionTitle section={section} />
             <p className={styles.lead}>{section.lead}</p>
-            <div className={styles.planBlock}>
+            <div className={`${styles.planBlock} ${styles.splitPart}`}>
             <table className={`${styles.table} ${styles.planTable}`}>
-                <tbody>
-                    {section.weeks.map((week) => (
-                        <tr key={week.no}>
-                            <th scope="row" className={styles.colWeek}>{week.no}주차</th>
-                            <td>
-                                <ul className={styles.checks}>
-                                    {week.items.map((item) => (
-                                        <li key={item.title}>
-                                            <span className={styles.box} aria-hidden="true" />
-                                            <span>{item.recheck ? <b>{item.title}</b> : item.title}{item.timeLabel ? <span className={styles.sub}> · {item.timeLabel}</span> : null}</span>
-                                        </li>
-                                    ))}
-                                </ul>
-                            </td>
-                        </tr>
-                    ))}
-                    {section.overflow.length > 0 && (
-                        <tr>
-                            <th scope="row" className={styles.colWeek}>이 밖에 {section.overflow.length}개</th>
-                            <td>
-                                <ul className={styles.checks}>
-                                    {section.overflow.map((item) => (
-                                        <li key={item.title}>
-                                            <span className={styles.box} aria-hidden="true" />
-                                            <span>{item.title}{item.timeLabel ? <span className={styles.sub}> · {item.timeLabel}</span> : null}</span>
-                                        </li>
-                                    ))}
-                                </ul>
-                            </td>
-                        </tr>
-                    )}
-                </tbody>
+                {rowChunks(planRows, 3, 2).map((chunk, index, all) => (
+                    <tbody key={chunk[0].key} className={chunkClass(index, all.length)}>
+                        {chunk.map((row) => (
+                            <tr key={row.key}>
+                                <th scope="row" className={styles.colWeek}>{row.head}</th>
+                                <td>
+                                    <ul className={styles.checks}>
+                                        {row.items.map((item) => (
+                                            <li key={item.title}>
+                                                <span className={styles.box} aria-hidden="true" />
+                                                <span>{row.mark && item.recheck ? <b>{item.title}</b> : item.title}{item.timeLabel ? <span className={styles.sub}> · {item.timeLabel}</span> : null}</span>
+                                            </li>
+                                        ))}
+                                    </ul>
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                ))}
             </table>
             </div>
             {/* 매주 반복할 일: 4주 실행표 바로 아래의 작은 표(같은 쪽에 두고, 못 들어가면 다음 쪽으로 통째로) */}
@@ -1074,8 +1072,10 @@ const TIGHTEN_MAX = 8;
 /* ───────── 쪽 나눔 어림 ─────────
  * 2쪽부터의 구역을 A4 안쪽 크기(182×271mm) 단 하나짜리 다단 상자에 흘려 보내, 인쇄와 같은 쪽 나눔 규칙(break-inside 등)으로 몇 쪽이 되고
  * 쪽마다 아래가 얼마나 비는지 잽니다. 세로 간격 배율(--rx-s)을 몇 가지 바꿔 보고, 마지막 쪽이 너무 비거나 쪽 아래가 크게 비는 정도가
- * 가장 작은 배율을 고릅니다(같으면 1에 가까운 것). 재지 못하면 1 입니다. */
-const SPACING_CHOICES = [1, 0.95, 0.9, 0.85, 0.8, 0.75, 0.7, 0.65, 1.05, 1.1, 1.2, 1.3, 1.5];
+ * 가장 작은 배율을 고릅니다(같으면 1에 가까운 것). 재지 못하면 1 입니다.
+ * 배율은 1.2 까지만 씁니다. 1.3·1.5 는 어림이 마지막 쪽을 87~88%로 재는데 인쇄에서는 한 쪽이 더 생겨(음식점 9쪽 → 10쪽, 마지막 쪽에 꼬리글만 남음)
+ * 어림이 낙관적인 배율이라 뺐습니다(1.2 이하는 인쇄에서도 같은 쪽 수였음). */
+const SPACING_CHOICES = [1, 0.95, 0.9, 0.85, 0.8, 0.75, 0.7, 0.65, 1.05, 1.1, 1.2];
 const EMULATE_PAGE_MM = 268;
 const PRINT_PAGE_MM = 271;
 const GAP_OK = 0.2; // 마지막 쪽을 뺀 쪽 아래 빈 공간이 이 비율을 넘으면 감점(목표는 25% 이내지만 어림이 인쇄보다 조금 낙관적이라 더 엄격하게 잼)
