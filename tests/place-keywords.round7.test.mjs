@@ -1494,8 +1494,8 @@ test('12차 E: 전문 상담 업종의 예외는 "…상담"(앞말이 조건어
     const pros = [['세무사사무소', '믿음세무회계'], ['법률사무소', '정의법률'], ['법무사사무소', '든든법무사'], ['노무사사무소', '바른노무'], ['회계법인', '한빛회계'], ['특허사무소', '새빛특허'], ['변호사', '이음변호사'],
         ['행정사사무소', '나라행정사'], ['심리상담센터', '마음상담센터'], ['컨설팅', '스텝컨설팅']];
     for (const [category, name] of pros) {
-        // (심리상담센터는 업종 낱말이 "상담"을 품어 "방문 + 상담"이 업종 낱말 합성어라 방문상담은 따지지 않는다 — 11차부터의 규칙)
-        const blockedHere = category === '심리상담센터' ? blockedWords.filter((word) => word !== '방문상담') : blockedWords;
+        // (13차: 심리상담센터처럼 업종 낱말이 "상담"을 품은 곳의 방문상담도 상담 방식 앞말이라 조건이다)
+        const blockedHere = blockedWords;
         const menus = [...passWords, ...blockedHere];
         const result = shop11('e12', category, name, menus, chips12(menus), { keywords: [`강남${category}`] });
         blocked11(result, blockedHere, category);
@@ -1558,6 +1558,71 @@ test('12차 B(가) 뜻이 둘인 판촉 표지: 행사는 낱말 전체가 행�
     // 조건: 행사·적립포인트·멤버십포인트·포인트·여름세일·반값세일·세일
     blocked11(shop11('b12o', '카페', '모닝카페', ['아메리카노', '행사', '적립포인트', '멤버십포인트', '여름세일', '반값세일'], chips12(['아메리카노', '행사', '적립포인트', '멤버십포인트', '여름세일', '반값세일']), { keywords: ['역삼카페'] }), ['행사', '적립포인트', '멤버십포인트', '여름세일', '반값세일'], '카페 판촉');
     blocked11(shop11('b12p', '카페', '모닝카페', ['아메리카노', '포인트', '세일'], chips12(['아메리카노', '포인트', '세일']), { keywords: ['역삼카페'] }), ['포인트', '세일'], '카페 포인트·세일');
+});
+
+// ── 13차(2026-11-21): 12차 수정의 부작용(S7 새 판촉 표지가 진짜 품목을 막고 문장이 단정함, S8 전문 업종 …상담 예외가 상담 방식 말까지 통과)과 B 가운데 닫힌 것만 고칩니다. ──
+test('13차 S7: 기획전은 낱말이 기획전으로 끝날 때만 표지, 결제 방식 이름은 업종 낱말이 결제를 품으면 통과, 합성어 안에 든 뜻이 둘인 표지는 추천하지 않되 단정하지 않는 문장', () => {
+    const josa = (word) => ((word.charCodeAt(word.length - 1) - 0xac00) % 28 ? '은' : '는');
+    const part = (word, mark) => `'${word}'${josa(word)} 판촉을 가리키는 말('${mark}')이 들어 있어 품목 이름으로 보지 않았습니다. 실제로 파는 품목·서비스 이름이면 직접 판단하세요.`;
+    // 갤러리: 기획전시는 통과, 기획전은 낱말 자체가 표지라 지금 문장 그대로
+    const gallery = shop11('s13a', '갤러리', '모아갤러리', ['기획전시', '기획전', '상설전시'], chips12(['기획전시', '기획전', '상설전시']), { keywords: ['종로갤러리'] });
+    assert.notEqual(excludedOf(gallery, '기획전시')?.rule, 'attribute');
+    assert.equal(terms(gallery).includes('기획전시') || candidateTerms(gallery).includes('기획전시'), true);
+    assert.equal(excludedOf(gallery, '기획전')?.reason, "'기획전'은 요금·이용권·절차·판촉을 말하는 낱말이라, 지역을 붙여도 찾을 가게 종류나 메뉴가 아닙니다.");
+    // 결제대행업: 간편결제·정기결제·카드결제·선결제 통과, 카페에서는 조건
+    const pay = shop11('s13b', '결제대행', '페이원', ['간편결제', '정기결제', '카드결제', '선결제', '계좌이체'], chips12(['간편결제', '정기결제', '카드결제', '선결제', '계좌이체']), { keywords: ['강남결제대행'] });
+    for (const word of ['간편결제', '정기결제', '카드결제', '선결제']) assert.notEqual(excludedOf(pay, word)?.rule, 'attribute', word);
+    blocked11(shop11('s13c', '카페', '모닝카페', ['아메리카노', '정기결제', '선결제', '카드결제'], chips12(['아메리카노', '정기결제', '선결제', '카드결제']), { keywords: ['역삼카페'] }), ['정기결제', '선결제', '카드결제'], '카페');
+    // 합성어 안의 표지: 추천하지 않고(조건 줄) 단정하지 않는 문장 — 프로모션영상·프로모션대행·경품대행(마케팅대행사), 요트세일(요트), 네일포인트(네일샵)
+    const market = shop11('s13d', '마케팅대행', '브랜드온', ['프로모션영상', '프로모션대행', '경품대행', '기획전대행', '특판', 'SNS마케팅'], chips12(['프로모션영상', '프로모션대행', '경품대행', '기획전대행', '특판', 'SNS마케팅']), { keywords: ['강남마케팅대행'] });
+    for (const [word, mark] of [['프로모션영상', '프로모션'], ['프로모션대행', '프로모션'], ['경품대행', '경품']]) {
+        assert.equal(excludedOf(market, word)?.reason, part(word, mark), word);
+        assert.equal(terms(market).includes(word), false, word);
+    }
+    assert.notEqual(excludedOf(market, '기획전대행')?.rule, 'attribute'); // 기획전으로 끝나지 않으니 표지가 아님
+    assert.equal(excludedOf(market, '특판')?.reason, "'특판'은 요금·이용권·절차·판촉을 말하는 낱말이라, 지역을 붙여도 찾을 가게 종류나 메뉴가 아닙니다."); // 표지 낱말 그 자체는 지금 문장 그대로
+    const yacht = shop11('s13e', '요트', '바다요트', ['요트세일', '요트투어', '세일링'], chips12(['요트세일', '요트투어', '세일링']), { keywords: ['강남요트'] });
+    assert.equal(excludedOf(yacht, '요트세일')?.reason, part('요트세일', '세일'));
+    const nail = shop11('s13f', '네일샵', '예쁜네일', ['네일포인트', '포인트네일', '젤네일'], chips12(['네일포인트', '포인트네일', '젤네일']), { keywords: ['강남네일'] });
+    assert.equal(excludedOf(nail, '네일포인트')?.reason, part('네일포인트', '포인트'));
+    assert.notEqual(excludedOf(nail, '포인트네일')?.rule, 'attribute');
+    // 분명한 표지(할인·쿠폰·무료·증정·공짜·반값…)가 든 말은 지금 문장 그대로
+    const cafe = shop11('s13g', '카페', '모닝카페', ['아메리카노', '반값세일', '쿠폰포인트'], chips12(['아메리카노', '반값세일', '쿠폰포인트']), { keywords: ['역삼카페'] });
+    for (const word of ['반값세일', '쿠폰포인트']) assert.equal(excludedOf(cafe, word)?.reason, `'${word}'${josa(word)} 요금·이용권·절차·판촉을 말하는 낱말이라, 지역을 붙여도 찾을 가게 종류나 메뉴가 아닙니다.`, word);
+});
+
+test('13차 S8: 전문 업종(심리상담센터 포함)의 "…상담"은 앞말이 업무 이름일 때만 통과 — 전화·온라인·카톡·화상·비대면·야간·주말·초기·예약·방문·출장·당일·긴급 앞말은 조건', () => {
+    const manner = ['전화상담', '온라인상담', '카톡상담', '화상상담', '비대면상담', '야간상담', '주말상담', '초기상담', '예약상담', '방문상담', '출장상담', '당일상담', '긴급상담'];
+    const works = ['이혼상담', '절세상담', '상속상담', '해고상담', '창업상담', '부부상담', '청소년상담'];
+    for (const [category, name] of [['법률사무소', '정의법률'], ['세무사사무소', '믿음세무회계'], ['노무사사무소', '바른노무'], ['심리상담센터', '마음상담센터'], ['컨설팅', '스텝컨설팅']]) {
+        const menus = [...works.slice(0, 4), ...manner.slice(0, 6)];
+        const result = shop11('s13h', category, name, menus, chips12(menus), { keywords: [`강남${category}`] });
+        blocked11(result, manner.slice(0, 6), category);
+        for (const word of works.slice(0, 4)) assert.notEqual(excludedOf(result, word)?.rule, 'attribute', `${category} ${word}`);
+    }
+    // 심리상담센터: 방문·출장·당일상담도 조건, 부부상담·청소년상담은 통과
+    const psy = shop11('s13i', '심리상담센터', '마음상담센터', ['부부상담', '청소년상담', '방문상담', '출장상담', '당일상담', '주말상담', '비대면상담', '긴급상담'], chips12(['부부상담', '청소년상담', '방문상담', '출장상담', '당일상담', '주말상담', '비대면상담', '긴급상담']), { keywords: ['강남심리상담센터'] });
+    blocked11(psy, ['방문상담', '출장상담', '당일상담', '주말상담', '비대면상담', '긴급상담'], '심리상담센터');
+    passes11(psy, ['부부상담', '청소년상담'], '심리상담센터');
+    // 이유 문장: 앞말이 방식·때라 서비스 이름일 수도 있어 단정하지 않는다
+    const law = shop11('s13j', '법률사무소', '정의법률', ['이혼상담', '전화상담'], chips12(['이혼상담', '전화상담']), { keywords: ['서초법률사무소'] });
+    assert.equal(excludedOf(law, '전화상담')?.reason, "'전화상담'은 '상담'처럼 절차·요금을 가리키는 말로 끝나, 품목 이름으로 보지 않았습니다. 실제로 파는 서비스 이름이면 직접 판단하세요.");
+});
+
+test('13차 B: 스탬프·마일리지·월정액, 포인트카드·포인트몰·포인트샵, 연말·감사·오픈·개업·기념 + 행사, …취소·…해지·…환불은 조건 — 기업행사·단체행사·포인트네일은 그대로', () => {
+    const words = ['스탬프', '마일리지', '월정액', '포인트카드', '포인트몰', '포인트샵', '연말행사', '감사행사', '오픈행사', '개업행사', '기념행사'];
+    blocked11(shop11('b13a', '카페', '모닝카페', ['아메리카노', ...words.slice(0, 6)], chips12(['아메리카노', ...words.slice(0, 6)]), { keywords: ['역삼카페'] }), words.slice(0, 6), '카페1');
+    blocked11(shop11('b13b', '카페', '모닝카페', ['아메리카노', ...words.slice(6)], chips12(['아메리카노', ...words.slice(6)]), { keywords: ['역삼카페'] }), words.slice(6), '카페2');
+    const cancel = ['구독취소', '계약해지', '결제환불'];
+    blocked11(shop11('b13c', '카페', '모닝카페', ['아메리카노', ...cancel], chips12(['아메리카노', ...cancel]), { keywords: ['역삼카페'] }), cancel, '카페 절차');
+    // 이벤트 업종: 기업행사·단체행사·행사기획은 통과, 연말행사는 조건
+    const event = shop11('b13d', '이벤트', '해피이벤트', ['기업행사', '단체행사', '행사기획', '연말행사'], chips12(['기업행사', '단체행사', '행사기획', '연말행사']), { keywords: ['강남이벤트'] });
+    for (const word of ['기업행사', '단체행사', '행사기획']) assert.notEqual(excludedOf(event, word)?.rule, 'attribute', word);
+    blocked11(event, ['연말행사'], '이벤트');
+    // 구독서비스 업종: 정기구독은 그대로(구독취소·월정액만 조건)
+    const sub = shop11('b13e', '구독서비스', '마이구독', ['정기구독', '구독취소', '월정액'], chips12(['정기구독', '구독취소', '월정액']), { keywords: ['강남구독서비스'] });
+    assert.notEqual(excludedOf(sub, '정기구독')?.rule, 'attribute');
+    blocked11(sub, ['구독취소', '월정액'], '구독서비스');
 });
 
 test('시험 도구 확인: 순위 줄 도우미와 예약 스타일 도우미가 6차 입력과 같은 모양을 만든다', () => {
