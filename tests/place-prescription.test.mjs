@@ -2378,6 +2378,19 @@ test('키워드 최종 판: 메뉴 description(조회 자료) — 글이 있으�
     const capped = menuFrames({ ...base, menuDescribedCount: 3, detail: { ...base.detail, menus: base.detail.menus.map((menu) => ({ ...menu, description: null })) } }, { focus: [{ term: '다운펌' }] });
     assert.equal(capped.note, '어느 것에 이미 설명이 있는지는 조회한 자료로 알 수 없어, 설명이 비어 있는 것만 채우세요.');
     assert.equal(capped.model.kind, 'sample');
+    // 가족 pick note 의 새 꼴("'댄디컷'의 구체 메뉴(리뷰 827회)")도 미용 문서에서는 '구체 시술'로
+    const { input } = docOf(SALON);
+    const swapped = {
+        ...input.recommendation,
+        items: input.recommendation.items.map((item) => ({
+            ...item,
+            reasons: item.reasons.map((reason) => (reason.kind === 'note' && /가장 많은 메뉴/.test(reason.text) ? { ...reason, text: "'댄디컷'의 구체 메뉴(리뷰 827회)" } : reason)),
+        })),
+    };
+    const noteRows = sectionOf(docOf(SALON, { recommendation: swapped }).doc, 'keywords');
+    const noteText = JSON.stringify(noteRows);
+    assert.match(noteText, /'댄디컷'의 구체 시술\(리뷰 827회\)/);
+    assert.doesNotMatch(noteText, /구체 메뉴/);
     // description 필드가 아예 없는 옛 자료: 어느 것에 설명이 있는지 모른다고 적는다
     const unknown = menuFrames({ ...base, menuDescribedCount: 0 });
     assert.equal(unknown.note, '어느 것에 이미 설명이 있는지는 조회한 자료로 알 수 없어, 설명이 비어 있는 것만 채우세요.');
